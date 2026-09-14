@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "unity@unity-agent-plugin": true
+  }
+}

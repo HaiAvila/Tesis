@@ -1,4 +1,5 @@
 using Normal.Realtime;
+using Normal.Realtime.Native;
 using UnityEngine;
 
 public class NormcoreDemoConnector : MonoBehaviour
@@ -8,8 +9,11 @@ public class NormcoreDemoConnector : MonoBehaviour
 
     private void Start()
     {
+        Plugin.logLevel = Plugin.LogLevel.LogLevelInfo;
+
         realtime.didConnectToRoom += OnConnected;
         realtime.didDisconnectFromRoom += OnDisconnected;
+        realtime.didDisconnectFromRoomWithEvent += OnDisconnectedWithEvent;
         realtime.Connect(roomName);
     }
 
@@ -21,5 +25,10 @@ public class NormcoreDemoConnector : MonoBehaviour
     private void OnDisconnected(Realtime rt)
     {
         Debug.Log("[Normcore] Disconnected from room");
+    }
+
+    private void OnDisconnectedWithEvent(Realtime rt, DisconnectEvent disconnectEvent)
+    {
+        Debug.LogError($"[Normcore] Disconnect reason: {disconnectEvent.message}");
     }
 }

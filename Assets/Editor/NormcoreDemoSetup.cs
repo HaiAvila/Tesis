@@ -6,7 +6,7 @@ using UnityEngine;
 
 public static class NormcoreDemoSetup
 {
-    private const string AppKey = "436ff1c3-334d-4135-8da8-2dd54b53cd49";
+    private const string AppKey = "41a8d648-d6b4-4b77-ae14-71560a7f52e9";
     private const string SettingsFolder = "Assets/Settings";
     private const string SettingsPath = SettingsFolder + "/NormcoreAppSettings.asset";
     private const string ScenesFolder = "Assets/Scenes";

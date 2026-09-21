@@ -7,7 +7,7 @@ using UnityEngine;
 public class ShotListDatabase : MonoBehaviour
 {
     const string DatabaseFileName = "shotlist.db";
-    const string CsvFileName = "shotlist_test.csv";
+    const string CsvFileName = "ShotListDB.csv";
     const string HeaderMarker = "scene_number";
 
     void Start()

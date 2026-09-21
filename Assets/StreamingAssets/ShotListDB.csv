@@ -1,0 +1,23 @@
+"SHOT LIST á TESIS Ñ 100% AUTOMATICA, NO EDITAR AQUI",,,,,,,,,
+,,,,,,,,,
+scene_number,location,int_ext,day_night,shot_number,take_number,subject,description,status,notes
+1,mountain,EXT,NIGHT,1,,Protagonista,El protagonista llega al risco junto a la entrada de la cueva y se detiene en su marca.,pendiente,Confirmacion de marca inicial. Inicio de camara (3 pulsos).
+1,mountain,EXT,NIGHT,2,,Protagonista,"El protagonista siente un temblor lejano proveniente de la cueva y se detiene, alerta.",pendiente,Cue de alerta anticipatoria activo (solo banda de cintura).
+1,mountain,EXT,NIGHT,3,,"Protagonista, Gigante (VFX)",El gigante emerge de la cueva y se desplaza junto al risco; el protagonista gira para seguirlo con la mirada.,pendiente,Cue de orientacion activo; guia giro izquierda/derecha y componente vertical (arriba/abajo).
+1,mountain,EXT,NIGHT,4,,Protagonista,"El protagonista retrocede por instinto, acercandose al borde real del risco (tarima).",pendiente,Cue de zona de exclusion / peligro fisico activo.
+1,mountain,EXT,NIGHT,5,,"Protagonista, Gigante (VFX)",El protagonista reacciona de cerca al gigante antes de que la escena corte.,pendiente,Cue de corte (pulso largo de baja intensidad).
+2,spaceship,INT,NIGHT,6,,Protagonista,El protagonista entra al corredor de la nave y avanza hasta el primer punto de control.,pendiente,Checkpoint 1 (confirmacion de marca). Inicio de camara.
+2,spaceship,INT,NIGHT,7,,Protagonista,"Avanza por un tramo del corredor donde las esporas laten en las paredes, ajustando su paso.",pendiente,Cue de desviacion de velocidad de segmento (tramo pide ritmo mas lento).
+2,spaceship,INT,NIGHT,8,,Protagonista,Extiende la mano hacia una espora flotante que no puede ver con claridad en la penumbra del corredor.,pendiente,Cue de proximidad guia la mano hacia el punto exacto de la espora.
+2,spaceship,INT,NIGHT,9,,"Protagonista, Espora (VFX)",Sujeta la espora.,pendiente,"Cue de contacto con objeto virtual (pulso sostenido, distinto a proximidad)."
+2,spaceship,INT,NIGHT,10,,"Protagonista, Espora (VFX)",Examina la espora sosteniendola quieta antes de que la escena corte.,pendiente,Cue de mantener posicion (hold). Cue de corte al finalizar.
+3,apartment,INT,NIGHT,11,,Protagonista,El protagonista entra a su taller de robots y confirma su marca inicial junto al banco de trabajo.,pendiente,Confirmacion de marca inicial. Inicio de camara.
+3,apartment,INT,NIGHT,12,,Protagonista,Camina entre los robots en reparacion a un ritmo constante.,pendiente,Cue de timing (metronomo continuo) activo.
+3,apartment,INT,NIGHT,13,,Protagonista,Siente que algo pequeno se aproxima rapidamente entre los estantes de piezas.,pendiente,Cue de alerta anticipatoria activo (solo banda de cintura).
+3,apartment,INT,NIGHT,14,,"Protagonista, Robot (VFX)",Un robot levitador del tamano de una laptop cruza veloz frente a el; se detiene en seco.,pendiente,El metronomo se corta abruptamente = senal de alto.
+3,apartment,INT,NIGHT,15,,Protagonista,Reacciona a la presencia del robot antes de que la escena corte.,pendiente,Cue de corte.
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,

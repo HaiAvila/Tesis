@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class SceneSelectController : MonoBehaviour
@@ -154,7 +155,12 @@ public class SceneSelectController : MonoBehaviour
 
         Shot capturedShot = shot;
         string capturedSceneName = sceneName;
-        buttonObject.GetComponent<Button>().onClick.AddListener(() =>
-            Debug.Log($"Shot selected: scene {capturedShot.SceneNumber} ({capturedSceneName}), shot {capturedShot.ShotNumber} - {capturedShot.Description}"));
+        buttonObject.GetComponent<Button>().onClick.AddListener(() => OnShotSelected(capturedShot, capturedSceneName));
+    }
+
+    void OnShotSelected(Shot shot, string sceneName)
+    {
+        Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
+        SceneManager.LoadSceneAsync(sceneName);
     }
 }

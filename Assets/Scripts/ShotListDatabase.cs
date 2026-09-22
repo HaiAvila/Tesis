@@ -21,6 +21,37 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    public SortedDictionary<int, List<Shot>> GetShotsGroupedByScene()
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        var grouped = new SortedDictionary<int, List<Shot>>();
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            List<Shot> shots = connection.Query<Shot>(
+                "SELECT * FROM Shots ORDER BY scene_number, shot_number;");
+
+            foreach (Shot shot in shots)
+            {
+                if (!grouped.TryGetValue(shot.SceneNumber, out List<Shot> sceneShots))
+                {
+                    sceneShots = new List<Shot>();
+                    grouped[shot.SceneNumber] = sceneShots;
+                }
+                sceneShots.Add(shot);
+            }
+        }
+
+        foreach (var scene in grouped)
+        {
+            Debug.Log($"Scene {scene.Key}: {scene.Value.Count} shots");
+            foreach (Shot shot in scene.Value)
+                Debug.Log($"  Shot {shot.ShotNumber}: {ShortenForLog(shot.Description)}");
+        }
+
+        return grouped;
+    }
+
     void CreateShotsTable(SQLiteConnection connection)
     {
         connection.Execute(@"
@@ -183,4 +214,19 @@ public class ShotListDatabase : MonoBehaviour
         fields.Add(current.ToString());
         return fields.ToArray();
     }
+}
+
+[Table("Shots")]
+public class Shot
+{
+    [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("scene_number")] public int SceneNumber { get; set; }
+    [Column("location")] public string Location { get; set; }
+    [Column("int_ext")] public string IntExt { get; set; }
+    [Column("day_night")] public string DayNight { get; set; }
+    [Column("take_number")] public int? TakeNumber { get; set; }
+    [Column("subject")] public string Subject { get; set; }
+    [Column("description")] public string Description { get; set; }
+    [Column("status")] public string Status { get; set; }
+    [Column("notes")] public string Notes { get; set; }
 }

@@ -4,6 +4,8 @@ using UnityEngine.SceneManagement;
 
 public class Bootstrap : MonoBehaviour
 {
+    public static int CurrentShotNumber;
+
     public Realtime realtime;
     public string normcoreDemoSceneName = "NormcoreDemo";
 

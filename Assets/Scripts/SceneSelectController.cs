@@ -161,6 +161,7 @@ public class SceneSelectController : MonoBehaviour
     void OnShotSelected(Shot shot, string sceneName)
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
+        Bootstrap.CurrentShotNumber = shot.ShotNumber;
         SceneManager.LoadSceneAsync(sceneName);
     }
 }

@@ -12,8 +12,6 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // button - the standard OpenXR/XRI binding path, not a project-specific action asset.
 public class PauseMenuController : MonoBehaviour
 {
-    static readonly string[] ContentScenes = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };
-
     const float PanelDistance = 1.5f;
     const float PanelWorldScale = 0.0025f;
     const int ButtonFontSize = 30;
@@ -32,7 +30,6 @@ public class PauseMenuController : MonoBehaviour
         public Action OnSelected;
     }
 
-    readonly List<PauseMenuOption> options = new List<PauseMenuOption>();
     readonly List<GameObject> pausedLocomotionObjects = new List<GameObject>();
 
     InputAction menuAction;
@@ -43,9 +40,6 @@ public class PauseMenuController : MonoBehaviour
     void Awake()
     {
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-        options.Add(new PauseMenuOption { Label = "Menú Principal", OnSelected = GoToMainMenu });
-        options.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
 
         // Standard OpenXR binding path for the left controller's Menu button (matches
         // Unity's own OpenXR Starter Assets sample), created directly rather than via a
@@ -81,24 +75,13 @@ public class PauseMenuController : MonoBehaviour
 
     void OnMenuButtonPressed(InputAction.CallbackContext context)
     {
-        if (!IsContentScene(SceneManager.GetActiveScene().name))
+        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name))
             return;
 
         if (isOpen)
             Close();
         else
             Open();
-    }
-
-    static bool IsContentScene(string sceneName)
-    {
-        foreach (string contentScene in ContentScenes)
-        {
-            if (contentScene == sceneName)
-                return true;
-        }
-
-        return false;
     }
 
     void Open()
@@ -111,9 +94,22 @@ public class PauseMenuController : MonoBehaviour
         }
 
         PauseLocomotion();
-        BuildPanel(headCamera.transform);
+        BuildPanel(headCamera.transform, BuildOptions());
         SendHaptic();
         isOpen = true;
+    }
+
+    // Extensible, not hardcoded into the layout logic below - new entries are a one-line
+    // add here. Rebuilt fresh on every open so any state-dependent label stays current.
+    // Recording is started/stopped via its own controller shortcut (RehearsalRecorder),
+    // not from this menu.
+    List<PauseMenuOption> BuildOptions()
+    {
+        return new List<PauseMenuOption>
+        {
+            new PauseMenuOption { Label = "Menú Principal", OnSelected = GoToMainMenu },
+            new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect }
+        };
     }
 
     void Close()
@@ -173,7 +169,7 @@ public class PauseMenuController : MonoBehaviour
             hapticPlayer.SendHapticImpulse(0.5f, 0.1f);
     }
 
-    void BuildPanel(Transform head)
+    void BuildPanel(Transform head, List<PauseMenuOption> menuOptions)
     {
         Vector3 forward = head.forward;
         forward.y = 0f;
@@ -190,7 +186,7 @@ public class PauseMenuController : MonoBehaviour
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = Camera.main;
 
-        float panelHeight = options.Count * ButtonHeight + (options.Count - 1) * ButtonSpacing + PanelPadding * 2;
+        float panelHeight = menuOptions.Count * ButtonHeight + (menuOptions.Count - 1) * ButtonSpacing + PanelPadding * 2;
         float panelWidth = ButtonWidth + PanelPadding * 2;
 
         RectTransform canvasRect = (RectTransform)panelObject.transform;
@@ -224,7 +220,7 @@ public class PauseMenuController : MonoBehaviour
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = true;
 
-        foreach (PauseMenuOption option in options)
+        foreach (PauseMenuOption option in menuOptions)
             CreateButton(layoutRect, option);
 
         if (FindFirstObjectByType<EventSystem>() == null)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -19,6 +20,37 @@ public class ShotListDatabase : MonoBehaviour
         {
             CreateShotsTable(connection);
             ImportCsv(connection);
+            CreateSessionTables(connection);
+        }
+    }
+
+    // Creates the Sesiones/Metricas record for a finished rehearsal recording in a single
+    // transaction: one Sesiones row plus every buffered Metricas sample.
+    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            var session = new RecordingSession
+            {
+                ShotNumber = shotNumber,
+                FechaHora = startedAt.ToString("o"),
+                Duracion = duration
+            };
+
+            connection.RunInTransaction(() =>
+            {
+                connection.Insert(session);
+
+                foreach (Metric sample in samples)
+                    sample.SesionId = session.Id;
+
+                connection.InsertAll(samples);
+            });
+
+            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {duration:F1}s).");
+            return session.Id;
         }
     }
 
@@ -80,6 +112,32 @@ public class ShotListDatabase : MonoBehaviour
                 description TEXT,
                 status TEXT,
                 notes TEXT
+            );");
+    }
+
+    void CreateSessionTables(SQLiteConnection connection)
+    {
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS Sesiones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shot_number INTEGER,
+                fecha_hora TEXT,
+                duracion REAL
+            );");
+
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS Metricas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sesion_id INTEGER,
+                tiempo_relativo REAL,
+                pos_x REAL,
+                pos_y REAL,
+                pos_z REAL,
+                rot_x REAL,
+                rot_y REAL,
+                rot_z REAL,
+                rot_w REAL,
+                FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
             );");
     }
 
@@ -243,4 +301,28 @@ public class Shot
     [Column("description")] public string Description { get; set; }
     [Column("status")] public string Status { get; set; }
     [Column("notes")] public string Notes { get; set; }
+}
+
+[Table("Sesiones")]
+public class RecordingSession
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("fecha_hora")] public string FechaHora { get; set; }
+    [Column("duracion")] public float Duracion { get; set; }
+}
+
+[Table("Metricas")]
+public class Metric
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("sesion_id")] public int SesionId { get; set; }
+    [Column("tiempo_relativo")] public float TiempoRelativo { get; set; }
+    [Column("pos_x")] public float PosX { get; set; }
+    [Column("pos_y")] public float PosY { get; set; }
+    [Column("pos_z")] public float PosZ { get; set; }
+    [Column("rot_x")] public float RotX { get; set; }
+    [Column("rot_y")] public float RotY { get; set; }
+    [Column("rot_z")] public float RotZ { get; set; }
+    [Column("rot_w")] public float RotW { get; set; }
 }

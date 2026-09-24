@@ -23,4 +23,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Scene3_apartment.unity
     guid: 6479ee5e5dd1c41c78f96560a099f8ef
-  m_configObjects: {}
+  m_configObjects:
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: b210fe8baa7914348863d0b5274f5450, type: 2}
+    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 9114595c202bb9b4894fdbda246aef27, type: 2}
+  m_UseUCBPForAssetBundles: 0

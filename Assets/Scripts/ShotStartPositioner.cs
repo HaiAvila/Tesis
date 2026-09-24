@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity;
 
 public class ShotStartPositioner : MonoBehaviour
 {
@@ -22,5 +23,13 @@ public class ShotStartPositioner : MonoBehaviour
         }
 
         actor.SetPositionAndRotation(marker.transform.position, marker.transform.rotation);
+
+        // GravityProvider only calls ResetFallForce() itself once it detects ground
+        // AND locomotion state is already "Moving" - right after a teleport it isn't
+        // "Moving" yet, so any fall velocity accumulated before the teleport would
+        // otherwise survive it.
+        GravityProvider gravityProvider = actor.GetComponentInChildren<GravityProvider>();
+        if (gravityProvider != null)
+            gravityProvider.ResetFallForce();
     }
 }

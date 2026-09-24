@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class SceneSelectController : MonoBehaviour
 {
-    static readonly Dictionary<int, string> SceneNameByNumber = new Dictionary<int, string>
+    public static readonly Dictionary<int, string> SceneNameByNumber = new Dictionary<int, string>
     {
         { 1, "Scene1_mountain" },
         { 2, "Scene2_spaceship" },
@@ -24,7 +24,7 @@ public class SceneSelectController : MonoBehaviour
     {
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        ShotListDatabase database = FindObjectOfType<ShotListDatabase>();
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
         if (database == null)
         {
             Debug.LogError("SceneSelectController: no ShotListDatabase instance found in the scene (expected the persisted DB object from Bootstrap).");
@@ -50,7 +50,7 @@ public class SceneSelectController : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
 
-        if (FindObjectOfType<EventSystem>() == null)
+        if (FindFirstObjectByType<EventSystem>() == null)
             new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
 
         var scrollObject = new GameObject("ShotScrollView", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
@@ -161,6 +161,10 @@ public class SceneSelectController : MonoBehaviour
     void OnShotSelected(Shot shot, string sceneName)
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
+
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SelectShot(shot.ShotNumber);
+
         Bootstrap.CurrentShotNumber = shot.ShotNumber;
         SceneManager.LoadSceneAsync(sceneName);
     }

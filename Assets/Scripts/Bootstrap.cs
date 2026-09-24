@@ -22,10 +22,12 @@ public class Bootstrap : MonoBehaviour
     {
         realtime.didConnectToRoom -= OnConnectedToRoom;
 
+        SceneManager.LoadScene("MenuBackdrop");
+
 #if DIRECTOR_BUILD
-        SceneManager.LoadScene("Director_HomeMenu");
+        SceneManager.LoadScene("Director_HomeMenu", LoadSceneMode.Additive);
 #else
-        SceneManager.LoadScene("Actor_HomeMenu");
+        SceneManager.LoadScene("Actor_HomeMenu", LoadSceneMode.Additive);
 #endif
     }
 }

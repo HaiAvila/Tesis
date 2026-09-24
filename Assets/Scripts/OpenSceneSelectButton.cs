@@ -16,7 +16,7 @@ public class OpenSceneSelectButton : MonoBehaviour
         canvasObject.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
         canvasObject.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 
-        if (FindObjectOfType<EventSystem>() == null)
+        if (FindFirstObjectByType<EventSystem>() == null)
             new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
 
         var buttonObject = new GameObject("Button_OpenSceneSelect", typeof(RectTransform), typeof(Image), typeof(Button));

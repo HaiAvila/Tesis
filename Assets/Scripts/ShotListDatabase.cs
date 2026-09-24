@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using SQLite4Unity3d;
 using UnityEngine;
@@ -50,6 +51,19 @@ public class ShotListDatabase : MonoBehaviour
         }
 
         return grouped;
+    }
+
+    public int? GetSceneNumberForShot(int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            Shot shot = connection.Query<Shot>(
+                "SELECT * FROM Shots WHERE shot_number = ? LIMIT 1;", shotNumber).FirstOrDefault();
+
+            return shot != null ? shot.SceneNumber : (int?)null;
+        }
     }
 
     void CreateShotsTable(SQLiteConnection connection)

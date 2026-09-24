@@ -15,6 +15,12 @@ EditorBuildSettings:
     path: Assets/Scenes/SceneSelect.unity
     guid: ebbefdc19fbb4e24a76f09bb33d1ff9b
   - enabled: 1
+    path: Assets/Scenes/Actor_HomeMenu.unity
+    guid: 09ee351e85855f24449d6c43fed7e80d
+  - enabled: 1
+    path: Assets/Scenes/Director_HomeMenu.unity
+    guid: 81aca6e8ae8672f69b34d1bfee1d1dc2
+  - enabled: 1
     path: Assets/Scenes/Scene1_mountain.unity
     guid: 9fc0d4010bbf28b4594072e72b8655ab
   - enabled: 1

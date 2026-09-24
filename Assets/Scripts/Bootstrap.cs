@@ -7,7 +7,6 @@ public class Bootstrap : MonoBehaviour
     public static int CurrentShotNumber;
 
     public Realtime realtime;
-    public string normcoreDemoSceneName = "NormcoreDemo";
 
     private void Awake()
     {
@@ -22,6 +21,11 @@ public class Bootstrap : MonoBehaviour
     private void OnConnectedToRoom(Realtime rt)
     {
         realtime.didConnectToRoom -= OnConnectedToRoom;
-        SceneManager.LoadScene(normcoreDemoSceneName);
+
+#if DIRECTOR_BUILD
+        SceneManager.LoadScene("Director_HomeMenu");
+#else
+        SceneManager.LoadScene("Actor_HomeMenu");
+#endif
     }
 }

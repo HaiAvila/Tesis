@@ -31,6 +31,25 @@ public class RehearsalSessionSync : MonoBehaviour
 
         // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
         Debug.Log($"RehearsalSessionSync: Awake, lastKnownShotNumber={lastKnownShotNumber}");
+
+        // Whatever this synced transform holds right as the connection settles - including
+        // a stale value from Normcore's room persistence, carried over from an earlier test
+        // session in the same room - is the starting point, not something to react to.
+        // Unsubscribes after its one use, same as Bootstrap's own didConnectToRoom handler.
+        Realtime realtime = FindFirstObjectByType<Realtime>();
+        if (realtime != null)
+            realtime.didConnectToRoom += OnConnectedToRoom;
+
+#if !DIRECTOR_BUILD
+        // Permanent, for the app's entire lifetime - deliberately never unsubscribes and
+        // reacts to every future change, not just the first. This used to be a one-shot
+        // subscription owned by ActorHomeMenuController, which unsubscribed itself after
+        // handling the first shot and was destroyed once the actor left the home menu
+        // scene - so any shot the director picked later (e.g. from the pause menu) fired
+        // into an empty room, silently. Moved here specifically so it survives every scene
+        // change for as long as the app runs.
+        ShotSelected += OnShotSelectedForActor;
+#endif
     }
 
     void OnDestroy()
@@ -39,17 +58,18 @@ public class RehearsalSessionSync : MonoBehaviour
             Instance = null;
     }
 
-    // Called right before the actor starts listening for a selection (e.g. clicking
-    // "Ensayo Remoto"). Without this, whatever value already sits on this synced
-    // transform - room persistence from an earlier session, or a leftover from an
-    // earlier "Ensayo Remoto" round this same session - gets compared against as if it
-    // were the current baseline, so a director re-selecting that same shot number
-    // produces no detectable change and the actor waits forever. Resetting here means
-    // only a genuinely new selection made after this point ever fires the event.
-    public void ResetBaseline()
+    void OnConnectedToRoom(Realtime rt)
     {
+        rt.didConnectToRoom -= OnConnectedToRoom;
         lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
     }
+
+#if !DIRECTOR_BUILD
+    void OnShotSelectedForActor(int shotNumber)
+    {
+        LoadSceneForShot(shotNumber);
+    }
+#endif
 
     void Update()
     {

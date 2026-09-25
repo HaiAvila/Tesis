@@ -162,6 +162,9 @@ public class SceneSelectController : MonoBehaviour
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
 
+        // TEMPORARY diagnostic - remove once the actor-sync-on-pause-menu issue is confirmed fixed.
+        Debug.Log($"IsInspecting={Bootstrap.IsInspecting}, RehearsalSessionSync.Instance is null={RehearsalSessionSync.Instance == null}");
+
         // Inspecting a past recording is a solo review, not a live rehearsal - don't
         // sync/teleport the actor for it.
         if (!Bootstrap.IsInspecting && RehearsalSessionSync.Instance != null)

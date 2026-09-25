@@ -63,12 +63,6 @@ public class ActorHomeMenuController : MonoBehaviour
         LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
     }
 
-    void OnDestroy()
-    {
-        if (RehearsalSessionSync.Instance != null)
-            RehearsalSessionSync.Instance.ShotSelected -= OnDirectorSelectedShot;
-    }
-
     void CreateButton(RectTransform parent, Font font, string label, UnityEngine.Events.UnityAction onClick)
     {
         var buttonObject = new GameObject($"Button_{label}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
@@ -116,33 +110,19 @@ public class ActorHomeMenuController : MonoBehaviour
         waitingText.color = TextColor;
         waitingText.alignment = TextAnchor.MiddleCenter;
 
-        if (RehearsalSessionSync.Instance != null)
-        {
-            RehearsalSessionSync.Instance.ResetBaseline();
-            RehearsalSessionSync.Instance.ShotSelected += OnDirectorSelectedShot;
-            // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-            Debug.Log("ActorHomeMenuController: subscribed to RehearsalSessionSync.ShotSelected.");
-        }
-        else
-        {
-            Debug.LogError("ActorHomeMenuController: no RehearsalSessionSync instance found, cannot listen for the director's shot selection.");
-        }
-    }
-
-    void OnDirectorSelectedShot(int shotNumber)
-    {
-        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-        Debug.Log($"ActorHomeMenuController: OnDirectorSelectedShot({shotNumber}) received.");
-
-        if (RehearsalSessionSync.Instance == null)
-            return;
-
-        RehearsalSessionSync.Instance.ShotSelected -= OnDirectorSelectedShot;
-        RehearsalSessionSync.Instance.LoadSceneForShot(shotNumber);
+        // Actually listening for the director's pick (this shot and every one after it)
+        // is handled by a permanent, never-unsubscribing listener living on
+        // RehearsalSessionSync itself now - see its own comment for why. This screen just
+        // shows the waiting message; it has nothing left to wire up here.
     }
 
     void OnRehearseAloneSelected()
     {
+        // No director on the other end to sync to - same semantics as Inspección de
+        // Escenas. Without this, SceneSelectController.OnShotSelected() (not build-gated)
+        // would call RehearsalSessionSync.SelectShot() on whatever stale value this flag
+        // happened to have, broadcasting a fake shot selection to anyone connected.
+        Bootstrap.IsInspecting = true;
         SceneManager.LoadSceneAsync("SceneSelect");
     }
 }

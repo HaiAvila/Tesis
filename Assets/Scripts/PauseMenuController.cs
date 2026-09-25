@@ -271,6 +271,12 @@ public class PauseMenuController : MonoBehaviour
 
     void GoToMainMenu()
     {
+        // Back to neutral - this is the only way back to the home menu from a content
+        // scene, on either build, so it's an exit point IsInspecting must reset at (see
+        // its own comment on Bootstrap.cs). This is the only change here: GoToSceneSelect
+        // below is untouched, it keeps inheriting whatever's already set.
+        Bootstrap.IsInspecting = false;
+
         // Actor_HomeMenu/Director_HomeMenu have no camera of their own - they rely on
         // MenuBackdrop being loaded first, same as Bootstrap's initial connect flow.
         SceneManager.LoadScene("MenuBackdrop");

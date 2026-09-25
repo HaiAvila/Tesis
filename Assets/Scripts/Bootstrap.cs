@@ -6,9 +6,11 @@ public class Bootstrap : MonoBehaviour
 {
     public static int CurrentShotNumber;
 
-    // True while picking a shot in SceneSelect is for solo recording playback review
-    // ("Inspección de Escenas"), not a live synced rehearsal - set true right before
-    // loading SceneSelect from that flow, false right before it from "Ensayo Remoto".
+    // True while picking a shot in SceneSelect is for solo review (Inspección de Escenas,
+    // or the actor practicing alone), not a live synced rehearsal with a director/actor on
+    // the other end. Every entry point into SceneSelect must set this explicitly - it's
+    // never inferred - and every return to the home menu resets it to false (neutral), so
+    // a value from an earlier session can never survive into a new one unnoticed.
     public static bool IsInspecting;
 
     static readonly string[] ContentSceneNames = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };
@@ -39,6 +41,10 @@ public class Bootstrap : MonoBehaviour
     private void OnConnectedToRoom(Realtime rt)
     {
         realtime.didConnectToRoom -= OnConnectedToRoom;
+
+        // Neutral state on the very first entry into the app - see IsInspecting's own
+        // comment for why this must never be left to whatever a static field defaults to.
+        IsInspecting = false;
 
         SceneManager.LoadScene("MenuBackdrop");
 

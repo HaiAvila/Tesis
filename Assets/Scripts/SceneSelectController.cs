@@ -162,7 +162,9 @@ public class SceneSelectController : MonoBehaviour
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
 
-        if (RehearsalSessionSync.Instance != null)
+        // Inspecting a past recording is a solo review, not a live rehearsal - don't
+        // sync/teleport the actor for it.
+        if (!Bootstrap.IsInspecting && RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SelectShot(shot.ShotNumber);
 
         Bootstrap.CurrentShotNumber = shot.ShotNumber;

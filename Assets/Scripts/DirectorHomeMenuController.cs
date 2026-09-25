@@ -87,11 +87,13 @@ public class DirectorHomeMenuController : MonoBehaviour
 
     void OnRemoteRehearsalSelected()
     {
+        Bootstrap.IsInspecting = false;
         SceneManager.LoadSceneAsync("SceneSelect");
     }
 
     void OnSceneInspectionSelected()
     {
-        Debug.Log("Director Home Menu: 'Inspección de Escenas' pressed - not implemented yet.");
+        Bootstrap.IsInspecting = true;
+        SceneManager.LoadSceneAsync("SceneSelect");
     }
 }

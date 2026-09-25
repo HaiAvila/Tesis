@@ -98,6 +98,30 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // Most recent recording for a shot (highest id - Sesiones has no unique timestamp
+    // guarantee, but ids are assigned in insertion order). Null if none exists yet.
+    public RecordingSession GetMostRecentSession(int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE shot_number = ? ORDER BY id DESC LIMIT 1;", shotNumber).FirstOrDefault();
+        }
+    }
+
+    public List<Metric> GetMetricsForSession(int sessionId)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<Metric>(
+                "SELECT * FROM Metricas WHERE sesion_id = ? ORDER BY tiempo_relativo ASC;", sessionId);
+        }
+    }
+
     void CreateShotsTable(SQLiteConnection connection)
     {
         connection.Execute(@"

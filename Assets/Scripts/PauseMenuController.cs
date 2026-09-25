@@ -102,14 +102,20 @@ public class PauseMenuController : MonoBehaviour
     // Extensible, not hardcoded into the layout logic below - new entries are a one-line
     // add here. Rebuilt fresh on every open so any state-dependent label stays current.
     // Recording is started/stopped via its own controller shortcut (RehearsalRecorder),
-    // not from this menu.
+    // not from this menu. Scene selection is a director-only action - the actor doesn't
+    // choose shots, so that option is left out of their menu entirely.
     List<PauseMenuOption> BuildOptions()
     {
-        return new List<PauseMenuOption>
+        var menuOptions = new List<PauseMenuOption>
         {
-            new PauseMenuOption { Label = "Menú Principal", OnSelected = GoToMainMenu },
-            new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect }
+            new PauseMenuOption { Label = "Menú Principal", OnSelected = GoToMainMenu }
         };
+
+#if DIRECTOR_BUILD
+        menuOptions.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
+#endif
+
+        return menuOptions;
     }
 
     void Close()
@@ -276,8 +282,10 @@ public class PauseMenuController : MonoBehaviour
 #endif
     }
 
+#if DIRECTOR_BUILD
     void GoToSceneSelect()
     {
         SceneManager.LoadSceneAsync("SceneSelect");
     }
+#endif
 }

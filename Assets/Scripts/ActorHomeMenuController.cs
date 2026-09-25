@@ -117,13 +117,23 @@ public class ActorHomeMenuController : MonoBehaviour
         waitingText.alignment = TextAnchor.MiddleCenter;
 
         if (RehearsalSessionSync.Instance != null)
+        {
+            RehearsalSessionSync.Instance.ResetBaseline();
             RehearsalSessionSync.Instance.ShotSelected += OnDirectorSelectedShot;
+            // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+            Debug.Log("ActorHomeMenuController: subscribed to RehearsalSessionSync.ShotSelected.");
+        }
         else
+        {
             Debug.LogError("ActorHomeMenuController: no RehearsalSessionSync instance found, cannot listen for the director's shot selection.");
+        }
     }
 
     void OnDirectorSelectedShot(int shotNumber)
     {
+        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+        Debug.Log($"ActorHomeMenuController: OnDirectorSelectedShot({shotNumber}) received.");
+
         if (RehearsalSessionSync.Instance == null)
             return;
 

@@ -28,6 +28,9 @@ public class RehearsalSessionSync : MonoBehaviour
         Instance = this;
         realtimeTransform = GetComponent<RealtimeTransform>();
         lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
+
+        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+        Debug.Log($"RehearsalSessionSync: Awake, lastKnownShotNumber={lastKnownShotNumber}");
     }
 
     void OnDestroy()
@@ -36,11 +39,26 @@ public class RehearsalSessionSync : MonoBehaviour
             Instance = null;
     }
 
+    // Called right before the actor starts listening for a selection (e.g. clicking
+    // "Ensayo Remoto"). Without this, whatever value already sits on this synced
+    // transform - room persistence from an earlier session, or a leftover from an
+    // earlier "Ensayo Remoto" round this same session - gets compared against as if it
+    // were the current baseline, so a director re-selecting that same shot number
+    // produces no detectable change and the actor waits forever. Resetting here means
+    // only a genuinely new selection made after this point ever fires the event.
+    public void ResetBaseline()
+    {
+        lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
+    }
+
     void Update()
     {
         int currentShotNumber = Mathf.RoundToInt(transform.position.x);
         if (currentShotNumber == lastKnownShotNumber)
             return;
+
+        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+        Debug.Log($"RehearsalSessionSync: position.x changed {lastKnownShotNumber} -> {currentShotNumber} (isOwnedLocallySelf={realtimeTransform.isOwnedLocallySelf})");
 
         lastKnownShotNumber = currentShotNumber;
 
@@ -52,6 +70,9 @@ public class RehearsalSessionSync : MonoBehaviour
     {
         realtimeTransform.RequestOwnership();
         transform.position = new Vector3(shotNumber, 0f, 0f);
+
+        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+        Debug.Log($"RehearsalSessionSync: SelectShot({shotNumber}) called, isOwnedLocallySelf={realtimeTransform.isOwnedLocallySelf}");
     }
 
     public void LoadSceneForShot(int shotNumber)
@@ -69,6 +90,9 @@ public class RehearsalSessionSync : MonoBehaviour
             Debug.LogError($"RehearsalSessionSync: could not resolve a scene for shot {shotNumber}.");
             return;
         }
+
+        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
+        Debug.Log($"RehearsalSessionSync: LoadSceneForShot({shotNumber}) resolved scene '{sceneName}', loading now.");
 
         Bootstrap.CurrentShotNumber = shotNumber;
         SceneManager.LoadSceneAsync(sceneName);

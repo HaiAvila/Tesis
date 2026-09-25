@@ -148,6 +148,9 @@ public class RehearsalRecorder : MonoBehaviour
         Vector3 position = actorTransform.position;
         Quaternion rotation = actorTransform.rotation;
 
+        // TEMPORARY diagnostic - remove once the empty position/rotation issue is confirmed fixed.
+        Debug.Log($"RehearsalRecorder: sampled pos={position:F3} rot={rotation:F3}");
+
         buffer.Add(new Metric
         {
             TiempoRelativo = Time.time - recordingStartTime,

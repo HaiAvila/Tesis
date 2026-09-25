@@ -699,6 +699,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Realtime
       objectReference: {fileID: 0}
+    - target: {fileID: 6031128743643271352, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
+      propertyPath: roomName
+      value: TesisEnsayo01
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

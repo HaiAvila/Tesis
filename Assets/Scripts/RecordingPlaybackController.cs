@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,6 +20,8 @@ using UnityEngine.UI;
 // settled - see the Follow* constants and Update().
 public class RecordingPlaybackController : MonoBehaviour
 {
+    public static RecordingPlaybackController Instance { get; private set; }
+
     const float CapsuleHeight = 1.8f;
     const float CapsuleRadius = 0.25f;
     const int IconFontSize = 36;
@@ -75,8 +78,14 @@ public class RecordingPlaybackController : MonoBehaviour
     float transitionElapsed;
     bool isTransitioning;
 
+    // Set only when playing back an in-memory buffer (post-recording "Ver replay" review,
+    // not the usual DB-driven Inspección de Escenas flow) - adds a close button to the
+    // panel and is invoked when it's pressed, instead of relying on a scene change to exit.
+    Action onManualClose;
+
     void Awake()
     {
+        Instance = this;
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         SceneManager.sceneLoaded += OnSceneLoaded;
 
@@ -95,6 +104,9 @@ public class RecordingPlaybackController : MonoBehaviour
 
     void OnDestroy()
     {
+        if (Instance == this)
+            Instance = null;
+
         SceneManager.sceneLoaded -= OnSceneLoaded;
 
 #if DIRECTOR_BUILD
@@ -149,6 +161,7 @@ public class RecordingPlaybackController : MonoBehaviour
         isLooping = false;
         isScrubbing = false;
         isTransitioning = false;
+        onManualClose = null;
 
 #if DIRECTOR_BUILD
         if (DirectorFreeFlyCamera.Instance != null)
@@ -172,15 +185,38 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        samples = database.GetMetricsForSession(session.Id);
-        if (samples.Count == 0)
+        List<Metric> dbSamples = database.GetMetricsForSession(session.Id);
+        if (dbSamples.Count == 0)
         {
             Debug.LogWarning($"RecordingPlaybackController: session {session.Id} for shot {shotNumber} has no samples.");
-            samples = null;
             return;
         }
 
+        BeginPlayback(dbSamples, null);
+    }
+
+    // Plays back an in-memory buffer directly - e.g. "Ver replay" right after stopping a
+    // recording, before it's saved (or discarded). Same playback system, no DB involved.
+    // onClosed fires when the panel's close button is pressed, so the caller (e.g. the
+    // save/discard decision popup) knows to reappear.
+    public void StartPlaybackFromBuffer(List<Metric> bufferSamples, Action onClosed)
+    {
+        if (bufferSamples == null || bufferSamples.Count == 0)
+        {
+            Debug.LogWarning("RecordingPlaybackController: buffer is empty, nothing to replay.");
+            onClosed?.Invoke();
+            return;
+        }
+
+        CleanUp();
+        BeginPlayback(bufferSamples, onClosed);
+    }
+
+    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed)
+    {
+        samples = samplesToPlay;
         totalDuration = samples[samples.Count - 1].TiempoRelativo;
+        onManualClose = onClosed;
 
         BuildCapsule();
         BuildPanel();
@@ -267,7 +303,8 @@ public class RecordingPlaybackController : MonoBehaviour
         ComputeDesiredAnchor(head, out anchorPosition, out anchorRotation);
         isTransitioning = false;
 
-        float panelWidth = ButtonSize * 2f + ButtonSpacing * 1f + PanelPadding * 2f;
+        float buttonCount = onManualClose != null ? 3f : 2f;
+        float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
 
         panelObject = new GameObject("PlaybackPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -333,6 +370,10 @@ public class RecordingPlaybackController : MonoBehaviour
         // Play/Pause has no UI button - it's the physical controller shortcut only.
         CreateIconButton(rowObject.transform, "↺", OnRestartClicked, ButtonColor); // ↺
         loopText = CreateIconButton(rowObject.transform, "∞", OnLoopToggleClicked, ButtonColor); // ∞ (loop toggle; color indicates on/off)
+
+        // Only present when reviewing an in-memory buffer (no scene change to exit through).
+        if (onManualClose != null)
+            CreateIconButton(rowObject.transform, "✕", OnCloseClicked, ButtonColor);
     }
 
     Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color)
@@ -460,6 +501,13 @@ public class RecordingPlaybackController : MonoBehaviour
         ApplySampleAt(playbackTime);
         UpdateSliderAndTimeText();
         SetPlaying(true);
+    }
+
+    void OnCloseClicked()
+    {
+        Action callback = onManualClose;
+        CleanUp();
+        callback?.Invoke();
     }
 
     void OnLoopToggleClicked()

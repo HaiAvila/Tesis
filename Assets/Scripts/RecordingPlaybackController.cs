@@ -71,6 +71,11 @@ public class RecordingPlaybackController : MonoBehaviour
         samples = null;
         playbackTime = 0f;
         isPlaying = false;
+
+#if DIRECTOR_BUILD
+        if (DirectorFreeFlyCamera.Instance != null)
+            DirectorFreeFlyCamera.Instance.DisableFly();
+#endif
     }
 
     void LoadAndStart(int shotNumber)
@@ -101,6 +106,11 @@ public class RecordingPlaybackController : MonoBehaviour
         BuildPanel();
         ApplySampleAt(0f);
         SetPlaying(true);
+
+#if DIRECTOR_BUILD
+        if (DirectorFreeFlyCamera.Instance != null)
+            DirectorFreeFlyCamera.Instance.EnableFly();
+#endif
 
         playbackCoroutine = StartCoroutine(PlaybackLoop());
     }

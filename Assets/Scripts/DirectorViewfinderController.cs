@@ -1,8 +1,11 @@
+using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if DIRECTOR_BUILD
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 #endif
@@ -12,7 +15,12 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // shown on a handheld world-space panel (like checking a phone screen), toggled
 // visible/hidden with the right controller's Grip button, with zoom on the same hand's
 // joystick (push up to zoom in, down to zoom out, adjusting the camera's Field of View).
-// No other framing controls yet, and no saved camera position/configuration.
+//
+// The panel also has a small button bar: "Guardar framing" saves the camera's current
+// world position/rotation/FOV for the active shot, and "Framings" opens a short list of
+// previously saved ones for that shot with a "Cargar" button each. Loading one snaps the
+// camera to that saved pose and LOCKS it there (ignoring the hand) until the director
+// physically moves the controller again - see UpdateLock.
 //
 // Right hand chosen deliberately, after checking rather than assuming: neither controller
 // in this project's XR rig is actually wired up for UI ray/poke interaction yet - both
@@ -57,24 +65,59 @@ public class DirectorViewfinderController : MonoBehaviour
     const float ZoomSpeedDegreesPerSecond = 30f; // full 60° range in 2s at full deflection
     const float ZoomJoystickDeadzone = 0.15f;
 
+    // A loaded framing stays fixed in world space until the controller itself moves past
+    // these thresholds - small enough to feel deliberate (not triggered by hand tremor),
+    // large enough that picking the controller back up releases the lock promptly.
+    const float UnlockDistanceMeters = 0.03f;
+    const float UnlockAngleDegrees = 5f;
+
+    const int PanelIconFontSize = 28;
+    const float PanelButtonSize = 90f; // canvas units, same scale as the 640x480 feed
+    const float PanelButtonBarHeight = 90f;
+    const float PanelRowSpacing = 10f;
+
+    const int FramingFontSize = 22;
+    const float FramingRowHeight = 64f;
+    const float FramingLoadButtonWidth = 140f;
+    static readonly Vector3 FramingListLocalOffset = new Vector3(0f, 0.09f, 0f); // above the main panel, placeholder like every other offset here
+
+    static readonly Color PanelButtonColor = new Color(0.28f, 0.28f, 0.34f, 0.9f);
+    static readonly Color PanelButtonTextColor = new Color(0.95f, 0.95f, 0.98f, 1f);
+    static readonly Color PanelRowColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+
 #if DIRECTOR_BUILD
     const int FindControllerMaxAttempts = 30; // ~0.5s at 60fps
 
     InputAction gripToggleAction;
     InputAction zoomAction;
+    Font uiFont;
     GameObject viewfinderRoot;
+    GameObject framingListObject;
     Transform panelTransform;
+    Transform framingListTransform;
+    Transform rightControllerTransform;
     Camera viewfinderCamera;
     RenderTexture renderTexture;
     Coroutine buildCoroutine;
     GameObject disabledTurnObject;
     float currentFieldOfView;
     bool isVisible;
+
+    // Set when a saved framing is loaded - the camera holds this world pose regardless of
+    // hand movement until UpdateLock detects the controller itself has moved enough to
+    // count as the director taking manual control back.
+    bool isLocked;
+    Vector3 lockedPosition;
+    Quaternion lockedRotation;
+    Vector3 controllerPositionAtLock;
+    Quaternion controllerRotationAtLock;
 #endif
 
     void Awake()
     {
 #if DIRECTOR_BUILD
+        uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
         // Same curly-brace "usage" binding convention as the recording shortcut and
         // Play/Pause, plus the XR Device Simulator's equivalent for in-Editor testing.
         gripToggleAction = new InputAction("DirectorViewfinderToggle", InputActionType.Button);
@@ -135,6 +178,11 @@ public class DirectorViewfinderController : MonoBehaviour
         viewfinderRoot = null;
         panelTransform = null;
         viewfinderCamera = null;
+        rightControllerTransform = null;
+
+        // framingListObject is a child of viewfinderRoot, already destroyed above.
+        framingListObject = null;
+        framingListTransform = null;
 
         if (renderTexture != null)
             renderTexture.Release();
@@ -145,6 +193,7 @@ public class DirectorViewfinderController : MonoBehaviour
         disabledTurnObject = null;
 
         isVisible = false;
+        isLocked = false;
     }
 
     void Update()
@@ -153,6 +202,7 @@ public class DirectorViewfinderController : MonoBehaviour
             return;
 
         UpdateZoom();
+        UpdateLock();
         UpdatePanelFacing();
     }
 
@@ -171,29 +221,62 @@ public class DirectorViewfinderController : MonoBehaviour
         viewfinderCamera.fieldOfView = currentFieldOfView;
     }
 
-    // Recomputes the panel's rotation every frame instead of a fixed local angle relative
-    // to the controller - a guessed fixed angle turned out to face the wrong way (the
-    // director reported seeing a mirrored, slanted view, i.e. the panel's back). Reuses the
-    // exact same LookRotation convention as every other panel in this project (pause menu,
-    // decision popup, playback panel, Favoritos): forward = direction AWAY from the
-    // viewer, toward where the panel sits, which is the orientation those panels are
-    // confirmed to render correctly (readable, not mirrored) with. Only the panel's
-    // position stays hand-anchored (it's still a child of the controller); the rotation is
-    // independent so it always faces the director no matter how the hand is turned.
-    void UpdatePanelFacing()
+    // While locked (a saved framing was just loaded), the camera is still a child of the
+    // controller - without this, it would just sit at whatever local offset was implied by
+    // the saved world pose at the moment it was loaded, and immediately start drifting
+    // again as the hand moves. Re-applying the saved world pose every frame keeps it
+    // genuinely fixed regardless of hand movement. The lock releases - re-gluing the camera
+    // to the hand's current pose - once the controller itself has moved past the unlock
+    // thresholds, which reads as "pick the camera back up to take control again".
+    void UpdateLock()
     {
-        if (panelTransform == null)
+        if (!isLocked || viewfinderCamera == null)
             return;
 
+        viewfinderCamera.transform.SetPositionAndRotation(lockedPosition, lockedRotation);
+
+        if (rightControllerTransform == null)
+            return;
+
+        float moved = Vector3.Distance(rightControllerTransform.position, controllerPositionAtLock);
+        float rotated = Quaternion.Angle(rightControllerTransform.rotation, controllerRotationAtLock);
+        if (moved <= UnlockDistanceMeters && rotated <= UnlockAngleDegrees)
+            return;
+
+        isLocked = false;
+        viewfinderCamera.transform.localPosition = Vector3.zero;
+        viewfinderCamera.transform.localRotation = Quaternion.identity;
+    }
+
+    // Recomputes the panel's (and, if open, the framing list's) rotation every frame
+    // instead of a fixed local angle relative to the controller - a guessed fixed angle
+    // turned out to face the wrong way (the director reported seeing a mirrored, slanted
+    // view, i.e. the panel's back). Reuses the exact same LookRotation convention as every
+    // other panel in this project (pause menu, decision popup, playback panel, Favoritos):
+    // forward = direction AWAY from the viewer, toward where the panel sits, which is the
+    // orientation those panels are confirmed to render correctly (readable, not mirrored)
+    // with. Only position stays hand-anchored (still a child of the controller); rotation
+    // is independent so it always faces the director no matter how the hand is turned.
+    void UpdatePanelFacing()
+    {
         Camera headCamera = Camera.main;
         if (headCamera == null)
             return;
 
-        Vector3 forward = panelTransform.position - headCamera.transform.position;
+        FacePlayer(panelTransform, headCamera);
+        FacePlayer(framingListTransform, headCamera);
+    }
+
+    static void FacePlayer(Transform target, Camera headCamera)
+    {
+        if (target == null)
+            return;
+
+        Vector3 forward = target.position - headCamera.transform.position;
         if (forward.sqrMagnitude < 0.0001f)
             return;
 
-        panelTransform.rotation = Quaternion.LookRotation(forward, Vector3.up);
+        target.rotation = Quaternion.LookRotation(forward, Vector3.up);
     }
 
     // "Right Controller" isn't reliably found by GameObject.Find() at the exact instant
@@ -232,6 +315,7 @@ public class DirectorViewfinderController : MonoBehaviour
         }
 
         AssignRayVisualLayer(rightController);
+        rightControllerTransform = rightController.transform;
 
         renderTexture = new RenderTexture(RenderTextureWidth, RenderTextureHeight, 16);
         renderTexture.Create();
@@ -324,45 +408,308 @@ public class DirectorViewfinderController : MonoBehaviour
             Debug.LogWarning($"DirectorViewfinderController: layer '{PanelLayerName}' not found - the viewfinder panel will render inside its own feed (feedback loop).");
     }
 
-    // World Space Canvas + RawImage bound to the RenderTexture - same "no prefabs, built at
-    // runtime in code" convention as every other panel in this project, reused here instead
-    // of introducing an unlit-quad-plus-material approach nothing else uses.
+    // World Space Canvas + RawImage bound to the RenderTexture, plus a small button bar
+    // below it (Guardar framing / Framings) - same "no prefabs, built at runtime in code"
+    // convention as every other panel in this project, reused here instead of introducing
+    // an unlit-quad-plus-material approach nothing else uses.
     //
-    // Placed on its own dedicated layer (see PanelLayerName) so the viewfinder camera can
-    // exclude just this panel from its culling mask - the only thing that stops it from
-    // recursively rendering its own display.
+    // Placed on its own dedicated layer (see PanelLayerName), and every child created here
+    // too (layer isn't inherited automatically in Unity) - so the viewfinder camera can
+    // exclude the whole panel, buttons included, from its culling mask. Without this the
+    // camera would recursively render its own display.
     void BuildPanel(Transform parent)
     {
-        var canvasObject = new GameObject("ViewfinderPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
+        float pixelsToMeters = PanelWidth / RenderTextureWidth; // == PanelHeight / RenderTextureHeight (4:3)
+
+        var canvasObject = new GameObject("ViewfinderPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvasObject.transform.SetParent(parent, false);
         canvasObject.transform.localPosition = PanelLocalPosition;
         panelTransform = canvasObject.transform;
-
-        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
-        if (panelLayer >= 0)
-            canvasObject.layer = panelLayer;
+        ApplyPanelLayer(canvasObject, panelLayer);
 
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
 
-        // Sized 1:1 with the RenderTexture in canvas units, then scaled down to a physical,
-        // roughly phone-screen size in meters - same pixel-size-then-world-scale approach
-        // used for every other world-space panel in this project.
+        // Sized 1:1 with the RenderTexture in canvas units (plus the button bar strip),
+        // then scaled down to a physical, roughly phone-screen size in meters - same
+        // pixel-size-then-world-scale approach used for every other world-space panel in
+        // this project.
         RectTransform canvasRect = (RectTransform)canvasObject.transform;
-        canvasRect.sizeDelta = new Vector2(RenderTextureWidth, RenderTextureHeight);
-        canvasRect.localScale = new Vector3(PanelWidth / RenderTextureWidth, PanelHeight / RenderTextureHeight, 1f);
+        canvasRect.sizeDelta = new Vector2(RenderTextureWidth, RenderTextureHeight + PanelRowSpacing + PanelButtonBarHeight);
+        canvasRect.localScale = Vector3.one * pixelsToMeters;
 
-        var imageObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage));
-        imageObject.transform.SetParent(canvasRect, false);
-        if (panelLayer >= 0)
-            imageObject.layer = panelLayer;
-        RectTransform imageRect = (RectTransform)imageObject.transform;
-        imageRect.anchorMin = Vector2.zero;
-        imageRect.anchorMax = Vector2.one;
-        imageRect.offsetMin = Vector2.zero;
-        imageRect.offsetMax = Vector2.zero;
+        var rootLayoutObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
+        rootLayoutObject.transform.SetParent(canvasRect, false);
+        ApplyPanelLayer(rootLayoutObject, panelLayer);
+        RectTransform rootRect = (RectTransform)rootLayoutObject.transform;
+        rootRect.anchorMin = Vector2.zero;
+        rootRect.anchorMax = Vector2.one;
+        rootRect.offsetMin = Vector2.zero;
+        rootRect.offsetMax = Vector2.zero;
 
+        VerticalLayoutGroup rootLayout = rootLayoutObject.GetComponent<VerticalLayoutGroup>();
+        rootLayout.spacing = PanelRowSpacing;
+        rootLayout.childAlignment = TextAnchor.UpperCenter;
+        rootLayout.childControlWidth = true;
+        rootLayout.childControlHeight = true;
+        rootLayout.childForceExpandWidth = true;
+        rootLayout.childForceExpandHeight = false;
+
+        var imageObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage), typeof(LayoutElement));
+        imageObject.transform.SetParent(rootRect, false);
+        ApplyPanelLayer(imageObject, panelLayer);
+        imageObject.GetComponent<LayoutElement>().preferredHeight = RenderTextureHeight;
         imageObject.GetComponent<RawImage>().texture = renderTexture;
+
+        BuildButtonBar(rootRect, panelLayer);
+
+        if (FindFirstObjectByType<EventSystem>() == null)
+            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+    }
+
+    void BuildButtonBar(RectTransform parent, int panelLayer)
+    {
+        var rowObject = new GameObject("ButtonBar", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        rowObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(rowObject, panelLayer);
+        rowObject.GetComponent<LayoutElement>().preferredHeight = PanelButtonBarHeight;
+
+        HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
+        rowLayout.spacing = PanelRowSpacing;
+        rowLayout.childAlignment = TextAnchor.MiddleCenter;
+        rowLayout.childControlWidth = false;
+        rowLayout.childControlHeight = false;
+        rowLayout.childForceExpandWidth = false;
+        rowLayout.childForceExpandHeight = false;
+
+        CreatePanelIconButton(rowObject.transform, "\U0001F4BE", OnSaveFramingClicked, panelLayer); // 💾 Guardar framing
+        CreatePanelIconButton(rowObject.transform, "\U0001F4C2", OnToggleFramingListClicked, panelLayer); // 📂 Framings
+    }
+
+    Text CreatePanelIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, int panelLayer)
+    {
+        var buttonObject = new GameObject($"Button_{symbol}", typeof(RectTransform), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(buttonObject, panelLayer);
+        RectTransform buttonRect = (RectTransform)buttonObject.transform;
+        buttonRect.sizeDelta = new Vector2(PanelButtonSize, PanelButtonSize);
+        buttonObject.GetComponent<Image>().color = PanelButtonColor;
+        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(buttonObject.transform, false);
+        ApplyPanelLayer(textObject, panelLayer);
+        RectTransform textRect = (RectTransform)textObject.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+
+        Text text = textObject.GetComponent<Text>();
+        text.font = uiFont;
+        text.text = symbol;
+        text.fontSize = PanelIconFontSize;
+        text.fontStyle = FontStyle.Bold;
+        text.color = PanelButtonTextColor;
+        text.alignment = TextAnchor.MiddleCenter;
+
+        return text;
+    }
+
+    void ApplyPanelLayer(GameObject obj, int panelLayer)
+    {
+        if (panelLayer >= 0)
+            obj.layer = panelLayer;
+    }
+
+    void OnSaveFramingClicked()
+    {
+        if (viewfinderCamera == null)
+            return;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("DirectorViewfinderController: no ShotListDatabase instance found, cannot save the framing.");
+            return;
+        }
+
+        Transform cameraTransform = viewfinderCamera.transform;
+        database.SaveCameraFraming(Bootstrap.CurrentShotNumber, cameraTransform.position, cameraTransform.rotation, viewfinderCamera.fieldOfView);
+        SendHaptic();
+    }
+
+    void OnToggleFramingListClicked()
+    {
+        if (framingListObject != null)
+        {
+            Destroy(framingListObject);
+            framingListObject = null;
+            framingListTransform = null;
+            SendHaptic();
+            return;
+        }
+
+        ShowFramingList();
+        SendHaptic();
+    }
+
+    // Short, unscrolled list (no cap on how many a shot can have yet) of every framing
+    // saved for the active shot, most recent first - rebuilt fresh from the DB each time
+    // it's opened, as its own small canvas positioned above the main panel so it doesn't
+    // crowd the feed. Each row is self-contained (own background), rather than the panel
+    // having one shared background, since the canvas's own height is driven by a
+    // ContentSizeFitter reacting to the rows - simpler than sizing a wrapping background to
+    // match.
+    void ShowFramingList()
+    {
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("DirectorViewfinderController: no ShotListDatabase instance found, cannot load framings.");
+            return;
+        }
+
+        List<CameraFraming> framings = database.GetCameraFramingsForShot(Bootstrap.CurrentShotNumber);
+        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
+        float pixelsToMeters = PanelWidth / RenderTextureWidth;
+
+        framingListObject = new GameObject("FramingList", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+        framingListObject.transform.SetParent(viewfinderRoot.transform, false);
+        ApplyPanelLayer(framingListObject, panelLayer);
+        framingListObject.transform.localPosition = PanelLocalPosition + FramingListLocalOffset;
+        framingListTransform = framingListObject.transform;
+
+        Canvas canvas = framingListObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+
+        RectTransform listRect = (RectTransform)framingListObject.transform;
+        listRect.sizeDelta = new Vector2(RenderTextureWidth, FramingRowHeight); // height placeholder - ContentSizeFitter drives the real value
+        listRect.localScale = Vector3.one * pixelsToMeters;
+
+        VerticalLayoutGroup listLayout = framingListObject.GetComponent<VerticalLayoutGroup>();
+        listLayout.spacing = PanelRowSpacing;
+        listLayout.padding = new RectOffset(12, 12, 12, 12);
+        listLayout.childAlignment = TextAnchor.UpperCenter;
+        listLayout.childControlWidth = true;
+        listLayout.childControlHeight = true;
+        listLayout.childForceExpandWidth = true;
+        listLayout.childForceExpandHeight = false;
+
+        framingListObject.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        if (framings.Count == 0)
+        {
+            CreateFramingMessageRow(framingListObject.transform, "Sin framings guardados para este shot.", panelLayer);
+        }
+        else
+        {
+            foreach (CameraFraming framing in framings)
+                CreateFramingRow(framingListObject.transform, framing, panelLayer);
+        }
+    }
+
+    void CreateFramingMessageRow(Transform parent, string message, int panelLayer)
+    {
+        var textObject = new GameObject("Message", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        textObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(textObject, panelLayer);
+        textObject.GetComponent<LayoutElement>().preferredHeight = FramingRowHeight;
+
+        Text text = textObject.GetComponent<Text>();
+        text.font = uiFont;
+        text.text = message;
+        text.fontSize = FramingFontSize;
+        text.color = PanelButtonTextColor;
+        text.alignment = TextAnchor.MiddleCenter;
+    }
+
+    void CreateFramingRow(Transform parent, CameraFraming framing, int panelLayer)
+    {
+        var rowObject = new GameObject($"Framing_{framing.Id}", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        rowObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(rowObject, panelLayer);
+        rowObject.GetComponent<Image>().color = PanelRowColor;
+        rowObject.GetComponent<LayoutElement>().preferredHeight = FramingRowHeight;
+
+        HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
+        rowLayout.spacing = PanelRowSpacing;
+        rowLayout.padding = new RectOffset(12, 12, 4, 4);
+        rowLayout.childAlignment = TextAnchor.MiddleLeft;
+        rowLayout.childControlWidth = true;
+        rowLayout.childControlHeight = true;
+        rowLayout.childForceExpandWidth = false;
+        rowLayout.childForceExpandHeight = true;
+
+        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        labelObject.transform.SetParent(rowObject.transform, false);
+        ApplyPanelLayer(labelObject, panelLayer);
+        labelObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+        Text label = labelObject.GetComponent<Text>();
+        label.font = uiFont;
+        label.text = FormatFramingDateTime(framing.Timestamp);
+        label.fontSize = FramingFontSize;
+        label.color = PanelButtonTextColor;
+        label.alignment = TextAnchor.MiddleLeft;
+
+        var loadButtonObject = new GameObject("LoadButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        loadButtonObject.transform.SetParent(rowObject.transform, false);
+        ApplyPanelLayer(loadButtonObject, panelLayer);
+        loadButtonObject.GetComponent<Image>().color = PanelButtonColor;
+        LayoutElement loadLayout = loadButtonObject.GetComponent<LayoutElement>();
+        loadLayout.preferredWidth = FramingLoadButtonWidth;
+        loadLayout.preferredHeight = FramingRowHeight - 12f;
+
+        var loadTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        loadTextObject.transform.SetParent(loadButtonObject.transform, false);
+        ApplyPanelLayer(loadTextObject, panelLayer);
+        RectTransform loadTextRect = (RectTransform)loadTextObject.transform;
+        loadTextRect.anchorMin = Vector2.zero;
+        loadTextRect.anchorMax = Vector2.one;
+        loadTextRect.offsetMin = Vector2.zero;
+        loadTextRect.offsetMax = Vector2.zero;
+
+        Text loadText = loadTextObject.GetComponent<Text>();
+        loadText.font = uiFont;
+        loadText.text = "Cargar";
+        loadText.fontSize = FramingFontSize;
+        loadText.fontStyle = FontStyle.Bold;
+        loadText.color = PanelButtonTextColor;
+        loadText.alignment = TextAnchor.MiddleCenter;
+
+        CameraFraming capturedFraming = framing;
+        loadButtonObject.GetComponent<Button>().onClick.AddListener(() => OnLoadFramingClicked(capturedFraming));
+    }
+
+    void OnLoadFramingClicked(CameraFraming framing)
+    {
+        if (viewfinderCamera == null)
+            return;
+
+        lockedPosition = new Vector3(framing.PositionX, framing.PositionY, framing.PositionZ);
+        lockedRotation = new Quaternion(framing.RotationX, framing.RotationY, framing.RotationZ, framing.RotationW);
+        currentFieldOfView = Mathf.Clamp(framing.Fov, MinFieldOfView, MaxFieldOfView);
+
+        viewfinderCamera.transform.SetPositionAndRotation(lockedPosition, lockedRotation);
+        viewfinderCamera.fieldOfView = currentFieldOfView;
+
+        isLocked = true;
+        if (rightControllerTransform != null)
+        {
+            controllerPositionAtLock = rightControllerTransform.position;
+            controllerRotationAtLock = rightControllerTransform.rotation;
+        }
+
+        SendHaptic();
+    }
+
+    static string FormatFramingDateTime(string timestamp)
+    {
+        return DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsed)
+            ? parsed.ToString("dd/MM/yyyy HH:mm")
+            : timestamp;
     }
 
     void OnGripPressed(InputAction.CallbackContext context)

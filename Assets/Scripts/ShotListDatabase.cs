@@ -22,6 +22,72 @@ public class ShotListDatabase : MonoBehaviour
             ImportCsv(connection);
             CreateSessionTables(connection);
             EnsureSesionesColumns(connection);
+            CreateCameraFramingsTable(connection);
+        }
+    }
+
+    // A saved director-viewfinder framing (world position/rotation/FOV) for a shot - a
+    // brand new table, not an extension of an existing one, so CREATE TABLE IF NOT EXISTS
+    // is already safe on its own (no ALTER TABLE migration needed, unlike es_preferida/
+    // es_favorita above, which added columns to an existing Sesiones).
+    void CreateCameraFramingsTable(SQLiteConnection connection)
+    {
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS CameraFramings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shot_number INTEGER,
+                position_x REAL,
+                position_y REAL,
+                position_z REAL,
+                rotation_x REAL,
+                rotation_y REAL,
+                rotation_z REAL,
+                rotation_w REAL,
+                fov REAL,
+                timestamp TEXT
+            );");
+    }
+
+    // Position/rotation are captured in world space (not relative to the controller) - the
+    // hand keeps moving after the framing is saved, so a controller-relative offset would
+    // immediately point somewhere else.
+    public int SaveCameraFraming(int shotNumber, Vector3 position, Quaternion rotation, float fov)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            var framing = new CameraFraming
+            {
+                ShotNumber = shotNumber,
+                PositionX = position.x,
+                PositionY = position.y,
+                PositionZ = position.z,
+                RotationX = rotation.x,
+                RotationY = rotation.y,
+                RotationZ = rotation.z,
+                RotationW = rotation.w,
+                Fov = fov,
+                Timestamp = DateTime.Now.ToString("o")
+            };
+
+            connection.Insert(framing);
+
+            Debug.Log($"ShotListDatabase: saved camera framing {framing.Id} for shot {shotNumber} (fov={fov:F1}).");
+            return framing.Id;
+        }
+    }
+
+    // Most recent first - matches how the framing list in the viewfinder panel should show
+    // them. No limit on how many a shot can have yet - revisit if it gets unwieldy.
+    public List<CameraFraming> GetCameraFramingsForShot(int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<CameraFraming>(
+                "SELECT * FROM CameraFramings WHERE shot_number = ? ORDER BY id DESC;", shotNumber);
         }
     }
 
@@ -458,4 +524,20 @@ public class Metric
     [Column("rot_y")] public float RotY { get; set; }
     [Column("rot_z")] public float RotZ { get; set; }
     [Column("rot_w")] public float RotW { get; set; }
+}
+
+[Table("CameraFramings")]
+public class CameraFraming
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("position_x")] public float PositionX { get; set; }
+    [Column("position_y")] public float PositionY { get; set; }
+    [Column("position_z")] public float PositionZ { get; set; }
+    [Column("rotation_x")] public float RotationX { get; set; }
+    [Column("rotation_y")] public float RotationY { get; set; }
+    [Column("rotation_z")] public float RotationZ { get; set; }
+    [Column("rotation_w")] public float RotationW { get; set; }
+    [Column("fov")] public float Fov { get; set; }
+    [Column("timestamp")] public string Timestamp { get; set; }
 }

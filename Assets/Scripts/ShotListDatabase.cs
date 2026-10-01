@@ -21,12 +21,32 @@ public class ShotListDatabase : MonoBehaviour
             CreateShotsTable(connection);
             ImportCsv(connection);
             CreateSessionTables(connection);
+            EnsureSesionesColumns(connection);
         }
     }
 
+    // Sesiones predates es_preferida/es_favorita - real databases created before this
+    // feature won't have these columns yet. Checked via PRAGMA table_info and only added
+    // with ALTER TABLE when actually missing, so opening an older shotlist.db never breaks.
+    void EnsureSesionesColumns(SQLiteConnection connection)
+    {
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (SqliteColumnInfo column in connection.Query<SqliteColumnInfo>("PRAGMA table_info(Sesiones);"))
+            existingColumns.Add(column.name);
+
+        if (!existingColumns.Contains("es_preferida"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN es_preferida INTEGER NOT NULL DEFAULT 0;");
+
+        if (!existingColumns.Contains("es_favorita"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN es_favorita INTEGER NOT NULL DEFAULT 0;");
+    }
+
     // Creates the Sesiones/Metricas record for a finished rehearsal recording in a single
-    // transaction: one Sesiones row plus every buffered Metricas sample.
-    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples)
+    // transaction: one Sesiones row (with es_preferida/es_favorita already set, if
+    // requested, directly in the INSERT - never a follow-up UPDATE) plus every buffered
+    // Metricas sample. Marking the new session preferida unmarks any other preferida
+    // session of the same shot first, in the same transaction.
+    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples, bool esPreferida = false, bool esFavorita = false)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -36,11 +56,16 @@ public class ShotListDatabase : MonoBehaviour
             {
                 ShotNumber = shotNumber,
                 FechaHora = startedAt.ToString("o"),
-                Duracion = duration
+                Duracion = duration,
+                EsPreferida = esPreferida,
+                EsFavorita = esFavorita
             };
 
             connection.RunInTransaction(() =>
             {
+                if (esPreferida)
+                    connection.Execute("UPDATE Sesiones SET es_preferida = 0 WHERE shot_number = ?;", shotNumber);
+
                 connection.Insert(session);
 
                 foreach (Metric sample in samples)
@@ -49,8 +74,35 @@ public class ShotListDatabase : MonoBehaviour
                 connection.InsertAll(samples);
             });
 
-            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {duration:F1}s).");
+            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
+        }
+    }
+
+    // Exclusive: unmarks any other preferida session of the same shot first, then marks
+    // this one, in a single transaction.
+    public void SetPreferida(int sessionId, int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.RunInTransaction(() =>
+            {
+                connection.Execute("UPDATE Sesiones SET es_preferida = 0 WHERE shot_number = ?;", shotNumber);
+                connection.Execute("UPDATE Sesiones SET es_preferida = 1 WHERE id = ?;", sessionId);
+            });
+        }
+    }
+
+    // Non-exclusive bookmark - marking or unmarking one session never touches any other.
+    public void SetFavorita(int sessionId, bool esFavorita)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.Execute("UPDATE Sesiones SET es_favorita = ? WHERE id = ?;", esFavorita ? 1 : 0, sessionId);
         }
     }
 
@@ -108,6 +160,54 @@ public class ShotListDatabase : MonoBehaviour
         {
             return connection.Query<RecordingSession>(
                 "SELECT * FROM Sesiones WHERE shot_number = ? ORDER BY id DESC LIMIT 1;", shotNumber).FirstOrDefault();
+        }
+    }
+
+    // All recorded sessions for a shot, preferida first (if any), then most recent first -
+    // matches how the multi-session list in Inspección de Escenas should sort/highlight.
+    public List<RecordingSession> GetSessionsForShot(int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE shot_number = ? ORDER BY es_preferida DESC, id DESC;", shotNumber);
+        }
+    }
+
+    public RecordingSession GetSession(int sessionId)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE id = ? LIMIT 1;", sessionId).FirstOrDefault();
+        }
+    }
+
+    // Every favorited session across every scene/shot, most recent first - for the
+    // Favoritos screen.
+    public List<RecordingSession> GetFavoriteSessions()
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE es_favorita = 1 ORDER BY id DESC;");
+        }
+    }
+
+    public Shot GetShot(int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<Shot>(
+                "SELECT * FROM Shots WHERE shot_number = ? LIMIT 1;", shotNumber).FirstOrDefault();
         }
     }
 
@@ -334,6 +434,15 @@ public class RecordingSession
     [Column("shot_number")] public int ShotNumber { get; set; }
     [Column("fecha_hora")] public string FechaHora { get; set; }
     [Column("duracion")] public float Duracion { get; set; }
+    [Column("es_preferida")] public bool EsPreferida { get; set; }
+    [Column("es_favorita")] public bool EsFavorita { get; set; }
+}
+
+// Maps a single row of "PRAGMA table_info(Sesiones);" - only the column name is needed,
+// to check whether es_preferida/es_favorita already exist before altering the table.
+class SqliteColumnInfo
+{
+    public string name { get; set; }
 }
 
 [Table("Metricas")]

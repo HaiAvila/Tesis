@@ -6,6 +6,14 @@ public class Bootstrap : MonoBehaviour
 {
     public static int CurrentShotNumber;
 
+    // Explicit session to load when a content scene opens in Inspección de Escenas - set
+    // when the director picked a specific session from the multi-session list or jumped in
+    // from Favoritos. Null means "no specific pick", which falls back to the shot's most
+    // recent session (the original, single-session behavior). Always consumed (reset to
+    // null) by RecordingPlaybackController right after it's read, so a stale value can
+    // never leak into an unrelated later shot selection.
+    public static int? CurrentSessionId;
+
     // True while picking a shot in SceneSelect is for solo review (Inspección de Escenas,
     // or the actor practicing alone), not a live synced rehearsal with a director/actor on
     // the other end. Every entry point into SceneSelect must set this explicitly - it's

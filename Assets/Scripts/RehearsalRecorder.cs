@@ -47,14 +47,24 @@ public class RehearsalRecorder : MonoBehaviour
     const float DecisionButtonHeight = 90f;
     const float DecisionButtonSpacing = 30f;
     const float DecisionPanelPadding = 40f;
+    const int DecisionCheckboxFontSize = 22;
+    const float DecisionCheckboxHeight = 50f;
+    const float DecisionCheckboxSpacing = 20f;
+    const float DecisionRowSpacing = 16f;
 
     static readonly Color DecisionBackgroundColor = new Color(0.1f, 0.1f, 0.14f, 0.85f);
     static readonly Color DecisionButtonColor = new Color(0.28f, 0.28f, 0.34f, 0.9f);
+    static readonly Color DecisionCheckboxOffColor = new Color(0.2f, 0.2f, 0.24f, 0.85f);
+    static readonly Color DecisionCheckboxOnColor = new Color(0.25f, 0.55f, 0.3f, 0.85f);
     static readonly Color DecisionTextColor = new Color(0.95f, 0.95f, 0.98f, 1f);
 
     InputAction recordingShortcutAction;
     Font uiFont;
     GameObject decisionPanelObject;
+    bool markAsPreferida;
+    bool markAsFavorita;
+    Image preferidaCheckboxImage;
+    Image favoritaCheckboxImage;
 #endif
 
     void Awake()
@@ -141,6 +151,11 @@ public class RehearsalRecorder : MonoBehaviour
         pendingDuration = Time.time - recordingStartTime;
 
 #if DIRECTOR_BUILD
+        // Fresh choice for a fresh recording - reset here (once, per real stop), not inside
+        // ShowDecisionPanel itself, since that's also re-invoked as the "Ver replay" close
+        // callback and shouldn't wipe out a checkbox the director already ticked.
+        markAsPreferida = false;
+        markAsFavorita = false;
         ShowDecisionPanel();
 #endif
     }
@@ -175,7 +190,7 @@ public class RehearsalRecorder : MonoBehaviour
         canvas.worldCamera = headCamera;
 
         float panelWidth = DecisionButtonWidth * 3f + DecisionButtonSpacing * 2f + DecisionPanelPadding * 2f;
-        float panelHeight = DecisionButtonHeight + DecisionPanelPadding * 2f;
+        float panelHeight = DecisionCheckboxHeight + DecisionRowSpacing + DecisionButtonHeight + DecisionPanelPadding * 2f;
 
         RectTransform canvasRect = (RectTransform)decisionPanelObject.transform;
         canvasRect.sizeDelta = new Vector2(panelWidth, panelHeight);
@@ -192,31 +207,112 @@ public class RehearsalRecorder : MonoBehaviour
         backgroundRect.offsetMax = Vector2.zero;
         background.GetComponent<Image>().color = DecisionBackgroundColor;
 
-        var layoutObject = new GameObject("Options", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-        layoutObject.transform.SetParent(canvasRect, false);
-        RectTransform layoutRect = (RectTransform)layoutObject.transform;
-        layoutRect.anchorMin = Vector2.zero;
-        layoutRect.anchorMax = Vector2.one;
-        layoutRect.offsetMin = new Vector2(DecisionPanelPadding, DecisionPanelPadding);
-        layoutRect.offsetMax = new Vector2(-DecisionPanelPadding, -DecisionPanelPadding);
+        var rootLayoutObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
+        rootLayoutObject.transform.SetParent(canvasRect, false);
+        RectTransform rootRect = (RectTransform)rootLayoutObject.transform;
+        rootRect.anchorMin = Vector2.zero;
+        rootRect.anchorMax = Vector2.one;
+        rootRect.offsetMin = new Vector2(DecisionPanelPadding, DecisionPanelPadding);
+        rootRect.offsetMax = new Vector2(-DecisionPanelPadding, -DecisionPanelPadding);
 
-        HorizontalLayoutGroup layout = layoutObject.GetComponent<HorizontalLayoutGroup>();
-        layout.spacing = DecisionButtonSpacing;
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = true;
+        VerticalLayoutGroup rootLayout = rootLayoutObject.GetComponent<VerticalLayoutGroup>();
+        rootLayout.spacing = DecisionRowSpacing;
+        rootLayout.childAlignment = TextAnchor.MiddleCenter;
+        rootLayout.childControlWidth = true;
+        rootLayout.childControlHeight = true;
+        rootLayout.childForceExpandWidth = true;
+        rootLayout.childForceExpandHeight = false;
 
-        CreateDecisionButton(layoutRect, "Ver replay", OnViewReplayClicked);
-        CreateDecisionButton(layoutRect, "Guardar", OnSaveClicked);
-        CreateDecisionButton(layoutRect, "Descartar", OnDiscardClicked);
+        var checkboxRowObject = new GameObject("Checkboxes", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        checkboxRowObject.transform.SetParent(rootRect, false);
+        checkboxRowObject.GetComponent<LayoutElement>().preferredHeight = DecisionCheckboxHeight;
+
+        HorizontalLayoutGroup checkboxLayout = checkboxRowObject.GetComponent<HorizontalLayoutGroup>();
+        checkboxLayout.spacing = DecisionCheckboxSpacing;
+        checkboxLayout.childAlignment = TextAnchor.MiddleCenter;
+        checkboxLayout.childControlWidth = true;
+        checkboxLayout.childControlHeight = true;
+        checkboxLayout.childForceExpandWidth = true;
+        checkboxLayout.childForceExpandHeight = true;
+
+        preferidaCheckboxImage = CreateCheckbox(checkboxRowObject.transform, "Marcar como preferida", markAsPreferida, OnPreferidaCheckboxClicked);
+        favoritaCheckboxImage = CreateCheckbox(checkboxRowObject.transform, "Marcar como favorita", markAsFavorita, OnFavoritaCheckboxClicked);
+
+        var buttonRowObject = new GameObject("Options", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        buttonRowObject.transform.SetParent(rootRect, false);
+        buttonRowObject.GetComponent<LayoutElement>().preferredHeight = DecisionButtonHeight;
+
+        HorizontalLayoutGroup buttonLayout = buttonRowObject.GetComponent<HorizontalLayoutGroup>();
+        buttonLayout.spacing = DecisionButtonSpacing;
+        buttonLayout.childAlignment = TextAnchor.MiddleCenter;
+        buttonLayout.childControlWidth = true;
+        buttonLayout.childControlHeight = true;
+        buttonLayout.childForceExpandWidth = true;
+        buttonLayout.childForceExpandHeight = true;
+
+        CreateDecisionButton(buttonRowObject.transform, "Ver replay", OnViewReplayClicked);
+        CreateDecisionButton(buttonRowObject.transform, "Guardar", OnSaveClicked);
+        CreateDecisionButton(buttonRowObject.transform, "Descartar", OnDiscardClicked);
 
         if (FindFirstObjectByType<EventSystem>() == null)
             new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
     }
 
-    void CreateDecisionButton(RectTransform parent, string label, UnityEngine.Events.UnityAction onClick)
+    // Simple checkbox: a plain button whose background color flips between on/off, with a
+    // ✓/☐ prefix baked into the label - matches this project's established convention of
+    // lightweight button-based toggles (e.g. RecordingPlaybackController's loop button)
+    // rather than introducing Unity's Toggle component for the first time.
+    Image CreateCheckbox(Transform parent, string label, bool initialValue, UnityEngine.Events.UnityAction onClick)
+    {
+        var checkboxObject = new GameObject($"Checkbox_{label}", typeof(RectTransform), typeof(Image), typeof(Button));
+        checkboxObject.transform.SetParent(parent, false);
+        Image image = checkboxObject.GetComponent<Image>();
+        image.color = initialValue ? DecisionCheckboxOnColor : DecisionCheckboxOffColor;
+        checkboxObject.GetComponent<Button>().onClick.AddListener(onClick);
+
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(checkboxObject.transform, false);
+        RectTransform textRect = (RectTransform)textObject.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+
+        Text text = textObject.GetComponent<Text>();
+        text.font = uiFont;
+        text.text = (initialValue ? "☑ " : "☐ ") + label;
+        text.fontSize = DecisionCheckboxFontSize;
+        text.color = DecisionTextColor;
+        text.alignment = TextAnchor.MiddleCenter;
+
+        return image;
+    }
+
+    void OnPreferidaCheckboxClicked()
+    {
+        markAsPreferida = !markAsPreferida;
+        UpdateCheckboxVisual(preferidaCheckboxImage, "Marcar como preferida", markAsPreferida);
+    }
+
+    void OnFavoritaCheckboxClicked()
+    {
+        markAsFavorita = !markAsFavorita;
+        UpdateCheckboxVisual(favoritaCheckboxImage, "Marcar como favorita", markAsFavorita);
+    }
+
+    void UpdateCheckboxVisual(Image checkboxImage, string label, bool value)
+    {
+        if (checkboxImage == null)
+            return;
+
+        checkboxImage.color = value ? DecisionCheckboxOnColor : DecisionCheckboxOffColor;
+
+        Text text = checkboxImage.GetComponentInChildren<Text>();
+        if (text != null)
+            text.text = (value ? "☑ " : "☐ ") + label;
+    }
+
+    void CreateDecisionButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
     {
         var buttonObject = new GameObject($"Button_{label}", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
@@ -273,7 +369,7 @@ public class RehearsalRecorder : MonoBehaviour
         if (database == null)
             Debug.LogError("RehearsalRecorder: no ShotListDatabase instance found, recording discarded.");
         else
-            database.SaveRecordingSession(shotNumberAtStart, recordingStartedAt, pendingDuration, buffer);
+            database.SaveRecordingSession(shotNumberAtStart, recordingStartedAt, pendingDuration, buffer, markAsPreferida, markAsFavorita);
 
         buffer.Clear();
     }

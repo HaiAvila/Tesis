@@ -51,12 +51,26 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Color SliderFillColor = new Color(0.6f, 0.6f, 0.68f, 0.8f);
     static readonly Color SliderHandleColor = new Color(0.95f, 0.95f, 0.98f, 0.95f);
 
+    // Same star/heart colors as SceneSelectController and FavoritesPanelController - the
+    // visual language for preferida/favorita is consistent everywhere it appears.
+    static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
+    static readonly Color PreferidaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
+    static readonly Color FavoritaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+
     GameObject capsule;
     GameObject panelObject;
     Text loopText;
     Text timeText;
+    Text preferidaIcon;
+    Text favoritaIcon;
     Slider scrubSlider;
     Font uiFont;
+
+    // The DB-backed session currently playing, if any - null when reviewing an in-memory
+    // buffer that hasn't been saved yet ("Ver replay" before Guardar/Descartar), in which
+    // case there's no session row to mark preferida/favorita on, so those icons are hidden.
+    RecordingSession currentSession;
 
 #if DIRECTOR_BUILD
     InputAction playPauseAction;
@@ -153,8 +167,11 @@ public class RecordingPlaybackController : MonoBehaviour
         panelObject = null;
         loopText = null;
         timeText = null;
+        preferidaIcon = null;
+        favoritaIcon = null;
         scrubSlider = null;
         samples = null;
+        currentSession = null;
         totalDuration = 0f;
         playbackTime = 0f;
         isPlaying = false;
@@ -178,7 +195,17 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        RecordingSession session = database.GetMostRecentSession(shotNumber);
+        RecordingSession session;
+        if (Bootstrap.CurrentSessionId.HasValue)
+        {
+            session = database.GetSession(Bootstrap.CurrentSessionId.Value);
+            Bootstrap.CurrentSessionId = null;
+        }
+        else
+        {
+            session = database.GetMostRecentSession(shotNumber);
+        }
+
         if (session == null)
         {
             Debug.LogWarning($"RecordingPlaybackController: no recorded session found for shot {shotNumber}.");
@@ -192,7 +219,7 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        BeginPlayback(dbSamples, null);
+        BeginPlayback(dbSamples, null, session);
     }
 
     // Plays back an in-memory buffer directly - e.g. "Ver replay" right after stopping a
@@ -212,11 +239,12 @@ public class RecordingPlaybackController : MonoBehaviour
         BeginPlayback(bufferSamples, onClosed);
     }
 
-    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed)
+    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null)
     {
         samples = samplesToPlay;
         totalDuration = samples[samples.Count - 1].TiempoRelativo;
         onManualClose = onClosed;
+        currentSession = session;
 
         BuildCapsule();
         BuildPanel();
@@ -303,7 +331,11 @@ public class RecordingPlaybackController : MonoBehaviour
         ComputeDesiredAnchor(head, out anchorPosition, out anchorRotation);
         isTransitioning = false;
 
-        float buttonCount = onManualClose != null ? 3f : 2f;
+        float buttonCount = 2f; // restart + loop
+        if (currentSession != null)
+            buttonCount += 2f; // preferida + favorita - only when a saved session (not an unsaved buffer) is playing
+        if (onManualClose != null)
+            buttonCount += 1f; // close
         float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
 
@@ -371,9 +403,67 @@ public class RecordingPlaybackController : MonoBehaviour
         CreateIconButton(rowObject.transform, "↺", OnRestartClicked, ButtonColor); // ↺
         loopText = CreateIconButton(rowObject.transform, "∞", OnLoopToggleClicked, ButtonColor); // ∞ (loop toggle; color indicates on/off)
 
+        // Only present for a DB-backed session - an unsaved buffer ("Ver replay" before
+        // Guardar/Descartar) has no session row to mark. Same star/heart language as the
+        // session list and Favoritos; clicking preferida always (re-)assigns it - it's
+        // exclusive per shot, there's no "unset" from here, same as the session list.
+        if (currentSession != null)
+        {
+            preferidaIcon = CreateIconButton(rowObject.transform, currentSession.EsPreferida ? "★" : "☆", OnPreferidaClicked, ButtonColor);
+            preferidaIcon.color = currentSession.EsPreferida ? PreferidaOnColor : PreferidaOffColor;
+
+            favoritaIcon = CreateIconButton(rowObject.transform, currentSession.EsFavorita ? "♥" : "♡", OnFavoritaClicked, ButtonColor);
+            favoritaIcon.color = currentSession.EsFavorita ? FavoritaOnColor : FavoritaOffColor;
+        }
+
         // Only present when reviewing an in-memory buffer (no scene change to exit through).
         if (onManualClose != null)
             CreateIconButton(rowObject.transform, "✕", OnCloseClicked, ButtonColor);
+    }
+
+    void OnPreferidaClicked()
+    {
+        if (currentSession == null)
+            return;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("RecordingPlaybackController: no ShotListDatabase instance found, cannot mark preferida.");
+            return;
+        }
+
+        database.SetPreferida(currentSession.Id, currentSession.ShotNumber);
+        currentSession.EsPreferida = true;
+
+        if (preferidaIcon != null)
+        {
+            preferidaIcon.text = "★";
+            preferidaIcon.color = PreferidaOnColor;
+        }
+    }
+
+    void OnFavoritaClicked()
+    {
+        if (currentSession == null)
+            return;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("RecordingPlaybackController: no ShotListDatabase instance found, cannot mark favorita.");
+            return;
+        }
+
+        bool newValue = !currentSession.EsFavorita;
+        database.SetFavorita(currentSession.Id, newValue);
+        currentSession.EsFavorita = newValue;
+
+        if (favoritaIcon != null)
+        {
+            favoritaIcon.text = newValue ? "♥" : "♡";
+            favoritaIcon.color = newValue ? FavoritaOnColor : FavoritaOffColor;
+        }
     }
 
     Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color)

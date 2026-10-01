@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -17,24 +18,34 @@ public class SceneSelectController : MonoBehaviour
     const int ButtonFontSize = 22;
     const float ButtonHeight = 64f;
     const float Spacing = 10f;
+    const int SessionIconFontSize = 26;
+    const float SessionIconWidth = 48f;
+
+    static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
+    static readonly Color PreferidaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
+    static readonly Color FavoritaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
 
     Font uiFont;
+    ShotListDatabase database;
+    RectTransform contentRect;
+    SortedDictionary<int, List<Shot>> shotsByScene;
 
     void Start()
     {
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        database = FindFirstObjectByType<ShotListDatabase>();
         if (database == null)
         {
             Debug.LogError("SceneSelectController: no ShotListDatabase instance found in the scene (expected the persisted DB object from Bootstrap).");
             return;
         }
 
-        SortedDictionary<int, List<Shot>> shotsByScene = database.GetShotsGroupedByScene();
+        shotsByScene = database.GetShotsGroupedByScene();
 
-        RectTransform content = BuildScrollingCanvas();
-        BuildShotList(content, shotsByScene);
+        contentRect = BuildScrollingCanvas();
+        BuildShotList(contentRect, shotsByScene);
     }
 
     RectTransform BuildScrollingCanvas()
@@ -165,12 +176,196 @@ public class SceneSelectController : MonoBehaviour
         // TEMPORARY diagnostic - remove once the actor-sync-on-pause-menu issue is confirmed fixed.
         Debug.Log($"IsInspecting={Bootstrap.IsInspecting}, RehearsalSessionSync.Instance is null={RehearsalSessionSync.Instance == null}");
 
+        // Only Inspección de Escenas (or solo actor practice) needs a session picker - a
+        // live rehearsal never has past sessions to choose from. A shot with 0 or 1
+        // sessions keeps loading directly, exactly as before.
+        if (Bootstrap.IsInspecting)
+        {
+            List<RecordingSession> sessions = database.GetSessionsForShot(shot.ShotNumber);
+            if (sessions.Count > 1)
+            {
+                ShowSessionList(shot, sceneName);
+                return;
+            }
+        }
+
+        ProceedToSession(shot, sceneName, null);
+    }
+
+    // sessionId null means "no specific pick" - RecordingPlaybackController falls back to
+    // the shot's most recent session, same as the original single-session behavior.
+    void ProceedToSession(Shot shot, string sceneName, int? sessionId)
+    {
         // Inspecting a past recording is a solo review, not a live rehearsal - don't
         // sync/teleport the actor for it.
         if (!Bootstrap.IsInspecting && RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SelectShot(shot.ShotNumber);
 
         Bootstrap.CurrentShotNumber = shot.ShotNumber;
+        Bootstrap.CurrentSessionId = sessionId;
         SceneManager.LoadSceneAsync(sceneName);
+    }
+
+    void ShowSessionList(Shot shot, string sceneName)
+    {
+        List<RecordingSession> sessions = database.GetSessionsForShot(shot.ShotNumber);
+
+        ClearContent();
+        CreateBackButton(contentRect, () =>
+        {
+            ClearContent();
+            BuildShotList(contentRect, shotsByScene);
+        });
+        CreateHeader(contentRect, $"Shot {shot.ShotNumber}: {shot.Description}");
+
+        foreach (RecordingSession session in sessions)
+            CreateSessionRow(contentRect, shot, sceneName, session);
+    }
+
+    void ClearContent()
+    {
+        for (int i = contentRect.childCount - 1; i >= 0; i--)
+            Destroy(contentRect.GetChild(i).gameObject);
+    }
+
+    void CreateBackButton(RectTransform parent, UnityEngine.Events.UnityAction onClick)
+    {
+        var buttonObject = new GameObject("BackButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        buttonObject.transform.SetParent(parent, false);
+        buttonObject.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
+
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(buttonObject.transform, false);
+        var textRect = (RectTransform)textObject.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = new Vector2(16, 4);
+        textRect.offsetMax = new Vector2(-16, -4);
+
+        Text label = textObject.GetComponent<Text>();
+        label.font = uiFont;
+        label.text = "← Volver";
+        label.fontSize = ButtonFontSize;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+
+        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+    }
+
+    // A row per saved session: a wide info button (date/time, duration - clicking it
+    // proceeds to load exactly this session) plus two small, independently clickable icon
+    // toggles - preferida (star, exclusive per shot) and favorita (heart, a non-exclusive
+    // bookmark). Neither icon click bubbles into the info button's click since each is its
+    // own separate Button/Graphic under Unity's UI raycasting.
+    void CreateSessionRow(RectTransform parent, Shot shot, string sceneName, RecordingSession session)
+    {
+        var rowObject = new GameObject($"Session_{session.Id}", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        rowObject.transform.SetParent(parent, false);
+        rowObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
+
+        HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
+        rowLayout.spacing = Spacing;
+        rowLayout.childAlignment = TextAnchor.MiddleCenter;
+        rowLayout.childControlWidth = true;
+        rowLayout.childControlHeight = true;
+        rowLayout.childForceExpandWidth = false;
+        rowLayout.childForceExpandHeight = true;
+
+        Shot capturedShot = shot;
+        RecordingSession capturedSession = session;
+
+        var infoButtonObject = new GameObject("Info", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        infoButtonObject.transform.SetParent(rowObject.transform, false);
+        infoButtonObject.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        LayoutElement infoLayoutElement = infoButtonObject.GetComponent<LayoutElement>();
+        infoLayoutElement.flexibleWidth = 1f;
+        infoLayoutElement.preferredHeight = ButtonHeight;
+
+        var infoTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        infoTextObject.transform.SetParent(infoButtonObject.transform, false);
+        var infoTextRect = (RectTransform)infoTextObject.transform;
+        infoTextRect.anchorMin = Vector2.zero;
+        infoTextRect.anchorMax = Vector2.one;
+        infoTextRect.offsetMin = new Vector2(16, 4);
+        infoTextRect.offsetMax = new Vector2(-16, -4);
+
+        Text infoText = infoTextObject.GetComponent<Text>();
+        infoText.font = uiFont;
+        infoText.text = FormatSessionLabel(session);
+        infoText.fontSize = ButtonFontSize;
+        infoText.color = Color.white;
+        infoText.alignment = TextAnchor.MiddleLeft;
+
+        infoButtonObject.GetComponent<Button>().onClick.AddListener(() => ProceedToSession(capturedShot, sceneName, capturedSession.Id));
+
+        Text preferidaIcon = CreateSessionIconButton(rowObject.transform,
+            session.EsPreferida ? "★" : "☆",
+            session.EsPreferida ? PreferidaOnColor : PreferidaOffColor,
+            out Button preferidaButton);
+        preferidaButton.onClick.AddListener(() => OnPreferidaToggled(capturedShot, sceneName, capturedSession));
+
+        Text favoritaIcon = CreateSessionIconButton(rowObject.transform,
+            session.EsFavorita ? "♥" : "♡",
+            session.EsFavorita ? FavoritaOnColor : FavoritaOffColor,
+            out Button favoritaButton);
+        favoritaButton.onClick.AddListener(() => OnFavoritaToggled(capturedSession, favoritaIcon));
+    }
+
+    Text CreateSessionIconButton(Transform parent, string symbol, Color color, out Button button)
+    {
+        var buttonObject = new GameObject($"Icon_{symbol}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        buttonObject.transform.SetParent(parent, false);
+        buttonObject.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 1f);
+        LayoutElement layoutElement = buttonObject.GetComponent<LayoutElement>();
+        layoutElement.preferredWidth = SessionIconWidth;
+        layoutElement.preferredHeight = ButtonHeight;
+
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(buttonObject.transform, false);
+        var textRect = (RectTransform)textObject.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+
+        Text text = textObject.GetComponent<Text>();
+        text.font = uiFont;
+        text.text = symbol;
+        text.fontSize = SessionIconFontSize;
+        text.fontStyle = FontStyle.Bold;
+        text.color = color;
+        text.alignment = TextAnchor.MiddleCenter;
+
+        button = buttonObject.GetComponent<Button>();
+        return text;
+    }
+
+    // Exclusive - marking one preferida unmarks every other one for this shot, so the whole
+    // list is rebuilt to keep every row's star in sync with the DB.
+    void OnPreferidaToggled(Shot shot, string sceneName, RecordingSession session)
+    {
+        database.SetPreferida(session.Id, shot.ShotNumber);
+        ShowSessionList(shot, sceneName);
+    }
+
+    // Non-exclusive - only this row's own heart changes.
+    void OnFavoritaToggled(RecordingSession session, Text favoritaIcon)
+    {
+        bool newValue = !session.EsFavorita;
+        database.SetFavorita(session.Id, newValue);
+        session.EsFavorita = newValue;
+
+        favoritaIcon.text = newValue ? "♥" : "♡";
+        favoritaIcon.color = newValue ? FavoritaOnColor : FavoritaOffColor;
+    }
+
+    static string FormatSessionLabel(RecordingSession session)
+    {
+        string when = DateTime.TryParse(session.FechaHora, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsed)
+            ? parsed.ToString("dd/MM/yyyy HH:mm")
+            : session.FechaHora;
+
+        return $"{when} — {session.Duracion:F1}s";
     }
 }

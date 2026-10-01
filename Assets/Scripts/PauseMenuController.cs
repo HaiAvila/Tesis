@@ -113,6 +113,7 @@ public class PauseMenuController : MonoBehaviour
 
 #if DIRECTOR_BUILD
         menuOptions.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
+        menuOptions.Add(new PauseMenuOption { Label = "Favoritos", OnSelected = ShowFavorites });
 #endif
 
         return menuOptions;
@@ -292,6 +293,18 @@ public class PauseMenuController : MonoBehaviour
     void GoToSceneSelect()
     {
         SceneManager.LoadSceneAsync("SceneSelect");
+    }
+
+    void ShowFavorites()
+    {
+        FavoritesPanelController favoritesPanel = FindFirstObjectByType<FavoritesPanelController>();
+        if (favoritesPanel == null)
+        {
+            Debug.LogError("PauseMenuController: no FavoritesPanelController instance found in the scene (expected the persisted object from Bootstrap).");
+            return;
+        }
+
+        favoritesPanel.Show();
     }
 #endif
 }

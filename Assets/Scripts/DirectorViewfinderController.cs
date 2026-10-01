@@ -13,14 +13,30 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // Persistent (lives under Bootstrap, DontDestroyOnLoad). Director-only "virtual camera":
 // a small camera rigidly parented to the right controller, rendering to a RenderTexture
 // shown on a handheld world-space panel (like checking a phone screen), toggled
-// visible/hidden with the right controller's Grip button, with zoom on the same hand's
-// joystick (push up to zoom in, down to zoom out, adjusting the camera's Field of View).
+// visible/hidden with a tap of the right controller's Grip button.
+//
+// Zoom uses real cinema vocabulary, two controls that complement rather than replace each
+// other:
+// - Joystick left/right (not held) cycles through named focal lengths - 24/35/50/85/135mm,
+//   the standard lens-kit spread - each mapped to its physical Field of View via Unity's
+//   own physical camera model (not a hand-rolled formula): a 36x24mm full-frame sensor and
+//   the camera's focalLength, with fieldOfView derived automatically. See ApplyFocalLength.
+// - Holding Grip down while moving the joystick up/down fine-tunes the focal length
+//   continuously around whatever the current value is (named or already fine-tuned),
+//   instead of jumping between the named stops. Releasing Grip after fine-tuning does NOT
+//   toggle the panel - only a plain tap (no joystick movement during the hold) does. See
+//   OnGripStarted/OnGripReleased and UpdateZoom.
+// The current value (e.g. "50mm", or "47mm" mid fine-tune) is always shown live on the
+// panel - see UpdateFocalLengthLabel.
+//
+// The feed also has rule-of-thirds and 16:9 framing guide lines overlaid directly on the
+// Canvas (BuildFramingOverlay) - viewfinder-only, not baked into the rendered feed itself.
 //
 // The panel also has a small button bar: "Guardar framing" saves the camera's current
-// world position/rotation/FOV for the active shot, and "Framings" opens a short list of
-// previously saved ones for that shot with a "Cargar" button each. Loading one snaps the
-// camera to that saved pose and LOCKS it there (ignoring the hand) until the director
-// physically moves the controller again - see UpdateLock.
+// world position/rotation/focal length for the active shot, and "Framings" opens a short
+// list of previously saved ones for that shot with a "Cargar" button each. Loading one
+// snaps the camera to that saved pose and LOCKS it there (ignoring the hand) until the
+// director physically moves the controller again - see UpdateLock.
 //
 // Right hand chosen deliberately, after checking rather than assuming: neither controller
 // in this project's XR rig is actually wired up for UI ray/poke interaction yet - both
@@ -59,11 +75,35 @@ public class DirectorViewfinderController : MonoBehaviour
     const float PanelWidth = 0.09f;
     const float PanelHeight = 0.0675f; // 4:3, matches the RenderTexture's aspect ratio
 
-    // Narrow (zoomed in) to wide (normal) Field of View range, in degrees.
-    const float MinFieldOfView = 20f;
-    const float MaxFieldOfView = 80f;
-    const float ZoomSpeedDegreesPerSecond = 30f; // full 60° range in 2s at full deflection
-    const float ZoomJoystickDeadzone = 0.15f;
+    // Standard lens-kit spread, in mm - joystick left/right cycles through these. FOV for
+    // each is derived by Unity's own physical camera model (see ApplyFocalLength), not a
+    // hand-rolled formula - a 35mm full-frame sensor (36x24mm) is the reference, same as
+    // these names mean in real photography/cinema.
+    static readonly float[] NamedFocalLengthsMM = { 24f, 35f, 50f, 85f, 135f };
+    const float DefaultFocalLengthMM = 50f; // "normal" lens - sensible starting point
+    const float MinFocalLengthMM = 24f;
+    const float MaxFocalLengthMM = 135f;
+
+    // Joystick X, not holding Grip: discrete cycling through NamedFocalLengthsMM. Edge-
+    // triggered with hysteresis (trigger past CycleTriggerThreshold, don't re-arm until back
+    // under CycleRearmThreshold) so one flick is one step, not a repeat-fire while held.
+    const float CycleTriggerThreshold = 0.6f;
+    const float CycleRearmThreshold = 0.25f;
+
+    // Joystick Y, while holding Grip: continuous fine-tune around the current value.
+    const float FineTuneSpeedMMPerSecond = 40f; // full 111mm range in ~2.8s at full deflection
+    const float FineTuneDeadzone = 0.15f;
+
+    const int FocalLengthLabelFontSize = 24;
+    const float FocalLengthLabelHeight = 44f;
+    static readonly Vector2 FocalLengthLabelMargin = new Vector2(10f, 10f);
+
+    const float ThirdsLineThickness = 2f;
+    const float AspectMarkerThickness = 3f;
+    const float TargetAspectRatio = 16f / 9f;
+    static readonly Color ThirdsLineColor = new Color(1f, 1f, 1f, 0.5f);
+    static readonly Color AspectMarkerColor = new Color(1f, 0.85f, 0.2f, 0.65f);
+    static readonly Color FocalLengthLabelBackgroundColor = new Color(0f, 0f, 0f, 0.55f);
 
     // A loaded framing stays fixed in world space until the controller itself moves past
     // these thresholds - small enough to feel deliberate (not triggered by hand tremor),
@@ -100,8 +140,21 @@ public class DirectorViewfinderController : MonoBehaviour
     RenderTexture renderTexture;
     Coroutine buildCoroutine;
     GameObject disabledTurnObject;
-    float currentFieldOfView;
+    Text focalLengthLabel;
+    float currentFocalLengthMM;
     bool isVisible;
+
+    // Grip is now a dual-purpose control: a plain tap toggles the panel, but holding it
+    // down while moving the joystick fine-tunes zoom instead - see OnGripStarted/
+    // OnGripReleased/UpdateZoom. didFineTuneDuringGripHold is what tells OnGripReleased
+    // whether this particular hold was "a tap" or "a zoom adjustment", so it only toggles
+    // on the former.
+    bool isGripHeld;
+    bool didFineTuneDuringGripHold;
+
+    // Hysteresis state for the joystick-X discrete cycling - see CycleTriggerThreshold/
+    // CycleRearmThreshold.
+    bool cycleArmed = true;
 
     // Set when a saved framing is loaded - the camera holds this world pose regardless of
     // hand movement until UpdateLock detects the controller itself has moved enough to
@@ -120,10 +173,14 @@ public class DirectorViewfinderController : MonoBehaviour
 
         // Same curly-brace "usage" binding convention as the recording shortcut and
         // Play/Pause, plus the XR Device Simulator's equivalent for in-Editor testing.
+        // started/canceled (press/release), not performed - a tap toggles the panel, but a
+        // hold is reserved for fine-tuning zoom (see OnGripStarted/OnGripReleased), so the
+        // toggle decision can only be made once the hold is over.
         gripToggleAction = new InputAction("DirectorViewfinderToggle", InputActionType.Button);
         gripToggleAction.AddBinding("<XRController>{RightHand}/{gripButton}");
         gripToggleAction.AddBinding("<XRSimulatedController>{RightHand}/gripButton");
-        gripToggleAction.performed += OnGripPressed;
+        gripToggleAction.started += OnGripStarted;
+        gripToggleAction.canceled += OnGripReleased;
         gripToggleAction.Enable();
 
         // Same right-hand joystick convention as DirectorFreeFlyCamera's left-hand one
@@ -141,7 +198,8 @@ public class DirectorViewfinderController : MonoBehaviour
     void OnDestroy()
     {
 #if DIRECTOR_BUILD
-        gripToggleAction.performed -= OnGripPressed;
+        gripToggleAction.started -= OnGripStarted;
+        gripToggleAction.canceled -= OnGripReleased;
         gripToggleAction.Disable();
         gripToggleAction.Dispose();
 
@@ -179,6 +237,7 @@ public class DirectorViewfinderController : MonoBehaviour
         panelTransform = null;
         viewfinderCamera = null;
         rightControllerTransform = null;
+        focalLengthLabel = null;
 
         // framingListObject is a child of viewfinderRoot, already destroyed above.
         framingListObject = null;
@@ -194,6 +253,9 @@ public class DirectorViewfinderController : MonoBehaviour
 
         isVisible = false;
         isLocked = false;
+        isGripHeld = false;
+        didFineTuneDuringGripHold = false;
+        cycleArmed = true;
     }
 
     void Update()
@@ -206,19 +268,94 @@ public class DirectorViewfinderController : MonoBehaviour
         UpdatePanelFacing();
     }
 
+    // Grip held: joystick Y fine-tunes continuously, X is ignored entirely (the whole stick
+    // is reserved for fine-tuning while holding). Grip not held: joystick X cycles through
+    // the named stops, Y is ignored. The two gestures never mix in the same frame, so
+    // there's no ambiguity about which one a given stick movement means.
     void UpdateZoom()
     {
         if (viewfinderCamera == null)
             return;
 
-        float input = zoomAction.ReadValue<Vector2>().y;
-        if (Mathf.Abs(input) < ZoomJoystickDeadzone)
+        Vector2 axis = zoomAction.ReadValue<Vector2>();
+
+        if (isGripHeld)
+        {
+            if (Mathf.Abs(axis.y) < FineTuneDeadzone)
+                return;
+
+            didFineTuneDuringGripHold = true;
+            currentFocalLengthMM = Mathf.Clamp(
+                currentFocalLengthMM - axis.y * FineTuneSpeedMMPerSecond * Time.deltaTime,
+                MinFocalLengthMM, MaxFocalLengthMM);
+            ApplyFocalLength();
+            return;
+        }
+
+        UpdateFocalLengthCycle(axis.x);
+    }
+
+    void UpdateFocalLengthCycle(float xAxis)
+    {
+        if (!cycleArmed)
+        {
+            if (Mathf.Abs(xAxis) < CycleRearmThreshold)
+                cycleArmed = true;
+            return;
+        }
+
+        if (xAxis > CycleTriggerThreshold)
+            StepFocalLength(1);
+        else if (xAxis < -CycleTriggerThreshold)
+            StepFocalLength(-1);
+    }
+
+    // Steps from whichever named stop is CLOSEST to the current value (which may itself be
+    // a fine-tuned, non-named value) - clamped at the ends of the list, not wrapping: a real
+    // lens kit doesn't cycle past its longest lens back to its widest.
+    void StepFocalLength(int direction)
+    {
+        int index = Mathf.Clamp(FindClosestNamedIndex(currentFocalLengthMM) + direction, 0, NamedFocalLengthsMM.Length - 1);
+        currentFocalLengthMM = NamedFocalLengthsMM[index];
+        ApplyFocalLength();
+        cycleArmed = false;
+        SendHaptic();
+    }
+
+    static int FindClosestNamedIndex(float mm)
+    {
+        int closestIndex = 0;
+        float closestDiff = Mathf.Abs(NamedFocalLengthsMM[0] - mm);
+
+        for (int i = 1; i < NamedFocalLengthsMM.Length; i++)
+        {
+            float diff = Mathf.Abs(NamedFocalLengthsMM[i] - mm);
+            if (diff < closestDiff)
+            {
+                closestDiff = diff;
+                closestIndex = i;
+            }
+        }
+
+        return closestIndex;
+    }
+
+    // The single place that pushes currentFocalLengthMM onto the camera - focalLength
+    // drives Unity's physical camera model (see BuildCamera), which recomputes fieldOfView
+    // from it automatically, so fieldOfView is never set directly anywhere in this script.
+    void ApplyFocalLength()
+    {
+        if (viewfinderCamera == null)
             return;
 
-        currentFieldOfView = Mathf.Clamp(
-            currentFieldOfView - input * ZoomSpeedDegreesPerSecond * Time.deltaTime,
-            MinFieldOfView, MaxFieldOfView);
-        viewfinderCamera.fieldOfView = currentFieldOfView;
+        viewfinderCamera.focalLength = currentFocalLengthMM;
+        UpdateFocalLengthLabel();
+    }
+
+    void UpdateFocalLengthLabel()
+    {
+        if (focalLengthLabel != null)
+            focalLengthLabel.text = $"{Mathf.RoundToInt(currentFocalLengthMM)}mm";
     }
 
     // While locked (a saved framing was just loaded), the camera is still a child of the
@@ -398,11 +535,20 @@ public class DirectorViewfinderController : MonoBehaviour
         viewfinderCamera.clearFlags = mainCamera.clearFlags;
         viewfinderCamera.backgroundColor = mainCamera.backgroundColor;
         viewfinderCamera.cullingMask = mainCamera.cullingMask & ~excludedMask;
-        currentFieldOfView = Mathf.Clamp(mainCamera.fieldOfView, MinFieldOfView, MaxFieldOfView);
-        viewfinderCamera.fieldOfView = currentFieldOfView;
         viewfinderCamera.nearClipPlane = mainCamera.nearClipPlane;
         viewfinderCamera.farClipPlane = mainCamera.farClipPlane;
         viewfinderCamera.targetTexture = renderTexture;
+
+        // Physical camera model: fieldOfView becomes a value Unity derives from
+        // focalLength/sensorSize/gateFit, not something set directly - 36x24mm is the
+        // standard full-frame 35mm stills/cinema sensor the named focal lengths (24/35/50/
+        // 85/135mm) assume. Horizontal gate fit matches how those names are conventionally
+        // quoted (fit by sensor width), rather than Unity's default vertical fit.
+        viewfinderCamera.usePhysicalProperties = true;
+        viewfinderCamera.sensorSize = new Vector2(36f, 24f);
+        viewfinderCamera.gateFit = Camera.GateFitMode.Horizontal;
+        currentFocalLengthMM = DefaultFocalLengthMM;
+        viewfinderCamera.focalLength = currentFocalLengthMM;
 
         if (panelLayer < 0)
             Debug.LogWarning($"DirectorViewfinderController: layer '{PanelLayerName}' not found - the viewfinder panel will render inside its own feed (feedback loop).");
@@ -462,10 +608,114 @@ public class DirectorViewfinderController : MonoBehaviour
         imageObject.GetComponent<LayoutElement>().preferredHeight = RenderTextureHeight;
         imageObject.GetComponent<RawImage>().texture = renderTexture;
 
+        BuildFramingOverlay((RectTransform)imageObject.transform, panelLayer);
+
         BuildButtonBar(rootRect, panelLayer);
 
         if (FindFirstObjectByType<EventSystem>() == null)
             new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+    }
+
+    // Rule-of-thirds grid (2 horizontal + 2 vertical lines) and 16:9 aspect markers,
+    // overlaid directly on the Canvas on top of the feed - viewfinder-only guide lines, not
+    // baked into the camera's rendered image itself. Plus the focal-length readout (e.g.
+    // "50mm"/"47mm"), always reflecting whatever ApplyFocalLength last set, named or
+    // fine-tuned. All purely visual - raycastTarget is off so none of it can intercept
+    // clicks meant for the button bar below.
+    void BuildFramingOverlay(RectTransform feedRect, int panelLayer)
+    {
+        var overlayObject = new GameObject("Overlay", typeof(RectTransform));
+        overlayObject.transform.SetParent(feedRect, false);
+        ApplyPanelLayer(overlayObject, panelLayer);
+        RectTransform overlayRect = (RectTransform)overlayObject.transform;
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.offsetMin = Vector2.zero;
+        overlayRect.offsetMax = Vector2.zero;
+
+        // Rule of thirds - two lines each way, at 1/3 and 2/3.
+        CreateOverlayLine(overlayRect, panelLayer, ThirdsLineColor, vertical: true, position: 1f / 3f, thickness: ThirdsLineThickness);
+        CreateOverlayLine(overlayRect, panelLayer, ThirdsLineColor, vertical: true, position: 2f / 3f, thickness: ThirdsLineThickness);
+        CreateOverlayLine(overlayRect, panelLayer, ThirdsLineColor, vertical: false, position: 1f / 3f, thickness: ThirdsLineThickness);
+        CreateOverlayLine(overlayRect, panelLayer, ThirdsLineColor, vertical: false, position: 2f / 3f, thickness: ThirdsLineThickness);
+
+        // 16:9 markers - the feed itself is 4:3 (640x480), so a 16:9 crop centered in it is
+        // narrower than the full height; these two horizontal lines mark where that crop's
+        // top/bottom edges would fall, same idea as a real camera's aspect-guide overlay.
+        float cropHeightFraction = (RenderTextureWidth / TargetAspectRatio) / RenderTextureHeight;
+        float marginFraction = (1f - cropHeightFraction) / 2f;
+        CreateOverlayLine(overlayRect, panelLayer, AspectMarkerColor, vertical: false, position: marginFraction, thickness: AspectMarkerThickness);
+        CreateOverlayLine(overlayRect, panelLayer, AspectMarkerColor, vertical: false, position: 1f - marginFraction, thickness: AspectMarkerThickness);
+
+        BuildFocalLengthLabel(overlayRect, panelLayer);
+    }
+
+    // A thin full-span Image acting as a line - vertical: true spans top-to-bottom at a
+    // horizontal fraction of the feed; vertical: false spans left-to-right at a vertical
+    // fraction. position is 0-1 (0 = left/bottom, 1 = right/top).
+    void CreateOverlayLine(RectTransform parent, int panelLayer, Color color, bool vertical, float position, float thickness)
+    {
+        var lineObject = new GameObject(vertical ? "ThirdsV" : "ThirdsH", typeof(RectTransform), typeof(Image));
+        lineObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(lineObject, panelLayer);
+
+        RectTransform lineRect = (RectTransform)lineObject.transform;
+        if (vertical)
+        {
+            lineRect.anchorMin = new Vector2(position, 0f);
+            lineRect.anchorMax = new Vector2(position, 1f);
+            lineRect.offsetMin = new Vector2(-thickness / 2f, 0f);
+            lineRect.offsetMax = new Vector2(thickness / 2f, 0f);
+        }
+        else
+        {
+            lineRect.anchorMin = new Vector2(0f, position);
+            lineRect.anchorMax = new Vector2(1f, position);
+            lineRect.offsetMin = new Vector2(0f, -thickness / 2f);
+            lineRect.offsetMax = new Vector2(0f, thickness / 2f);
+        }
+
+        Image image = lineObject.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
+    }
+
+    // Bottom-left HUD-style readout, like a real camera's on-screen focal-length display -
+    // a small dark chip behind the text for legibility against whatever footage is behind
+    // it.
+    void BuildFocalLengthLabel(RectTransform parent, int panelLayer)
+    {
+        var chipObject = new GameObject("FocalLengthChip", typeof(RectTransform), typeof(Image));
+        chipObject.transform.SetParent(parent, false);
+        ApplyPanelLayer(chipObject, panelLayer);
+        RectTransform chipRect = (RectTransform)chipObject.transform;
+        chipRect.anchorMin = Vector2.zero;
+        chipRect.anchorMax = Vector2.zero;
+        chipRect.pivot = Vector2.zero;
+        chipRect.anchoredPosition = FocalLengthLabelMargin;
+        chipRect.sizeDelta = new Vector2(120f, FocalLengthLabelHeight);
+
+        Image chipImage = chipObject.GetComponent<Image>();
+        chipImage.color = FocalLengthLabelBackgroundColor;
+        chipImage.raycastTarget = false;
+
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(chipRect, false);
+        ApplyPanelLayer(textObject, panelLayer);
+        RectTransform textRect = (RectTransform)textObject.transform;
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+
+        focalLengthLabel = textObject.GetComponent<Text>();
+        focalLengthLabel.font = uiFont;
+        focalLengthLabel.text = $"{Mathf.RoundToInt(currentFocalLengthMM)}mm";
+        focalLengthLabel.fontSize = FocalLengthLabelFontSize;
+        focalLengthLabel.fontStyle = FontStyle.Bold;
+        focalLengthLabel.color = PanelButtonTextColor;
+        focalLengthLabel.alignment = TextAnchor.MiddleCenter;
+        focalLengthLabel.raycastTarget = false;
     }
 
     void BuildButtonBar(RectTransform parent, int panelLayer)
@@ -536,7 +786,7 @@ public class DirectorViewfinderController : MonoBehaviour
         }
 
         Transform cameraTransform = viewfinderCamera.transform;
-        database.SaveCameraFraming(Bootstrap.CurrentShotNumber, cameraTransform.position, cameraTransform.rotation, viewfinderCamera.fieldOfView);
+        database.SaveCameraFraming(Bootstrap.CurrentShotNumber, cameraTransform.position, cameraTransform.rotation, viewfinderCamera.fieldOfView, currentFocalLengthMM);
         SendHaptic();
     }
 
@@ -690,10 +940,10 @@ public class DirectorViewfinderController : MonoBehaviour
 
         lockedPosition = new Vector3(framing.PositionX, framing.PositionY, framing.PositionZ);
         lockedRotation = new Quaternion(framing.RotationX, framing.RotationY, framing.RotationZ, framing.RotationW);
-        currentFieldOfView = Mathf.Clamp(framing.Fov, MinFieldOfView, MaxFieldOfView);
+        currentFocalLengthMM = Mathf.Clamp(framing.FocalLengthMM, MinFocalLengthMM, MaxFocalLengthMM);
 
         viewfinderCamera.transform.SetPositionAndRotation(lockedPosition, lockedRotation);
-        viewfinderCamera.fieldOfView = currentFieldOfView;
+        ApplyFocalLength();
 
         isLocked = true;
         if (rightControllerTransform != null)
@@ -712,8 +962,24 @@ public class DirectorViewfinderController : MonoBehaviour
             : timestamp;
     }
 
-    void OnGripPressed(InputAction.CallbackContext context)
+    // Doesn't toggle on press anymore - just starts tracking the hold, so UpdateZoom can
+    // tell whether the joystick moved while Grip was down. The actual toggle decision
+    // happens on release, in OnGripReleased.
+    void OnGripStarted(InputAction.CallbackContext context)
     {
+        isGripHeld = true;
+        didFineTuneDuringGripHold = false;
+    }
+
+    void OnGripReleased(InputAction.CallbackContext context)
+    {
+        isGripHeld = false;
+
+        // This hold was used to fine-tune zoom, not as a toggle tap - leave the panel's
+        // visibility exactly as it was.
+        if (didFineTuneDuringGripHold)
+            return;
+
         if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.IsInspecting)
             return;
 

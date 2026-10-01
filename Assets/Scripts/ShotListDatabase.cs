@@ -23,13 +23,16 @@ public class ShotListDatabase : MonoBehaviour
             CreateSessionTables(connection);
             EnsureSesionesColumns(connection);
             CreateCameraFramingsTable(connection);
+            EnsureCameraFramingsColumns(connection);
         }
     }
 
-    // A saved director-viewfinder framing (world position/rotation/FOV) for a shot - a
-    // brand new table, not an extension of an existing one, so CREATE TABLE IF NOT EXISTS
-    // is already safe on its own (no ALTER TABLE migration needed, unlike es_preferida/
-    // es_favorita above, which added columns to an existing Sesiones).
+    // A saved director-viewfinder framing (world position/rotation) for a shot - a brand
+    // new table, not an extension of an existing one, so CREATE TABLE IF NOT EXISTS is
+    // already safe on its own for the table itself (no ALTER TABLE migration needed, unlike
+    // es_preferida/es_favorita above, which added columns to an existing Sesiones). The
+    // focal_length_mm column was added after the fact though - see
+    // EnsureCameraFramingsColumns.
     void CreateCameraFramingsTable(SQLiteConnection connection)
     {
         connection.Execute(@"
@@ -48,10 +51,27 @@ public class ShotListDatabase : MonoBehaviour
             );");
     }
 
+    // The viewfinder's zoom switched from raw FOV to real focal-length vocabulary (named
+    // lenses, mm display) after this table already shipped - focal_length_mm is the new
+    // authoritative value to restore on load (fov is kept, still populated, as a legacy/
+    // informational value only - round-tripping camera state through the derived FOV
+    // instead of the driving mm value would lose precision). Same safe PRAGMA-checked
+    // ALTER TABLE pattern as EnsureSesionesColumns, so older databases aren't broken.
+    void EnsureCameraFramingsColumns(SQLiteConnection connection)
+    {
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (SqliteColumnInfo column in connection.Query<SqliteColumnInfo>("PRAGMA table_info(CameraFramings);"))
+            existingColumns.Add(column.name);
+
+        if (!existingColumns.Contains("focal_length_mm"))
+            connection.Execute("ALTER TABLE CameraFramings ADD COLUMN focal_length_mm REAL NOT NULL DEFAULT 50;");
+    }
+
     // Position/rotation are captured in world space (not relative to the controller) - the
     // hand keeps moving after the framing is saved, so a controller-relative offset would
-    // immediately point somewhere else.
-    public int SaveCameraFraming(int shotNumber, Vector3 position, Quaternion rotation, float fov)
+    // immediately point somewhere else. fov is the derived vertical FOV at save time, kept
+    // for informational/legacy purposes; focalLengthMM is what's actually restored on load.
+    public int SaveCameraFraming(int shotNumber, Vector3 position, Quaternion rotation, float fov, float focalLengthMM)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -68,12 +88,13 @@ public class ShotListDatabase : MonoBehaviour
                 RotationZ = rotation.z,
                 RotationW = rotation.w,
                 Fov = fov,
+                FocalLengthMM = focalLengthMM,
                 Timestamp = DateTime.Now.ToString("o")
             };
 
             connection.Insert(framing);
 
-            Debug.Log($"ShotListDatabase: saved camera framing {framing.Id} for shot {shotNumber} (fov={fov:F1}).");
+            Debug.Log($"ShotListDatabase: saved camera framing {framing.Id} for shot {shotNumber} ({focalLengthMM:F0}mm, fov={fov:F1}).");
             return framing.Id;
         }
     }
@@ -539,5 +560,6 @@ public class CameraFraming
     [Column("rotation_z")] public float RotationZ { get; set; }
     [Column("rotation_w")] public float RotationW { get; set; }
     [Column("fov")] public float Fov { get; set; }
+    [Column("focal_length_mm")] public float FocalLengthMM { get; set; }
     [Column("timestamp")] public string Timestamp { get; set; }
 }

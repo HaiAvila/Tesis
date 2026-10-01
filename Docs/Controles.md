@@ -34,9 +34,10 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Estrella (★/☆) y corazón (♥/♡) por sesión | Marca/desmarca preferida (exclusiva por toma) y favorita (no exclusiva, bookmark) de una sesión ya guardada | Lista de sesiones en Selección de Escenas — solo aparece cuando un shot tiene más de una sesión guardada, durante Inspección de Escenas | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
 | "Ver" en Favoritos | Salta directo a reproducir esa sesión en Inspección de Escenas, interrumpiendo cualquier Ensayo Remoto activo | Pantalla Favoritos (ver entrada "Favoritos" del menú de pausa) | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
 | Joystick izquierdo (locomoción normal) | Caminar | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto o el vuelo libre está activo | Mantener `T`, mover joystick | Joystick del control izquierdo | ✅ De fábrica (XRI Starter Assets) |
-| Joystick derecho | Girar (turn/snap-turn) | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto | Mantener `Y`, mover joystick | Joystick del control derecho | ✅ De fábrica (XRI Starter Assets) |
+| Joystick derecho | Girar (turn/snap-turn) | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto **o el visor de la cámara virtual del director está visible** | Mantener `Y`, mover joystick | Joystick del control derecho | ✅ De fábrica (XRI Starter Assets) |
 | Primary Button "A" (control derecho) | Jump | Cualquier escena de contenido | Mantener `Y` + `B` | Botón A (control derecho) | ✅ De fábrica (XRI Starter Assets) — **este es el motivo por el que el atajo de Play/Pause se puso en el control izquierdo y no en el derecho** |
-| Grip (control derecho) | Muestra/oculta el panel de la cámara virtual del director ("visor", como levantar un celular para mirarlo) | Solo Ensayo Remoto (`#if DIRECTOR_BUILD`, escena de contenido, `IsInspecting == false`) | Mantener `Y` + `G` | Grip (control derecho) | ✅ Implementado (primer paso: sin zoom ni encuadre), sin probar en hardware real |
+| Grip (control derecho) | Muestra/oculta el panel de la cámara virtual del director ("visor", como levantar un celular para mirarlo) | Solo Ensayo Remoto (`#if DIRECTOR_BUILD`, escena de contenido, `IsInspecting == false`) | Mantener `Y` + `G` | Grip (control derecho) | ✅ Implementado (sin encuadre ni guardado de configuración todavía), sin probar en hardware real |
+| Joystick derecho (zoom del visor) | Arriba acerca (reduce el Field of View hacia 20°), abajo aleja (lo aumenta hacia 80°) | Solo mientras el panel del visor está visible (ver Grip arriba) | Mantener `Y` + `W/S` | Joystick del control derecho | ✅ Implementado, sin probar en hardware real |
 
 ---
 
@@ -82,7 +83,19 @@ no lee el HMD sino el joystick de la mano izquierda.
 Estos tres son responsabilidad de Unity/XRI, no de scripts propios del proyecto — se listan aquí
 solo para que el cuadro de controles esté completo y no haya sorpresas de "¿por qué el joystick
 ya hace algo?". `PauseMenuController` desactiva Move y Turn mientras el menú de pausa está
-abierto; `DirectorFreeFlyCamera` desactiva Move (y Gravity) mientras el vuelo libre está activo.
+abierto; `DirectorFreeFlyCamera` desactiva Move (y Gravity) mientras el vuelo libre está activo;
+`DirectorViewfinderController` desactiva solo Turn mientras el panel del visor está visible (ver
+abajo).
+
+### Cámara virtual del director — Grip (derecho) para mostrar/ocultar, joystick derecho para zoom
+**Script:** `DirectorViewfinderController.cs`
+**Binding real (Grip):** `<XRController>{RightHand}/{gripButton}`; **binding en el Simulador:** `<XRSimulatedController>{RightHand}/gripButton`
+**Binding real (zoom):** `<XRController>{RightHand}/{Primary2DAxis}`; **binding en el Simulador:** `<XRSimulatedController>{RightHand}/primary2DAxis`
+**Contexto:** `#if DIRECTOR_BUILD`, solo Ensayo Remoto (`Bootstrap.IsContentScene(...)` y `Bootstrap.IsInspecting == false`). Nunca en Inspección de Escenas ni en ningún menú.
+**Comportamiento:** una cámara parentada rígidamente al control derecho (sin offset local) renderiza a un RenderTexture de 640×480, mostrado en un panel World Space Canvas pequeño también parentado al control derecho (posición fija respecto a la mano, pero la rotación se recalcula cada frame para mirar siempre hacia la cabeza del director — ver el comentario de `UpdatePanelFacing()`). Grip alterna la visibilidad del panel (oculto por defecto); mientras está visible, el joystick derecho ajusta el Field of View de esa cámara entre 20° (muy acercado) y 80° (campo amplio), a 30°/s por unidad de deflexión del joystick, con una zona muerta de 0.15 para evitar deriva. Como el joystick derecho es el mismo físico que Turn/snap-turn de fábrica, `Turn` se desactiva mientras el panel está visible y se reactiva al ocultarlo — mismo patrón que `PauseMenuController` ya usa para Move/Turn.
+**Capa dedicada (panel):** el panel vive en la capa de proyecto `DirectorViewfinderPanel` (índice 8), excluida del Culling Mask de la cámara del visor — sin esto, la cámara se ve a sí misma mostrando su propio feed indefinidamente (ver commit que agregó esta capa).
+**Capa dedicada (rayo del control):** el rayo de ambos controles (`Near-Far Interactor/LineVisual`, de fábrica XRI) vive por defecto en la capa `Default`, visible para toda cámara — incluyendo la del visor, donde aparecía como un destello palpitante. `AssignRayVisualLayer()` lo reasigna a su propia capa de proyecto `ControllerRayVisual` (índice 9, independiente de `DirectorViewfinderPanel`) apenas se construye el visor, y esa capa también se excluye del Culling Mask de la cámara del visor. Solo afecta qué cámaras lo renderizan — no toca el raycasting de interacción de XRI (un sistema de capas aparte), y la cámara principal del director (Culling Mask = Everything) lo sigue viendo con total normalidad fuera del visor.
+**Pendiente:** sin guardado de posición/configuración de cámara todavía, y sin otros controles de encuadre más allá del zoom.
 
 ---
 

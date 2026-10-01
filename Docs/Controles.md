@@ -30,9 +30,13 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Reiniciar (↺) | Salta al inicio de la reproducción y reanuda | Solo Inspección de Escenas | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
 | Repetir (∞) | Activa/desactiva loop automático al llegar al final | Solo Inspección de Escenas | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
 | Slider de scrubbing | Salta a cualquier punto de la reproducción, arrastrando | Solo Inspección de Escenas | — (solo UI, clic+arrastre con mouse) | No aplica (es un control de arrastre, no un botón) | ✅ Decidido: solo UI |
+| Casillas "Marcar como preferida" / "Marcar como favorita" | Al tildarlas antes de "Guardar", la nueva sesión se guarda con `es_preferida`/`es_favorita` ya en el mismo INSERT (preferida desmarca cualquier otra de la misma toma) | Panel de decisión (Ver replay/Guardar/Descartar) al detener una grabación — solo director | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
+| Estrella (★/☆) y corazón (♥/♡) por sesión | Marca/desmarca preferida (exclusiva por toma) y favorita (no exclusiva, bookmark) de una sesión ya guardada | Lista de sesiones en Selección de Escenas — solo aparece cuando un shot tiene más de una sesión guardada, durante Inspección de Escenas | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
+| "Ver" en Favoritos | Salta directo a reproducir esa sesión en Inspección de Escenas, interrumpiendo cualquier Ensayo Remoto activo | Pantalla Favoritos (ver entrada "Favoritos" del menú de pausa) | — (solo UI, clic con mouse) | Ninguno — decisión explícita | ✅ Decidido: solo UI por ahora |
 | Joystick izquierdo (locomoción normal) | Caminar | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto o el vuelo libre está activo | Mantener `T`, mover joystick | Joystick del control izquierdo | ✅ De fábrica (XRI Starter Assets) |
 | Joystick derecho | Girar (turn/snap-turn) | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto | Mantener `Y`, mover joystick | Joystick del control derecho | ✅ De fábrica (XRI Starter Assets) |
 | Primary Button "A" (control derecho) | Jump | Cualquier escena de contenido | Mantener `Y` + `B` | Botón A (control derecho) | ✅ De fábrica (XRI Starter Assets) — **este es el motivo por el que el atajo de Play/Pause se puso en el control izquierdo y no en el derecho** |
+| Grip (control derecho) | Muestra/oculta el panel de la cámara virtual del director ("visor", como levantar un celular para mirarlo) | Solo Ensayo Remoto (`#if DIRECTOR_BUILD`, escena de contenido, `IsInspecting == false`) | Mantener `Y` + `G` | Grip (control derecho) | ✅ Implementado (primer paso: sin zoom ni encuadre), sin probar en hardware real |
 
 ---
 
@@ -42,8 +46,9 @@ no lee el HMD sino el joystick de la mano izquierda.
 **Script:** `PauseMenuController.cs`
 **Binding real:** `<XRController>{LeftHand}/menu`
 **Binding en el Simulador:** `<XRSimulatedController>{LeftHand}/menuButton` (nombre distinto al real — por eso hace falta un binding aparte solo para el simulador)
-**Contexto:** activo en `Scene1_mountain`, `Scene2_spaceship`, `Scene3_apartment` — sin distinguir si es Ensayo Remoto o Inspección de Escenas, ni si es build de actor o de director. Ambos ven el panel; solo el director ve la opción "Selección de Escenas" dentro de él (gateada por `DIRECTOR_BUILD`).
+**Contexto:** activo en `Scene1_mountain`, `Scene2_spaceship`, `Scene3_apartment` — sin distinguir si es Ensayo Remoto o Inspección de Escenas, ni si es build de actor o de director. Ambos ven el panel; solo el director ve las opciones "Selección de Escenas" y "Favoritos" dentro de él (gateadas por `DIRECTOR_BUILD`).
 **Efecto adicional:** pausa las GameObjects "Move" y "Turn" (locomoción por joystick) mientras está abierto; nunca toca tracking de cabeza ni gravedad. Dispara un pulso háptico al abrir y al cerrar.
+**"Favoritos" (nueva entrada, solo director):** abre `FavoritesPanelController.cs`, un panel aparte (no navega a otra escena) con la lista de toda sesión marcada como favorita en cualquier escena/shot. Disponible desde cualquier escena de contenido, incluso en medio de una sesión de Ensayo Remoto activa — al elegir "Ver" en una entrada, salta directo a Inspección de Escenas para esa sesión exacta, interrumpiendo el ensayo en curso si había uno.
 
 ### Grabación — Secondary Button "B" (derecho)
 **Script:** `RehearsalRecorder.cs`

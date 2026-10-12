@@ -18,6 +18,14 @@ using UnityEngine.UI;
 // fixed in the world either. It's body-locked with a lag: it only re-anchors itself,
 // smoothly, once the director strays far enough (position or angle) from where it last
 // settled - see the Follow* constants and Update().
+//
+// If the session also has a CamaraTrack (the director's viewfinder, recorded on the same
+// ticks as the actor), it plays back from the same playbackTime/slider as the ghost - no
+// second timer. A small marker shows the recorded camera in the scene, and a separate
+// camera copies the recorded pose/focal length into a RenderTexture shown on a monitor
+// panel that follows the playback panel. The director's own head camera and XR Origin are
+// never moved along the recorded path. Sessions without a camera track (older recordings,
+// or "Ver replay" of an unsaved buffer) play the ghost only, exactly as before.
 public class RecordingPlaybackController : MonoBehaviour
 {
     public static RecordingPlaybackController Instance { get; private set; }
@@ -58,6 +66,23 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
     static readonly Color FavoritaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
 
+    // Recorded-camera playback. The monitor and the scene marker live on their own project
+    // layer, excluded from the playback camera's culling mask - otherwise that camera would
+    // see the monitor showing its own feed (the recursive tunnel the viewfinder had) and the
+    // marker sitting right on top of its own lens.
+    const string MonitorLayerName = "PlaybackMonitor";
+    const int MonitorTextureWidth = 640;
+    const int MonitorTextureHeight = 480;
+    const float MonitorWidthMeters = 0.4f;
+    const int MonitorMessageFontSize = 36;
+    // Placeholder placement relative to the playback panel (right and up, so it doesn't
+    // cover the ghost straight ahead) - meant to be tuned visually.
+    static readonly Vector3 MonitorOffsetFromPanel = new Vector3(0.45f, 0.3f, 0f);
+    static readonly Color MonitorBackgroundColor = new Color(0.03f, 0.03f, 0.04f, 0.95f);
+    static readonly Color MarkerBodyColor = new Color(0.15f, 0.55f, 0.95f, 1f);
+    static readonly Vector3 MarkerBodySize = new Vector3(0.14f, 0.1f, 0.18f);
+    static readonly Vector3 MarkerPointerSize = new Vector3(0.015f, 0.015f, 0.5f);
+
     GameObject capsule;
     GameObject panelObject;
     Text loopText;
@@ -77,6 +102,16 @@ public class RecordingPlaybackController : MonoBehaviour
 #endif
 
     List<Metric> samples;
+    List<CameraTrackSample> cameraSamples;
+    GameObject cameraMarker;
+    Camera playbackCamera;
+    RenderTexture monitorRenderTexture;
+    GameObject monitorObject;
+    RawImage monitorFeed;
+    GameObject monitorInactiveMessage;
+    Text monitorToggleText;
+    bool monitorEnabled;
+    bool currentVisorActive;
     float totalDuration;
     float playbackTime;
     bool isPlaying;
@@ -162,9 +197,27 @@ public class RecordingPlaybackController : MonoBehaviour
             Destroy(capsule);
         if (panelObject != null)
             Destroy(panelObject);
+        if (cameraMarker != null)
+            Destroy(cameraMarker);
+        if (playbackCamera != null)
+            Destroy(playbackCamera.gameObject);
+        if (monitorObject != null)
+            Destroy(monitorObject);
+        if (monitorRenderTexture != null)
+            monitorRenderTexture.Release();
 
         capsule = null;
         panelObject = null;
+        cameraSamples = null;
+        cameraMarker = null;
+        playbackCamera = null;
+        monitorRenderTexture = null;
+        monitorObject = null;
+        monitorFeed = null;
+        monitorInactiveMessage = null;
+        monitorToggleText = null;
+        monitorEnabled = false;
+        currentVisorActive = false;
         loopText = null;
         timeText = null;
         preferidaIcon = null;
@@ -219,7 +272,7 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        BeginPlayback(dbSamples, null, session);
+        BeginPlayback(dbSamples, null, session, database.GetCameraTrackForSession(session.Id));
     }
 
     // Plays back an in-memory buffer directly - e.g. "Ver replay" right after stopping a
@@ -239,15 +292,26 @@ public class RecordingPlaybackController : MonoBehaviour
         BeginPlayback(bufferSamples, onClosed);
     }
 
-    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null)
+    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null, List<CameraTrackSample> cameraSamplesToPlay = null)
     {
         samples = samplesToPlay;
         totalDuration = samples[samples.Count - 1].TiempoRelativo;
         onManualClose = onClosed;
         currentSession = session;
+        cameraSamples = cameraSamplesToPlay;
+        monitorEnabled = true;
 
         BuildCapsule();
         BuildPanel();
+
+        // Ghost only (the original behavior) when there's no camera track.
+        if (HasCameraTrack)
+        {
+            BuildCameraMarker();
+            BuildPlaybackCamera();
+            BuildMonitor();
+        }
+
         ApplySampleAt(0f);
         UpdateTimeText();
         SetPlaying(true);
@@ -299,6 +363,22 @@ public class RecordingPlaybackController : MonoBehaviour
             if (t >= 1f)
                 isTransitioning = false;
         }
+
+        UpdateMonitorPose();
+    }
+
+    // The monitor rides on the playback panel's own body-locked-with-lag anchor, at a fixed
+    // offset in the panel's frame - so it follows the director exactly the way the panel
+    // does, with no separate follow logic to drift out of step.
+    void UpdateMonitorPose()
+    {
+        if (monitorObject == null)
+            return;
+
+        Transform panelTransform = panelObject.transform;
+        monitorObject.transform.SetPositionAndRotation(
+            panelTransform.position + panelTransform.rotation * MonitorOffsetFromPanel,
+            panelTransform.rotation);
     }
 
     // Yaw-only (flattened) so looking up/down doesn't drag the panel into the floor or
@@ -336,6 +416,8 @@ public class RecordingPlaybackController : MonoBehaviour
             buttonCount += 2f; // preferida + favorita - only when a saved session (not an unsaved buffer) is playing
         if (onManualClose != null)
             buttonCount += 1f; // close
+        if (HasCameraTrack)
+            buttonCount += 1f; // monitor toggle
         float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
 
@@ -416,9 +498,27 @@ public class RecordingPlaybackController : MonoBehaviour
             favoritaIcon.color = currentSession.EsFavorita ? FavoritaOnColor : FavoritaOffColor;
         }
 
+        // Shows/hides the recorded-camera monitor (on by default; color indicates on/off,
+        // same as the loop toggle). Only present when the session has a camera track.
+        if (HasCameraTrack)
+            monitorToggleText = CreateIconButton(rowObject.transform, "▣", OnMonitorToggleClicked, ButtonActiveColor);
+
         // Only present when reviewing an in-memory buffer (no scene change to exit through).
         if (onManualClose != null)
             CreateIconButton(rowObject.transform, "✕", OnCloseClicked, ButtonColor);
+    }
+
+    void OnMonitorToggleClicked()
+    {
+        monitorEnabled = !monitorEnabled;
+        RefreshMonitorState();
+
+        if (monitorToggleText == null)
+            return;
+
+        Image toggleButtonImage = monitorToggleText.transform.parent.GetComponent<Image>();
+        if (toggleButtonImage != null)
+            toggleButtonImage.color = monitorEnabled ? ButtonActiveColor : ButtonColor;
     }
 
     void OnPreferidaClicked()
@@ -682,8 +782,12 @@ public class RecordingPlaybackController : MonoBehaviour
             timeText.text = $"{playbackTime:F1}s / {totalDuration:F1}s";
     }
 
+    // The single place playback time turns into poses - called from the playback loop, the
+    // slider and restart alike, so the ghost and the recorded camera always share one time.
     void ApplySampleAt(float time)
     {
+        ApplyCameraSampleAt(time);
+
         if (samples == null || samples.Count == 0 || capsule == null)
             return;
 
@@ -728,5 +832,207 @@ public class RecordingPlaybackController : MonoBehaviour
         capsule.transform.SetPositionAndRotation(
             new Vector3(sample.PosX, sample.PosY, sample.PosZ),
             new Quaternion(sample.RotX, sample.RotY, sample.RotZ, sample.RotW));
+    }
+
+    bool HasCameraTrack => cameraSamples != null && cameraSamples.Count > 0;
+
+    // Same interpolation as the ghost: Lerp position, Slerp rotation, plus Lerp focal_mm.
+    // visor_activo is a flag, not a quantity, so it isn't blended - it takes the value of
+    // the sample the segment starts from.
+    void ApplyCameraSampleAt(float time)
+    {
+        if (!HasCameraTrack || playbackCamera == null)
+            return;
+
+        GetCameraSampleAt(time, out Vector3 position, out Quaternion rotation, out float focalMM, out bool visorActive);
+
+        playbackCamera.transform.SetPositionAndRotation(position, rotation);
+        playbackCamera.focalLength = Mathf.Max(focalMM, 1f);
+
+        if (cameraMarker != null)
+        {
+            cameraMarker.transform.SetPositionAndRotation(position, rotation);
+            cameraMarker.SetActive(visorActive);
+        }
+
+        currentVisorActive = visorActive;
+        RefreshMonitorState();
+    }
+
+    void GetCameraSampleAt(float time, out Vector3 position, out Quaternion rotation, out float focalMM, out bool visorActive)
+    {
+        CameraTrackSample first = cameraSamples[0];
+        CameraTrackSample last = cameraSamples[cameraSamples.Count - 1];
+        CameraTrackSample a = first;
+        CameraTrackSample b = first;
+        float t = 0f;
+
+        if (time >= last.TiempoRelativo)
+        {
+            a = last;
+            b = last;
+        }
+        else if (time > first.TiempoRelativo)
+        {
+            for (int i = 0; i < cameraSamples.Count - 1; i++)
+            {
+                if (time < cameraSamples[i].TiempoRelativo || time > cameraSamples[i + 1].TiempoRelativo)
+                    continue;
+
+                a = cameraSamples[i];
+                b = cameraSamples[i + 1];
+                float span = b.TiempoRelativo - a.TiempoRelativo;
+                t = span > 0f ? (time - a.TiempoRelativo) / span : 0f;
+                break;
+            }
+        }
+
+        position = Vector3.Lerp(new Vector3(a.PosX, a.PosY, a.PosZ), new Vector3(b.PosX, b.PosY, b.PosZ), t);
+        rotation = Quaternion.Slerp(
+            new Quaternion(a.RotX, a.RotY, a.RotZ, a.RotW),
+            new Quaternion(b.RotX, b.RotY, b.RotZ, b.RotW), t);
+        focalMM = Mathf.Lerp(a.FocalMM, b.FocalMM, t);
+        visorActive = t >= 1f ? b.VisorActivo : a.VisorActivo;
+    }
+
+    // Monitor visibility follows the toggle; image vs "Visor no activo" follows the recorded
+    // flag. The playback camera only renders when its image is actually on screen.
+    void RefreshMonitorState()
+    {
+        if (monitorObject != null)
+            monitorObject.SetActive(monitorEnabled);
+        if (monitorFeed != null)
+            monitorFeed.enabled = currentVisorActive;
+        if (monitorInactiveMessage != null)
+            monitorInactiveMessage.SetActive(!currentVisorActive);
+        if (playbackCamera != null)
+            playbackCamera.enabled = monitorEnabled && currentVisorActive;
+    }
+
+    static void ApplyLayer(GameObject obj, int layer)
+    {
+        if (layer >= 0)
+            obj.layer = layer;
+    }
+
+    // A small box for the camera body plus a long thin box sticking out the front to show
+    // where it's pointing. No colliders. On the monitor layer so the playback camera, which
+    // sits exactly where this marker is, doesn't render it.
+    void BuildCameraMarker()
+    {
+        int monitorLayer = LayerMask.NameToLayer(MonitorLayerName);
+
+        cameraMarker = new GameObject("RecordedCameraMarker");
+        ApplyLayer(cameraMarker, monitorLayer);
+
+        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        body.name = "Body";
+        body.transform.SetParent(cameraMarker.transform, false);
+        body.transform.localScale = MarkerBodySize;
+        ApplyLayer(body, monitorLayer);
+
+        GameObject pointer = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        pointer.name = "Direction";
+        pointer.transform.SetParent(cameraMarker.transform, false);
+        pointer.transform.localScale = MarkerPointerSize;
+        pointer.transform.localPosition = new Vector3(0f, 0f, (MarkerBodySize.z + MarkerPointerSize.z) * 0.5f);
+        ApplyLayer(pointer, monitorLayer);
+
+        foreach (GameObject part in new[] { body, pointer })
+        {
+            Destroy(part.GetComponent<Collider>());
+            part.GetComponent<Renderer>().material.color = MarkerBodyColor;
+        }
+
+        cameraMarker.SetActive(false);
+    }
+
+    // A standalone world camera (never parented to the director's rig) with the same
+    // physical camera setup as the viewfinder - 36x24mm full-frame sensor, horizontal gate
+    // fit, driven by focalLength - so focal_mm turns into the same FOV the director saw.
+    void BuildPlaybackCamera()
+    {
+        Camera mainCamera = Camera.main;
+        int monitorLayer = LayerMask.NameToLayer(MonitorLayerName);
+        if (monitorLayer < 0)
+            Debug.LogWarning($"RecordingPlaybackController: layer '{MonitorLayerName}' not found - the playback camera will see its own monitor (recursive feedback).");
+
+        monitorRenderTexture = new RenderTexture(MonitorTextureWidth, MonitorTextureHeight, 16);
+        monitorRenderTexture.Create();
+
+        var cameraObject = new GameObject("RecordedCameraPlayback", typeof(Camera));
+        playbackCamera = cameraObject.GetComponent<Camera>();
+
+        if (mainCamera != null)
+        {
+            playbackCamera.clearFlags = mainCamera.clearFlags;
+            playbackCamera.backgroundColor = mainCamera.backgroundColor;
+            playbackCamera.nearClipPlane = mainCamera.nearClipPlane;
+            playbackCamera.farClipPlane = mainCamera.farClipPlane;
+            playbackCamera.cullingMask = mainCamera.cullingMask;
+        }
+
+        if (monitorLayer >= 0)
+            playbackCamera.cullingMask &= ~(1 << monitorLayer);
+
+        playbackCamera.usePhysicalProperties = true;
+        playbackCamera.sensorSize = new Vector2(36f, 24f);
+        playbackCamera.gateFit = Camera.GateFitMode.Horizontal;
+        playbackCamera.targetTexture = monitorRenderTexture;
+    }
+
+    // World Space canvas showing the playback camera's RenderTexture, with a "Visor no
+    // activo" cover for the stretches where the viewfinder wasn't raised. Purely visual - no
+    // buttons, so no GraphicRaycaster.
+    void BuildMonitor()
+    {
+        int monitorLayer = LayerMask.NameToLayer(MonitorLayerName);
+
+        monitorObject = new GameObject("RecordedCameraMonitor", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        ApplyLayer(monitorObject, monitorLayer);
+
+        Canvas canvas = monitorObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = Camera.main;
+
+        RectTransform canvasRect = (RectTransform)monitorObject.transform;
+        canvasRect.sizeDelta = new Vector2(MonitorTextureWidth, MonitorTextureHeight);
+        canvasRect.localScale = Vector3.one * (MonitorWidthMeters / MonitorTextureWidth);
+
+        var background = new GameObject("Background", typeof(RectTransform), typeof(Image));
+        background.transform.SetParent(canvasRect, false);
+        ApplyLayer(background, monitorLayer);
+        StretchToParent((RectTransform)background.transform);
+        background.GetComponent<Image>().color = MonitorBackgroundColor;
+
+        var feedObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage));
+        feedObject.transform.SetParent(canvasRect, false);
+        ApplyLayer(feedObject, monitorLayer);
+        StretchToParent((RectTransform)feedObject.transform);
+        monitorFeed = feedObject.GetComponent<RawImage>();
+        monitorFeed.texture = monitorRenderTexture;
+
+        monitorInactiveMessage = new GameObject("VisorNoActivo", typeof(RectTransform), typeof(Text));
+        monitorInactiveMessage.transform.SetParent(canvasRect, false);
+        ApplyLayer(monitorInactiveMessage, monitorLayer);
+        StretchToParent((RectTransform)monitorInactiveMessage.transform);
+        Text message = monitorInactiveMessage.GetComponent<Text>();
+        message.font = uiFont;
+        message.text = "Visor no activo";
+        message.fontSize = MonitorMessageFontSize;
+        message.fontStyle = FontStyle.Bold;
+        message.color = TextColor;
+        message.alignment = TextAnchor.MiddleCenter;
+
+        UpdateMonitorPose();
+        RefreshMonitorState();
+    }
+
+    static void StretchToParent(RectTransform rect)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
     }
 }

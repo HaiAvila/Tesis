@@ -304,6 +304,19 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // Empty for sessions recorded before the camera track existed - playback treats that as
+    // "ghost only".
+    public List<CameraTrackSample> GetCameraTrackForSession(int sessionId)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<CameraTrackSample>(
+                "SELECT * FROM CamaraTrack WHERE sesion_id = ? ORDER BY tiempo_relativo ASC;", sessionId);
+        }
+    }
+
     public List<Metric> GetMetricsForSession(int sessionId)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);

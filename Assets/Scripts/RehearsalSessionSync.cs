@@ -11,6 +11,14 @@ using UnityEngine.SceneManagement;
 // RealtimeTransform is precompiled into the Normcore package - no code
 // generation involved - and is already proven working in this project via
 // NetworkedCube, so it sidesteps the issue entirely.
+//
+// (Later finding: the generator does run in this project - RehearsalSessionStateModel is a
+// proper [RealtimeModel] and compiles fine. The shot number was left on the proven
+// transform path rather than migrated; the rehearsal's active/ended state uses the model.)
+//
+// Session state (active/ended) lives on RehearsalSessionState, on this same object: the
+// director sets it at every entry to and exit from Ensayo Remoto, and the actor is sent back
+// to Actor_HomeMenu when it ends or when the director disconnects.
 [RequireComponent(typeof(RealtimeTransform))]
 public class RehearsalSessionSync : MonoBehaviour
 {
@@ -21,12 +29,16 @@ public class RehearsalSessionSync : MonoBehaviour
     public event Action<int> ShotSelected;
 
     RealtimeTransform realtimeTransform;
+    RehearsalSessionState sessionState;
     int lastKnownShotNumber;
 
     void Awake()
     {
         Instance = this;
         realtimeTransform = GetComponent<RealtimeTransform>();
+        sessionState = GetComponent<RehearsalSessionState>();
+        if (sessionState == null)
+            Debug.LogError("RehearsalSessionSync: no RehearsalSessionState on this object - rehearsal start/end won't sync.");
         lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
 
         // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
@@ -49,6 +61,14 @@ public class RehearsalSessionSync : MonoBehaviour
         // into an empty room, silently. Moved here specifically so it survives every scene
         // change for as long as the app runs.
         ShotSelected += OnShotSelectedForActor;
+
+        // Same "permanent, never unsubscribed" rule as the shot listener above - these
+        // have to keep working across every scene change for the whole app lifetime.
+        if (sessionState != null)
+        {
+            sessionState.RehearsalEnded += OnRehearsalEndedForActor;
+            sessionState.OwnerLeft += OnDirectorLeftForActor;
+        }
 #endif
     }
 
@@ -64,10 +84,79 @@ public class RehearsalSessionSync : MonoBehaviour
         lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
     }
 
-#if !DIRECTOR_BUILD
+#if DIRECTOR_BUILD
+    // Director: the one entry point into Ensayo Remoto. Also clears the synced shot, so an
+    // actor who joins before the director picks one waits instead of being pulled into
+    // whatever shot was left over from an earlier rehearsal.
+    public void BeginRemoteRehearsal()
+    {
+        if (sessionState != null)
+            sessionState.SetState(RehearsalSessionState.StateActive);
+
+        SelectShot(NoShotSelected);
+    }
+
+    // Director: call at every exit from Ensayo Remoto. A no-op unless the director is
+    // actually in one (IsInspecting false), so it's safe to call from paths that are also
+    // reachable during Inspección de Escenas. Not called for pause menu Selección de
+    // Escenas - that's still the same rehearsal.
+    public void EndRemoteRehearsal()
+    {
+        if (Bootstrap.IsInspecting || sessionState == null)
+            return;
+
+        sessionState.SetState(RehearsalSessionState.StateEnded);
+    }
+#else
     void OnShotSelectedForActor(int shotNumber)
     {
+        // Only while the actor has joined a remote rehearsal - never from the home menu or
+        // Ensayar Solo.
+        if (!Bootstrap.ActorJoinedRemoteRehearsal)
+            return;
+
         LoadSceneForShot(shotNumber);
+    }
+
+    // Actor: called right after pressing Ensayo Remoto. If the director's rehearsal is
+    // already running with a shot picked, join it directly instead of waiting for the next
+    // shot change - otherwise an actor joining late would wait until the director happened
+    // to pick a new shot. Requires a connected director (the model still has an owner), so
+    // stale values left over in the room from an earlier session are ignored.
+    public void JoinRemoteRehearsal()
+    {
+        if (sessionState == null
+            || sessionState.State != RehearsalSessionState.StateActive
+            || !sessionState.HasOwner)
+            return;
+
+        int currentShotNumber = Mathf.RoundToInt(transform.position.x);
+        if (currentShotNumber != NoShotSelected)
+            LoadSceneForShot(currentShotNumber);
+    }
+
+    void OnRehearsalEndedForActor()
+    {
+        if (Bootstrap.ActorJoinedRemoteRehearsal)
+            SendActorHome("El director terminó el ensayo");
+    }
+
+    void OnDirectorLeftForActor()
+    {
+        if (Bootstrap.ActorJoinedRemoteRehearsal)
+            SendActorHome("Se perdió la conexión con el director");
+    }
+
+    // Exit point: clears the joined flag, then the same home-menu load as the pause menu's
+    // Menú Principal, with a notice shown once on arrival.
+    void SendActorHome(string notice)
+    {
+        Bootstrap.ActorJoinedRemoteRehearsal = false;
+        Bootstrap.IsInspecting = false;
+        ActorHomeMenuController.PendingNotice = notice;
+
+        SceneManager.LoadScene("MenuBackdrop");
+        SceneManager.LoadScene("Actor_HomeMenu", LoadSceneMode.Additive);
     }
 #endif
 

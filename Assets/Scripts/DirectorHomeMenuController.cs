@@ -88,6 +88,13 @@ public class DirectorHomeMenuController : MonoBehaviour
     void OnRemoteRehearsalSelected()
     {
         Bootstrap.IsInspecting = false;
+
+#if DIRECTOR_BUILD
+        // The one entry point into Ensayo Remoto - marks the synced session active.
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.BeginRemoteRehearsal();
+#endif
+
         SceneManager.LoadSceneAsync("SceneSelect");
     }
 

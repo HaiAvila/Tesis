@@ -420,6 +420,7 @@ GameObject:
   - component: {fileID: 700000003}
   - component: {fileID: 700000004}
   - component: {fileID: 700000005}
+  - component: {fileID: 700000006}
   m_Layer: 0
   m_Name: RehearsalSession
   m_TagString: Untagged
@@ -463,6 +464,9 @@ MonoBehaviour:
   - componentID: 1
     component: {fileID: 700000005}
     isDeprecated: 0
+  - componentID: 2
+    component: {fileID: 700000006}
+    isDeprecated: 0
   _childViews: []
 --- !u!114 &700000004
 MonoBehaviour:
@@ -495,6 +499,18 @@ MonoBehaviour:
   _syncVelocity: 0
   _maintainOwnershipWhileSleeping: 0
   _autoRequestOwnership: 0
+--- !u!114 &700000006
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 700000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f97e22171485f19429b17ce3406837e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RehearsalSessionState
 --- !u!1 &945736972
 GameObject:
   m_ObjectHideFlags: 0

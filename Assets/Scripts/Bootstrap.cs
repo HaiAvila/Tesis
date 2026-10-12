@@ -21,6 +21,15 @@ public class Bootstrap : MonoBehaviour
     // a value from an earlier session can never survive into a new one unnoticed.
     public static bool IsInspecting;
 
+    // Actor only: true while the actor has joined a remote rehearsal - pressed Ensayo Remoto
+    // and is either waiting or in a content scene. RehearsalSessionSync only lets the
+    // director's shot selections (and end/disconnect) move the actor while this is set, so
+    // an actor on the home menu or in Ensayar Solo is never pulled anywhere. Same rule as
+    // IsInspecting: set explicitly at the one entry point (ActorHomeMenuController's Ensayo
+    // Remoto button) and cleared at every exit - initial connect, Ensayar Solo, pause menu
+    // Menú Principal, and the director ending the rehearsal or disconnecting.
+    public static bool ActorJoinedRemoteRehearsal;
+
     static readonly string[] ContentSceneNames = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };
 
     public static bool IsContentScene(string sceneName)
@@ -53,6 +62,7 @@ public class Bootstrap : MonoBehaviour
         // Neutral state on the very first entry into the app - see IsInspecting's own
         // comment for why this must never be left to whatever a static field defaults to.
         IsInspecting = false;
+        ActorJoinedRemoteRehearsal = false;
 
         SceneManager.LoadScene("MenuBackdrop");
 

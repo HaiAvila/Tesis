@@ -276,6 +276,17 @@ public class PauseMenuController : MonoBehaviour
         // scene, on either build, so it's an exit point IsInspecting must reset at (see
         // its own comment on Bootstrap.cs). This is the only change here: GoToSceneSelect
         // below is untouched, it keeps inheriting whatever's already set.
+        //
+        // Also an exit from a remote rehearsal for both roles: the director ends the synced
+        // session (sending the actor home - checked before IsInspecting is reset below, since
+        // EndRemoteRehearsal is a no-op during Inspección de Escenas), and the actor leaves
+        // it, so later shot selections stop pulling them.
+#if DIRECTOR_BUILD
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.EndRemoteRehearsal();
+#else
+        Bootstrap.ActorJoinedRemoteRehearsal = false;
+#endif
         Bootstrap.IsInspecting = false;
 
         // Actor_HomeMenu/Director_HomeMenu have no camera of their own - they rely on

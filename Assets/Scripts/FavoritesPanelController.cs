@@ -355,6 +355,14 @@ public class FavoritesPanelController : MonoBehaviour
 
         Close();
 
+        // Favoritos is reachable mid Ensayo Remoto, and jumping to a session leaves the
+        // rehearsal for Inspección de Escenas - so it ends the synced session (sending the
+        // actor home). Must run before IsInspecting flips to true; it's a no-op otherwise.
+#if DIRECTOR_BUILD
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.EndRemoteRehearsal();
+#endif
+
         Bootstrap.IsInspecting = true;
         Bootstrap.CurrentShotNumber = shot.ShotNumber;
         Bootstrap.CurrentSessionId = session.Id;

@@ -17,6 +17,14 @@ public class ActorHomeMenuController : MonoBehaviour
     static readonly Color PanelColor = new Color(0.5f, 0.32f, 0.12f, 0.55f);
     static readonly Color TextColor = new Color(0.98f, 0.94f, 0.85f, 1f);
 
+    const int NoticeFontSize = 28;
+    const float NoticeDurationSeconds = 5f;
+
+    // One-shot message to show when this menu next opens (e.g. "El director terminó el
+    // ensayo"), set by RehearsalSessionSync right before it sends the actor home. Static
+    // because the sender runs before this scene - and this component - exists.
+    public static string PendingNotice;
+
     Font uiFont;
     RectTransform canvasRect;
     GameObject buttonLayoutObject;
@@ -61,6 +69,35 @@ public class ActorHomeMenuController : MonoBehaviour
         CreateButton(layoutRect, uiFont, "Ensayar Solo", OnRehearseAloneSelected);
 
         LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
+
+        ShowPendingNotice();
+    }
+
+    // Shown above the buttons for a few seconds, then removed; cleared so it only shows once.
+    void ShowPendingNotice()
+    {
+        if (string.IsNullOrEmpty(PendingNotice))
+            return;
+
+        var noticeObject = new GameObject("Notice", typeof(RectTransform), typeof(Text));
+        noticeObject.transform.SetParent(canvasRect, false);
+        var noticeRect = (RectTransform)noticeObject.transform;
+        noticeRect.anchorMin = new Vector2(0.5f, 0.5f);
+        noticeRect.anchorMax = new Vector2(0.5f, 0.5f);
+        noticeRect.pivot = new Vector2(0.5f, 0.5f);
+        noticeRect.anchoredPosition = new Vector2(0f, ButtonHeight);
+        noticeRect.sizeDelta = new Vector2(ButtonWidth * 2 + Spacing, ButtonHeight * 0.75f);
+
+        Text noticeText = noticeObject.GetComponent<Text>();
+        noticeText.font = uiFont;
+        noticeText.text = PendingNotice;
+        noticeText.fontSize = NoticeFontSize;
+        noticeText.fontStyle = FontStyle.Bold;
+        noticeText.color = TextColor;
+        noticeText.alignment = TextAnchor.MiddleCenter;
+
+        PendingNotice = null;
+        Destroy(noticeObject, NoticeDurationSeconds);
     }
 
     void CreateButton(RectTransform parent, Font font, string label, UnityEngine.Events.UnityAction onClick)
@@ -112,8 +149,15 @@ public class ActorHomeMenuController : MonoBehaviour
 
         // Actually listening for the director's pick (this shot and every one after it)
         // is handled by a permanent, never-unsubscribing listener living on
-        // RehearsalSessionSync itself now - see its own comment for why. This screen just
-        // shows the waiting message; it has nothing left to wire up here.
+        // RehearsalSessionSync itself - see its own comment for why. That listener only acts
+        // while this flag is set, so this is the entry point that turns it on.
+        Bootstrap.ActorJoinedRemoteRehearsal = true;
+
+#if !DIRECTOR_BUILD
+        // If the director's rehearsal is already running with a shot picked, join it now.
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.JoinRemoteRehearsal();
+#endif
     }
 
     void OnRehearseAloneSelected()
@@ -123,6 +167,7 @@ public class ActorHomeMenuController : MonoBehaviour
         // would call RehearsalSessionSync.SelectShot() on whatever stale value this flag
         // happened to have, broadcasting a fake shot selection to anyone connected.
         Bootstrap.IsInspecting = true;
+        Bootstrap.ActorJoinedRemoteRehearsal = false;
         SceneManager.LoadSceneAsync("SceneSelect");
     }
 }

@@ -33,6 +33,10 @@ public class RehearsalRecorder : MonoBehaviour
 
     readonly List<Metric> buffer = new List<Metric>();
 
+    // Director viewfinder camera, one entry per actor sample at the same tiempo_relativo -
+    // filled in lock-step with buffer by SampleOnce, saved/discarded together with it.
+    readonly List<CameraTrackSample> cameraBuffer = new List<CameraTrackSample>();
+
     Coroutine samplingCoroutine;
     float recordingStartTime;
     DateTime recordingStartedAt;
@@ -128,6 +132,7 @@ public class RehearsalRecorder : MonoBehaviour
             return;
 
         buffer.Clear();
+        cameraBuffer.Clear();
         shotNumberAtStart = Bootstrap.CurrentShotNumber;
         recordingStartedAt = DateTime.Now;
         recordingStartTime = Time.time;
@@ -369,9 +374,10 @@ public class RehearsalRecorder : MonoBehaviour
         if (database == null)
             Debug.LogError("RehearsalRecorder: no ShotListDatabase instance found, recording discarded.");
         else
-            database.SaveRecordingSession(shotNumberAtStart, recordingStartedAt, pendingDuration, buffer, markAsPreferida, markAsFavorita);
+            database.SaveRecordingSession(shotNumberAtStart, recordingStartedAt, pendingDuration, buffer, cameraBuffer, markAsPreferida, markAsFavorita);
 
         buffer.Clear();
+        cameraBuffer.Clear();
     }
 
     void OnDiscardClicked()
@@ -379,6 +385,7 @@ public class RehearsalRecorder : MonoBehaviour
         DestroyDecisionPanel();
         SendHaptic();
         buffer.Clear();
+        cameraBuffer.Clear();
     }
 #endif
 
@@ -397,16 +404,47 @@ public class RehearsalRecorder : MonoBehaviour
         if (ActorPositionSync.Instance == null)
             return;
 
+#if DIRECTOR_BUILD
+        // Actor and camera are sampled as a pair or not at all, so Metricas and CamaraTrack
+        // always end up with the same row count and identical timestamps. The viewfinder
+        // exists for the whole of Ensayo Remoto; it's only missing for the first frames
+        // after a scene loads, or outside Ensayo Remoto (e.g. Inspección de Escenas, where
+        // recording isn't meaningful anyway).
+        DirectorViewfinderController viewfinder = DirectorViewfinderController.Instance;
+        if (viewfinder == null
+            || !viewfinder.TryGetCameraSample(out Vector3 cameraPosition, out Quaternion cameraRotation, out float focalLengthMM, out bool visorActive))
+            return;
+#endif
+
         Transform actorTransform = ActorPositionSync.Instance.transform;
         Vector3 position = actorTransform.position;
         Quaternion rotation = actorTransform.rotation;
 
+        // Read once and shared by both rows, so the timestamps are exactly equal.
+        float tiempoRelativo = Time.time - recordingStartTime;
+
         // TEMPORARY diagnostic - remove once the empty position/rotation issue is confirmed fixed.
         Debug.Log($"RehearsalRecorder: sampled pos={position:F3} rot={rotation:F3}");
 
+#if DIRECTOR_BUILD
+        cameraBuffer.Add(new CameraTrackSample
+        {
+            TiempoRelativo = tiempoRelativo,
+            PosX = cameraPosition.x,
+            PosY = cameraPosition.y,
+            PosZ = cameraPosition.z,
+            RotX = cameraRotation.x,
+            RotY = cameraRotation.y,
+            RotZ = cameraRotation.z,
+            RotW = cameraRotation.w,
+            FocalMM = focalLengthMM,
+            VisorActivo = visorActive
+        });
+#endif
+
         buffer.Add(new Metric
         {
-            TiempoRelativo = Time.time - recordingStartTime,
+            TiempoRelativo = tiempoRelativo,
             PosX = position.x,
             PosY = position.y,
             PosZ = position.z,

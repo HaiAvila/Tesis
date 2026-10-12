@@ -166,8 +166,39 @@ public class DirectorViewfinderController : MonoBehaviour
     Quaternion controllerRotationAtLock;
 #endif
 
+    public static DirectorViewfinderController Instance { get; private set; }
+
+    // Current state of the virtual camera for RehearsalRecorder, which samples it on the same
+    // tick as the actor. World-space pose of the camera itself (not the controller) - while
+    // a saved framing is locked, those differ. Works while the panel is hidden too: the
+    // camera's transform keeps following the hand even when its GameObject is inactive, so a
+    // take where the viewfinder is never raised still gets real samples (visorActive false).
+    // Returns false only when no viewfinder camera exists right now (e.g. outside Ensayo
+    // Remoto, or the first frames of a scene before it's built).
+    public bool TryGetCameraSample(out Vector3 position, out Quaternion rotation, out float focalLengthMM, out bool visorActive)
+    {
+#if DIRECTOR_BUILD
+        if (viewfinderCamera != null)
+        {
+            Transform cameraTransform = viewfinderCamera.transform;
+            position = cameraTransform.position;
+            rotation = cameraTransform.rotation;
+            focalLengthMM = currentFocalLengthMM;
+            visorActive = isVisible;
+            return true;
+        }
+#endif
+        position = Vector3.zero;
+        rotation = Quaternion.identity;
+        focalLengthMM = 0f;
+        visorActive = false;
+        return false;
+    }
+
     void Awake()
     {
+        Instance = this;
+
 #if DIRECTOR_BUILD
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
@@ -197,6 +228,9 @@ public class DirectorViewfinderController : MonoBehaviour
 
     void OnDestroy()
     {
+        if (Instance == this)
+            Instance = null;
+
 #if DIRECTOR_BUILD
         gripToggleAction.started -= OnGripStarted;
         gripToggleAction.canceled -= OnGripReleased;

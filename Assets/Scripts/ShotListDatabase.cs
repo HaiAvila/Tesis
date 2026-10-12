@@ -128,12 +128,13 @@ public class ShotListDatabase : MonoBehaviour
             connection.Execute("ALTER TABLE Sesiones ADD COLUMN es_favorita INTEGER NOT NULL DEFAULT 0;");
     }
 
-    // Creates the Sesiones/Metricas record for a finished rehearsal recording in a single
-    // transaction: one Sesiones row (with es_preferida/es_favorita already set, if
-    // requested, directly in the INSERT - never a follow-up UPDATE) plus every buffered
-    // Metricas sample. Marking the new session preferida unmarks any other preferida
-    // session of the same shot first, in the same transaction.
-    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples, bool esPreferida = false, bool esFavorita = false)
+    // Creates the Sesiones/Metricas/CamaraTrack record for a finished rehearsal recording in
+    // a single transaction: one Sesiones row (with es_preferida/es_favorita already set, if
+    // requested, directly in the INSERT - never a follow-up UPDATE), every buffered Metricas
+    // sample, and every buffered CamaraTrack sample. One transaction means camera rows can
+    // never exist without their session. Marking the new session preferida unmarks any
+    // other preferida session of the same shot first, in the same transaction.
+    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, bool esPreferida = false, bool esFavorita = false)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -159,9 +160,14 @@ public class ShotListDatabase : MonoBehaviour
                     sample.SesionId = session.Id;
 
                 connection.InsertAll(samples);
+
+                foreach (CameraTrackSample cameraSample in cameraSamples)
+                    cameraSample.SesionId = session.Id;
+
+                connection.InsertAll(cameraSamples);
             });
 
-            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
+            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
         }
     }
@@ -348,6 +354,26 @@ public class ShotListDatabase : MonoBehaviour
                 rot_y REAL,
                 rot_z REAL,
                 rot_w REAL,
+                FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
+            );");
+
+        // Director's viewfinder camera, sampled on the exact same ticks (same tiempo_relativo)
+        // as Metricas - one row per actor sample. A brand new table, so CREATE TABLE IF NOT
+        // EXISTS is already safe for existing databases.
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS CamaraTrack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sesion_id INTEGER,
+                tiempo_relativo REAL,
+                pos_x REAL,
+                pos_y REAL,
+                pos_z REAL,
+                rot_x REAL,
+                rot_y REAL,
+                rot_z REAL,
+                rot_w REAL,
+                focal_mm REAL,
+                visor_activo INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
             );");
     }
@@ -545,6 +571,23 @@ public class Metric
     [Column("rot_y")] public float RotY { get; set; }
     [Column("rot_z")] public float RotZ { get; set; }
     [Column("rot_w")] public float RotW { get; set; }
+}
+
+[Table("CamaraTrack")]
+public class CameraTrackSample
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("sesion_id")] public int SesionId { get; set; }
+    [Column("tiempo_relativo")] public float TiempoRelativo { get; set; }
+    [Column("pos_x")] public float PosX { get; set; }
+    [Column("pos_y")] public float PosY { get; set; }
+    [Column("pos_z")] public float PosZ { get; set; }
+    [Column("rot_x")] public float RotX { get; set; }
+    [Column("rot_y")] public float RotY { get; set; }
+    [Column("rot_z")] public float RotZ { get; set; }
+    [Column("rot_w")] public float RotW { get; set; }
+    [Column("focal_mm")] public float FocalMM { get; set; }
+    [Column("visor_activo")] public bool VisorActivo { get; set; }
 }
 
 [Table("CameraFramings")]

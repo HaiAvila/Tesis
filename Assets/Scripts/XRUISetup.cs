@@ -42,4 +42,49 @@ public static class XRUISetup
         if (canvasObject.GetComponent<TrackedDeviceGraphicRaycaster>() == null)
             canvasObject.AddComponent<TrackedDeviceGraphicRaycaster>();
     }
+
+    // Unity's built-in "UI" layer.
+    public const int UILayer = 5;
+
+    // For panels that can be on screen while a virtual camera is rendering (the director's
+    // viewfinder, the recorded-camera playback): those cameras exclude UILayer, so the panel
+    // shows to the person but not inside the camera's image. The rig's ray mask already
+    // includes UI, so the ray still presses it. Call once the panel is fully built - objects
+    // created with new GameObject start on Default, not their parent's layer.
+    public static void MoveToUILayer(GameObject root)
+    {
+        foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            t.gameObject.layer = UILayer;
+    }
+
+    // Project user layer (index 9) for the controller rays, which the stock rig leaves on
+    // Default. Virtual cameras exclude it, so a ray never shows up inside a camera's image -
+    // every LineRenderer on both controllers, not just the Near-Far ray: the Teleport
+    // Interactor ray (inactive until the stick is pushed up, hence includeInactive) was
+    // still showing in the viewfinder feed. Render layers only decide which cameras draw an
+    // object, not what XRI's ray can interact with (that's the Interaction Layer Mask), so
+    // this doesn't change how the ray works. Returns the layer, or -1 if it's missing.
+    public const string ControllerRayLayerName = "ControllerRayVisual";
+
+    public static int MoveControllerRaysToOwnLayer()
+    {
+        int rayLayer = LayerMask.NameToLayer(ControllerRayLayerName);
+        if (rayLayer < 0)
+        {
+            Debug.LogWarning($"XRUISetup: layer '{ControllerRayLayerName}' not found - controller rays will show up inside virtual camera images.");
+            return -1;
+        }
+
+        foreach (string controllerName in new[] { "Left Controller", "Right Controller" })
+        {
+            GameObject controller = GameObject.Find(controllerName);
+            if (controller == null)
+                continue;
+
+            foreach (LineRenderer line in controller.GetComponentsInChildren<LineRenderer>(true))
+                line.gameObject.layer = rayLayer;
+        }
+
+        return rayLayer;
+    }
 }

@@ -130,6 +130,8 @@ public class FavoritesPanelController : MonoBehaviour
             foreach (RecordingSession session in favorites)
                 CreateFavoriteRow(listContent, database, session);
 
+        XRUISetup.MoveToUILayer(panelObject);
+
         XRUISetup.EnableRayInteraction(panelObject);
         XRUISetup.EnsureEventSystem();
     }

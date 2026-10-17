@@ -229,6 +229,8 @@ public class PauseMenuController : MonoBehaviour
         foreach (PauseMenuOption option in menuOptions)
             CreateButton(layoutRect, option);
 
+        XRUISetup.MoveToUILayer(panelObject);
+
         XRUISetup.EnableRayInteraction(panelObject);
         XRUISetup.EnsureEventSystem();
 

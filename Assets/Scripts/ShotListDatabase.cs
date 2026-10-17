@@ -28,12 +28,10 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
-    // A saved director-viewfinder framing (world position/rotation) for a shot - a brand
-    // new table, not an extension of an existing one, so CREATE TABLE IF NOT EXISTS is
-    // already safe on its own for the table itself (no ALTER TABLE migration needed, unlike
-    // es_preferida/es_favorita above, which added columns to an existing Sesiones). The
-    // focal_length_mm column was added after the fact though - see
-    // EnsureCameraFramingsColumns.
+    // Saved director-viewfinder framings. Nothing reads or writes this table anymore - the
+    // viewfinder's save/load framing buttons were removed - but it's still created and
+    // migrated so the schema stays the same and rows already saved in existing databases are
+    // kept, not dropped.
     void CreateCameraFramingsTable(SQLiteConnection connection)
     {
         connection.Execute(@"
@@ -66,51 +64,6 @@ public class ShotListDatabase : MonoBehaviour
 
         if (!existingColumns.Contains("focal_length_mm"))
             connection.Execute("ALTER TABLE CameraFramings ADD COLUMN focal_length_mm REAL NOT NULL DEFAULT 50;");
-    }
-
-    // Position/rotation are captured in world space (not relative to the controller) - the
-    // hand keeps moving after the framing is saved, so a controller-relative offset would
-    // immediately point somewhere else. fov is the derived vertical FOV at save time, kept
-    // for informational/legacy purposes; focalLengthMM is what's actually restored on load.
-    public int SaveCameraFraming(int shotNumber, Vector3 position, Quaternion rotation, float fov, float focalLengthMM)
-    {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
-
-        using (var connection = new SQLiteConnection(dbPath))
-        {
-            var framing = new CameraFraming
-            {
-                ShotNumber = shotNumber,
-                PositionX = position.x,
-                PositionY = position.y,
-                PositionZ = position.z,
-                RotationX = rotation.x,
-                RotationY = rotation.y,
-                RotationZ = rotation.z,
-                RotationW = rotation.w,
-                Fov = fov,
-                FocalLengthMM = focalLengthMM,
-                Timestamp = DateTime.Now.ToString("o")
-            };
-
-            connection.Insert(framing);
-
-            Debug.Log($"ShotListDatabase: saved camera framing {framing.Id} for shot {shotNumber} ({focalLengthMM:F0}mm, fov={fov:F1}).");
-            return framing.Id;
-        }
-    }
-
-    // Most recent first - matches how the framing list in the viewfinder panel should show
-    // them. No limit on how many a shot can have yet - revisit if it gets unwieldy.
-    public List<CameraFraming> GetCameraFramingsForShot(int shotNumber)
-    {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
-
-        using (var connection = new SQLiteConnection(dbPath))
-        {
-            return connection.Query<CameraFraming>(
-                "SELECT * FROM CameraFramings WHERE shot_number = ? ORDER BY id DESC;", shotNumber);
-        }
     }
 
     // Sesiones predates es_preferida/es_favorita - real databases created before this
@@ -627,21 +580,4 @@ public class CameraTrackSample
     [Column("rot_w")] public float RotW { get; set; }
     [Column("focal_mm")] public float FocalMM { get; set; }
     [Column("visor_activo")] public bool VisorActivo { get; set; }
-}
-
-[Table("CameraFramings")]
-public class CameraFraming
-{
-    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
-    [Indexed, Column("shot_number")] public int ShotNumber { get; set; }
-    [Column("position_x")] public float PositionX { get; set; }
-    [Column("position_y")] public float PositionY { get; set; }
-    [Column("position_z")] public float PositionZ { get; set; }
-    [Column("rotation_x")] public float RotationX { get; set; }
-    [Column("rotation_y")] public float RotationY { get; set; }
-    [Column("rotation_z")] public float RotationZ { get; set; }
-    [Column("rotation_w")] public float RotationW { get; set; }
-    [Column("fov")] public float Fov { get; set; }
-    [Column("focal_length_mm")] public float FocalLengthMM { get; set; }
-    [Column("timestamp")] public string Timestamp { get; set; }
 }

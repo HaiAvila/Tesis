@@ -1,14 +1,12 @@
-using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if DIRECTOR_BUILD
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
-using UnityEngine.XR.Interaction.Toolkit.Interactors.Casters;
+using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 #endif
 
 // Persistent (lives under Bootstrap, DontDestroyOnLoad). Director-only "virtual camera":
@@ -33,19 +31,13 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors.Casters;
 // The feed also has rule-of-thirds and 16:9 framing guide lines overlaid directly on the
 // Canvas (BuildFramingOverlay) - viewfinder-only, not baked into the rendered feed itself.
 //
-// The panel also has a small button bar: "Guardar framing" saves the camera's current
-// world position/rotation/focal length for the active shot, and "Framings" opens a short
-// list of previously saved ones for that shot with a "Cargar" button each. Loading one
-// snaps the camera to that saved pose and LOCKS it there (ignoring the hand) until the
-// director physically moves the controller again - see UpdateLock.
+// The panel is display-only - no buttons, no raycaster. It used to have a framing button bar
+// (save / load a framing), removed because the right controller's poke interactor, right
+// under the panel, kept pressing it by accident.
 //
-// Right hand chosen deliberately, after checking rather than assuming: neither controller
-// in this project's XR rig is actually wired up for UI ray/poke interaction yet - both
-// "Left Controller" and "Right Controller" carry the identical, symmetric stock Near-Far
-// Interactor from the XRI Starter Assets prefab (confirmed by inspecting both in the
-// Editor - same settings apart from m_Handedness). So there's no existing "UI hand" to
-// avoid conflicting with. Picked right hand because it's the less loaded one overall - left
-// hand already carries Menu, Play/Pause (Inspección de Escenas), and the free-fly joystick.
+// Right hand because both controllers carry the identical stock XRI interactors, and the
+// right one is the less loaded overall - the left hand already carries Menu, Play/Pause
+// (Inspección de Escenas), and the free-fly joystick.
 // Grip was unused on both hands, but the right joystick is normally Turn/snap-turn (stock
 // XRI locomotion) - disabled for as long as the panel is visible (see PauseTurnLocomotion),
 // the same way PauseMenuController already suspends Move/Turn while its own panel is open.
@@ -62,19 +54,25 @@ public class DirectorViewfinderController : MonoBehaviour
     const string PanelLayerName = "DirectorViewfinderPanel";
 
     // Added as a project user layer (index 9) via the Editor - the XR rig's controller ray
-    // (Near-Far Interactor/LineVisual, stock XRI) is on Default by default, so it showed up
+    // (its LineRenderers - Near-Far and Teleport, stock XRI) is on Default by default, so it showed up
     // as a flickering streak inside the viewfinder's own feed too. Moving it to its own
     // layer lets the viewfinder camera exclude just the ray, independently of the panel
     // layer above - every other camera (including the director's own main camera, whose
     // culling mask is "Everything") still renders it completely normally.
-    const string RayVisualLayerName = "ControllerRayVisual";
+    const string RayVisualLayerName = XRUISetup.ControllerRayLayerName;
+
+    // RecordingPlaybackController's recorded-camera monitor layer (index 10) - excluded too,
+    // in case "Ver replay" puts the monitor up while the viewfinder is live.
+    const string PlaybackMonitorLayerName = "PlaybackMonitor";
 
     // Placeholder offset, not tuned - positions the panel roughly like a phone screen held
     // up close to the hand. Only a position now (see UpdatePanelFacing) - rotation is
-    // computed live every frame instead of guessed as a fixed local angle.
-    static readonly Vector3 PanelLocalPosition = new Vector3(0f, 0.02f, 0.05f);
-    const float PanelWidth = 0.09f;
-    const float PanelHeight = 0.0675f; // 4:3, matches the RenderTexture's aspect ratio
+    // computed live every frame instead of guessed as a fixed local angle. The panel was
+    // doubled from 9cm to 18cm wide (the feed was too small to judge framing), and y keeps
+    // the feed exactly where it sat when the panel still had its button bar underneath.
+    static readonly Vector3 PanelLocalPosition = new Vector3(0f, 0.075f, 0.05f);
+    const float PanelWidth = 0.18f;
+    const float PanelHeight = 0.135f; // 4:3, matches the RenderTexture's aspect ratio
 
     // Standard lens-kit spread, in mm - joystick left/right cycles through these. FOV for
     // each is derived by Unity's own physical camera model (see ApplyFocalLength), not a
@@ -106,25 +104,15 @@ public class DirectorViewfinderController : MonoBehaviour
     static readonly Color AspectMarkerColor = new Color(1f, 0.85f, 0.2f, 0.65f);
     static readonly Color FocalLengthLabelBackgroundColor = new Color(0f, 0f, 0f, 0.55f);
 
-    // A loaded framing stays fixed in world space until the controller itself moves past
-    // these thresholds - small enough to feel deliberate (not triggered by hand tremor),
-    // large enough that picking the controller back up releases the lock promptly.
-    const float UnlockDistanceMeters = 0.03f;
-    const float UnlockAngleDegrees = 5f;
+    // "● REC" badge, top-left of the feed while RehearsalRecorder is recording - drawn on the
+    // panel like a real camera's screen, so it never ends up in the rendered image itself.
+    const int RecBadgeFontSize = 28;
+    static readonly Vector2 RecBadgeSize = new Vector2(150f, 48f);
+    static readonly Vector2 RecBadgeMargin = new Vector2(10f, -10f);
+    static readonly Color RecBadgeBackgroundColor = new Color(0f, 0f, 0f, 0.55f);
+    static readonly Color RecBadgeTextColor = new Color(1f, 0.15f, 0.15f, 1f);
 
-    const int PanelIconFontSize = 28;
-    const float PanelButtonSize = 90f; // canvas units, same scale as the 640x480 feed
-    const float PanelButtonBarHeight = 90f;
-    const float PanelRowSpacing = 10f;
-
-    const int FramingFontSize = 22;
-    const float FramingRowHeight = 64f;
-    const float FramingLoadButtonWidth = 140f;
-    static readonly Vector3 FramingListLocalOffset = new Vector3(0f, 0.09f, 0f); // above the main panel, placeholder like every other offset here
-
-    static readonly Color PanelButtonColor = new Color(0.28f, 0.28f, 0.34f, 0.9f);
-    static readonly Color PanelButtonTextColor = new Color(0.95f, 0.95f, 0.98f, 1f);
-    static readonly Color PanelRowColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+    static readonly Color PanelTextColor = new Color(0.95f, 0.95f, 0.98f, 1f);
 
 #if DIRECTOR_BUILD
     const int FindControllerMaxAttempts = 30; // ~0.5s at 60fps
@@ -133,16 +121,16 @@ public class DirectorViewfinderController : MonoBehaviour
     InputAction zoomAction;
     Font uiFont;
     GameObject viewfinderRoot;
-    GameObject framingListObject;
     Transform panelTransform;
-    Transform framingListTransform;
     Transform rightControllerTransform;
     Camera viewfinderCamera;
     RenderTexture renderTexture;
     Coroutine buildCoroutine;
     GameObject disabledTurnObject;
+    ControllerInputActionManager pausedRightInputManager;
     NearFarInteractor rightNearFarInteractor;
     Text focalLengthLabel;
+    GameObject recBadge;
     float currentFocalLengthMM;
     bool isVisible;
 
@@ -157,24 +145,15 @@ public class DirectorViewfinderController : MonoBehaviour
     // Hysteresis state for the joystick-X discrete cycling - see CycleTriggerThreshold/
     // CycleRearmThreshold.
     bool cycleArmed = true;
-
-    // Set when a saved framing is loaded - the camera holds this world pose regardless of
-    // hand movement until UpdateLock detects the controller itself has moved enough to
-    // count as the director taking manual control back.
-    bool isLocked;
-    Vector3 lockedPosition;
-    Quaternion lockedRotation;
-    Vector3 controllerPositionAtLock;
-    Quaternion controllerRotationAtLock;
 #endif
 
     public static DirectorViewfinderController Instance { get; private set; }
 
     // Current state of the virtual camera for RehearsalRecorder, which samples it on the same
-    // tick as the actor. World-space pose of the camera itself (not the controller) - while
-    // a saved framing is locked, those differ. Works while the panel is hidden too: the
-    // camera's transform keeps following the hand even when its GameObject is inactive, so a
-    // take where the viewfinder is never raised still gets real samples (visorActive false).
+    // tick as the actor. World-space pose of the camera itself. Works while the panel is
+    // hidden too: the camera's transform keeps following the hand even when its GameObject
+    // is inactive, so a take where the viewfinder is never raised still gets real samples
+    // (visorActive false).
     // Returns false only when no viewfinder camera exists right now (e.g. outside Ensayo
     // Remoto, or the first frames of a scene before it's built).
     public bool TryGetCameraSample(out Vector3 position, out Quaternion rotation, out float focalLengthMM, out bool visorActive)
@@ -274,10 +253,7 @@ public class DirectorViewfinderController : MonoBehaviour
         viewfinderCamera = null;
         rightControllerTransform = null;
         focalLengthLabel = null;
-
-        // framingListObject is a child of viewfinderRoot, already destroyed above.
-        framingListObject = null;
-        framingListTransform = null;
+        recBadge = null;
 
         if (renderTexture != null)
             renderTexture.Release();
@@ -287,9 +263,9 @@ public class DirectorViewfinderController : MonoBehaviour
         // just drop the reference instead of re-enabling it.
         disabledTurnObject = null;
         rightNearFarInteractor = null;
+        pausedRightInputManager = null;
 
         isVisible = false;
-        isLocked = false;
         isGripHeld = false;
         didFineTuneDuringGripHold = false;
         cycleArmed = true;
@@ -301,8 +277,8 @@ public class DirectorViewfinderController : MonoBehaviour
             return;
 
         UpdateZoom();
-        UpdateLock();
         UpdatePanelFacing();
+        UpdateRecBadge();
     }
 
     // Grip held: joystick Y fine-tunes continuously, X is ignored entirely (the whole stick
@@ -321,9 +297,11 @@ public class DirectorViewfinderController : MonoBehaviour
             if (Mathf.Abs(axis.y) < FineTuneDeadzone)
                 return;
 
+            // Stick up = longer focal length = more zoom, like pushing a zoom rocker toward
+            // "tele".
             didFineTuneDuringGripHold = true;
             currentFocalLengthMM = Mathf.Clamp(
-                currentFocalLengthMM - axis.y * FineTuneSpeedMMPerSecond * Time.deltaTime,
+                currentFocalLengthMM + axis.y * FineTuneSpeedMMPerSecond * Time.deltaTime,
                 MinFocalLengthMM, MaxFocalLengthMM);
             ApplyFocalLength();
             return;
@@ -395,34 +373,7 @@ public class DirectorViewfinderController : MonoBehaviour
             focalLengthLabel.text = $"{Mathf.RoundToInt(currentFocalLengthMM)}mm";
     }
 
-    // While locked (a saved framing was just loaded), the camera is still a child of the
-    // controller - without this, it would just sit at whatever local offset was implied by
-    // the saved world pose at the moment it was loaded, and immediately start drifting
-    // again as the hand moves. Re-applying the saved world pose every frame keeps it
-    // genuinely fixed regardless of hand movement. The lock releases - re-gluing the camera
-    // to the hand's current pose - once the controller itself has moved past the unlock
-    // thresholds, which reads as "pick the camera back up to take control again".
-    void UpdateLock()
-    {
-        if (!isLocked || viewfinderCamera == null)
-            return;
-
-        viewfinderCamera.transform.SetPositionAndRotation(lockedPosition, lockedRotation);
-
-        if (rightControllerTransform == null)
-            return;
-
-        float moved = Vector3.Distance(rightControllerTransform.position, controllerPositionAtLock);
-        float rotated = Quaternion.Angle(rightControllerTransform.rotation, controllerRotationAtLock);
-        if (moved <= UnlockDistanceMeters && rotated <= UnlockAngleDegrees)
-            return;
-
-        isLocked = false;
-        viewfinderCamera.transform.localPosition = Vector3.zero;
-        viewfinderCamera.transform.localRotation = Quaternion.identity;
-    }
-
-    // Recomputes the panel's (and, if open, the framing list's) rotation every frame
+    // Recomputes the panel's rotation every frame
     // instead of a fixed local angle relative to the controller - a guessed fixed angle
     // turned out to face the wrong way (the director reported seeing a mirrored, slanted
     // view, i.e. the panel's back). Reuses the exact same LookRotation convention as every
@@ -438,7 +389,6 @@ public class DirectorViewfinderController : MonoBehaviour
             return;
 
         FacePlayer(panelTransform, headCamera);
-        FacePlayer(framingListTransform, headCamera);
     }
 
     static void FacePlayer(Transform target, Camera headCamera)
@@ -488,8 +438,10 @@ public class DirectorViewfinderController : MonoBehaviour
             return;
         }
 
-        AssignRayVisualLayer(rightController);
-        IncludePanelLayerInRayMasks(rightController);
+        // Both hands' rays onto ControllerRayVisual, which BuildCamera excludes from the feed.
+        XRUISetup.MoveControllerRaysToOwnLayer();
+        Transform rightInteractor = rightController.transform.Find("Near-Far Interactor");
+        rightNearFarInteractor = rightInteractor != null ? rightInteractor.GetComponent<NearFarInteractor>() : null;
         rightControllerTransform = rightController.transform;
 
         renderTexture = new RenderTexture(RenderTextureWidth, RenderTextureHeight, 16);
@@ -510,72 +462,6 @@ public class DirectorViewfinderController : MonoBehaviour
         isVisible = false;
     }
 
-    // Moves both controllers' ray visuals (Near-Far Interactor/LineVisual, stock XRI, on
-    // Default by default) onto their own dedicated layer, so the viewfinder camera can
-    // exclude the ray independently of the panel layer, without touching the panel's own
-    // layer. Both hands, not just the one holding the viewfinder - the director can point
-    // the left-hand ray at something while reviewing the right-hand camera, and that ray
-    // would show up in the feed just the same. Changing a GameObject's render layer only
-    // affects which cameras render it, not XRI's own interaction raycasting (a separate
-    // "Interaction Layer Mask" system) - so this has no effect on how the ray interacts.
-    void AssignRayVisualLayer(GameObject rightController)
-    {
-        int rayLayer = LayerMask.NameToLayer(RayVisualLayerName);
-        if (rayLayer < 0)
-        {
-            Debug.LogWarning($"DirectorViewfinderController: layer '{RayVisualLayerName}' not found - the controller ray will be visible inside the viewfinder feed.");
-            return;
-        }
-
-        AssignLayerToLineVisual(rightController, rayLayer);
-
-        GameObject leftController = GameObject.Find("Left Controller");
-        if (leftController != null)
-            AssignLayerToLineVisual(leftController, rayLayer);
-    }
-
-    void AssignLayerToLineVisual(GameObject controller, int layer)
-    {
-        Transform lineVisual = controller.transform.Find("Near-Far Interactor/LineVisual");
-        if (lineVisual != null)
-            lineVisual.gameObject.layer = layer;
-    }
-
-    // The ray's UI raycast only hits graphics whose layer is in the far caster's raycast mask
-    // (the rig's mask is Default + UI), and both viewfinder canvases sit on the panel layer -
-    // so without this the ray would pass straight through them. Nothing on that layer has a
-    // collider, so this doesn't change what the ray can grab, only what UI it can press.
-    void IncludePanelLayerInRayMasks(GameObject rightController)
-    {
-        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
-        if (panelLayer < 0)
-            return;
-
-        foreach (GameObject controller in new[] { rightController, GameObject.Find("Left Controller") })
-        {
-            if (controller == null)
-                continue;
-
-            Transform interactor = controller.transform.Find("Near-Far Interactor");
-            CurveInteractionCaster farCaster = interactor != null ? interactor.GetComponent<CurveInteractionCaster>() : null;
-            if (farCaster != null)
-                farCaster.raycastMask |= 1 << panelLayer;
-        }
-
-        Transform rightInteractor = rightController.transform.Find("Near-Far Interactor");
-        rightNearFarInteractor = rightInteractor != null ? rightInteractor.GetComponent<NearFarInteractor>() : null;
-    }
-
-    // The panel floats a few cm in front of the right controller, so while it's raised the
-    // right hand's own ray would always be hitting it - and the right trigger would press its
-    // buttons by accident. Right-hand UI interaction is off while the viewfinder is up (same
-    // idea as pausing Turn); the left hand's ray presses the viewfinder's buttons.
-    void SetRightHandUIInteraction(bool enabled)
-    {
-        if (rightNearFarInteractor != null)
-            rightNearFarInteractor.enableUIInteraction = enabled;
-    }
-
     // Rigidly parented at the controller's own transform (zero local offset) - the simplest
     // way to guarantee the feed follows the hand's position/rotation exactly, matching
     // "aim where you point your hand" for this first pass.
@@ -586,7 +472,7 @@ public class DirectorViewfinderController : MonoBehaviour
     // the camera then sees again, and so on: a recursive feedback tunnel. Without the ray
     // exclusion, the controller's own ray visual shows up as a flickering streak inside the
     // feed. Only the panel and the ray are on those layers (see BuildPanel and
-    // AssignRayVisualLayer), so the director's main camera still sees both completely
+    // XRUISetup.MoveControllerRaysToOwnLayer), so the director's main camera still sees both completely
     // normally.
     void BuildCamera(Transform parent, Camera mainCamera)
     {
@@ -603,6 +489,14 @@ public class DirectorViewfinderController : MonoBehaviour
             excludedMask |= 1 << panelLayer;
         if (rayLayer >= 0)
             excludedMask |= 1 << rayLayer;
+
+        // The feed shows only the scene: the other panels (pause menu, replay panel, stop-
+        // recording popup, Favoritos, the REC indicator) sit on the UI layer - see
+        // XRUISetup.MoveToUILayer - and the recorded-camera monitor on its own layer.
+        excludedMask |= 1 << XRUISetup.UILayer;
+        int monitorLayer = LayerMask.NameToLayer(PlaybackMonitorLayerName);
+        if (monitorLayer >= 0)
+            excludedMask |= 1 << monitorLayer;
 
         viewfinderCamera = cameraObject.GetComponent<Camera>();
         viewfinderCamera.clearFlags = mainCamera.clearFlags;
@@ -627,21 +521,21 @@ public class DirectorViewfinderController : MonoBehaviour
             Debug.LogWarning($"DirectorViewfinderController: layer '{PanelLayerName}' not found - the viewfinder panel will render inside its own feed (feedback loop).");
     }
 
-    // World Space Canvas + RawImage bound to the RenderTexture, plus a small button bar
-    // below it (Guardar framing / Framings) - same "no prefabs, built at runtime in code"
-    // convention as every other panel in this project, reused here instead of introducing
-    // an unlit-quad-plus-material approach nothing else uses.
+    // World Space Canvas + RawImage bound to the RenderTexture - same "no prefabs, built at
+    // runtime in code" convention as every other panel in this project, reused here instead
+    // of introducing an unlit-quad-plus-material approach nothing else uses. Display-only:
+    // no GraphicRaycaster, so it never catches the ray or the poke interactor.
     //
     // Placed on its own dedicated layer (see PanelLayerName), and every child created here
     // too (layer isn't inherited automatically in Unity) - so the viewfinder camera can
-    // exclude the whole panel, buttons included, from its culling mask. Without this the
-    // camera would recursively render its own display.
+    // exclude the whole panel from its culling mask. Without this the camera would
+    // recursively render its own display.
     void BuildPanel(Transform parent)
     {
         int panelLayer = LayerMask.NameToLayer(PanelLayerName);
         float pixelsToMeters = PanelWidth / RenderTextureWidth; // == PanelHeight / RenderTextureHeight (4:3)
 
-        var canvasObject = new GameObject("ViewfinderPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        var canvasObject = new GameObject("ViewfinderPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         canvasObject.transform.SetParent(parent, false);
         canvasObject.transform.localPosition = PanelLocalPosition;
         panelTransform = canvasObject.transform;
@@ -650,51 +544,40 @@ public class DirectorViewfinderController : MonoBehaviour
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
 
-        // Sized 1:1 with the RenderTexture in canvas units (plus the button bar strip),
-        // then scaled down to a physical, roughly phone-screen size in meters - same
-        // pixel-size-then-world-scale approach used for every other world-space panel in
-        // this project.
+        // Sized 1:1 with the RenderTexture in canvas units, then scaled down to a physical
+        // size in meters - same pixel-size-then-world-scale approach used for every other
+        // world-space panel in this project.
         RectTransform canvasRect = (RectTransform)canvasObject.transform;
-        canvasRect.sizeDelta = new Vector2(RenderTextureWidth, RenderTextureHeight + PanelRowSpacing + PanelButtonBarHeight);
+        canvasRect.sizeDelta = new Vector2(RenderTextureWidth, RenderTextureHeight);
         canvasRect.localScale = Vector3.one * pixelsToMeters;
 
-        var rootLayoutObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
-        rootLayoutObject.transform.SetParent(canvasRect, false);
-        ApplyPanelLayer(rootLayoutObject, panelLayer);
-        RectTransform rootRect = (RectTransform)rootLayoutObject.transform;
-        rootRect.anchorMin = Vector2.zero;
-        rootRect.anchorMax = Vector2.one;
-        rootRect.offsetMin = Vector2.zero;
-        rootRect.offsetMax = Vector2.zero;
-
-        VerticalLayoutGroup rootLayout = rootLayoutObject.GetComponent<VerticalLayoutGroup>();
-        rootLayout.spacing = PanelRowSpacing;
-        rootLayout.childAlignment = TextAnchor.UpperCenter;
-        rootLayout.childControlWidth = true;
-        rootLayout.childControlHeight = true;
-        rootLayout.childForceExpandWidth = true;
-        rootLayout.childForceExpandHeight = false;
-
-        var imageObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage), typeof(LayoutElement));
-        imageObject.transform.SetParent(rootRect, false);
+        var imageObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage));
+        imageObject.transform.SetParent(canvasRect, false);
         ApplyPanelLayer(imageObject, panelLayer);
-        imageObject.GetComponent<LayoutElement>().preferredHeight = RenderTextureHeight;
-        imageObject.GetComponent<RawImage>().texture = renderTexture;
+        RectTransform feedRect = (RectTransform)imageObject.transform;
+        feedRect.anchorMin = Vector2.zero;
+        feedRect.anchorMax = Vector2.one;
+        feedRect.offsetMin = Vector2.zero;
+        feedRect.offsetMax = Vector2.zero;
 
-        BuildFramingOverlay((RectTransform)imageObject.transform, panelLayer);
+        RawImage feed = imageObject.GetComponent<RawImage>();
+        feed.texture = renderTexture;
+        feed.raycastTarget = false;
 
-        BuildButtonBar(rootRect, panelLayer);
+        BuildFramingOverlay(feedRect, panelLayer);
+    }
 
-        XRUISetup.EnableRayInteraction(canvasObject);
-        XRUISetup.EnsureEventSystem();
+    void ApplyPanelLayer(GameObject obj, int panelLayer)
+    {
+        if (panelLayer >= 0)
+            obj.layer = panelLayer;
     }
 
     // Rule-of-thirds grid (2 horizontal + 2 vertical lines) and 16:9 aspect markers,
     // overlaid directly on the Canvas on top of the feed - viewfinder-only guide lines, not
     // baked into the camera's rendered image itself. Plus the focal-length readout (e.g.
     // "50mm"/"47mm"), always reflecting whatever ApplyFocalLength last set, named or
-    // fine-tuned. All purely visual - raycastTarget is off so none of it can intercept
-    // clicks meant for the button bar below.
+    // fine-tuned. All purely visual - raycastTarget is off throughout.
     void BuildFramingOverlay(RectTransform feedRect, int panelLayer)
     {
         var overlayObject = new GameObject("Overlay", typeof(RectTransform));
@@ -721,6 +604,7 @@ public class DirectorViewfinderController : MonoBehaviour
         CreateOverlayLine(overlayRect, panelLayer, AspectMarkerColor, vertical: false, position: 1f - marginFraction, thickness: AspectMarkerThickness);
 
         BuildFocalLengthLabel(overlayRect, panelLayer);
+        BuildRecBadge(overlayRect, panelLayer);
     }
 
     // A thin full-span Image acting as a line - vertical: true spans top-to-bottom at a
@@ -786,42 +670,31 @@ public class DirectorViewfinderController : MonoBehaviour
         focalLengthLabel.text = $"{Mathf.RoundToInt(currentFocalLengthMM)}mm";
         focalLengthLabel.fontSize = FocalLengthLabelFontSize;
         focalLengthLabel.fontStyle = FontStyle.Bold;
-        focalLengthLabel.color = PanelButtonTextColor;
+        focalLengthLabel.color = PanelTextColor;
         focalLengthLabel.alignment = TextAnchor.MiddleCenter;
         focalLengthLabel.raycastTarget = false;
     }
 
-    void BuildButtonBar(RectTransform parent, int panelLayer)
+    // Top-left, mirroring the focal-length chip bottom-left. Hidden until a recording starts
+    // - UpdateRecBadge follows RehearsalRecorder.IsRecording.
+    void BuildRecBadge(RectTransform parent, int panelLayer)
     {
-        var rowObject = new GameObject("ButtonBar", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-        rowObject.transform.SetParent(parent, false);
-        ApplyPanelLayer(rowObject, panelLayer);
-        rowObject.GetComponent<LayoutElement>().preferredHeight = PanelButtonBarHeight;
+        recBadge = new GameObject("RecBadge", typeof(RectTransform), typeof(Image));
+        recBadge.transform.SetParent(parent, false);
+        ApplyPanelLayer(recBadge, panelLayer);
+        RectTransform badgeRect = (RectTransform)recBadge.transform;
+        badgeRect.anchorMin = new Vector2(0f, 1f);
+        badgeRect.anchorMax = new Vector2(0f, 1f);
+        badgeRect.pivot = new Vector2(0f, 1f);
+        badgeRect.anchoredPosition = RecBadgeMargin;
+        badgeRect.sizeDelta = RecBadgeSize;
 
-        HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
-        rowLayout.spacing = PanelRowSpacing;
-        rowLayout.childAlignment = TextAnchor.MiddleCenter;
-        rowLayout.childControlWidth = false;
-        rowLayout.childControlHeight = false;
-        rowLayout.childForceExpandWidth = false;
-        rowLayout.childForceExpandHeight = false;
-
-        CreatePanelIconButton(rowObject.transform, "\U0001F4BE", OnSaveFramingClicked, panelLayer); // 💾 Guardar framing
-        CreatePanelIconButton(rowObject.transform, "\U0001F4C2", OnToggleFramingListClicked, panelLayer); // 📂 Framings
-    }
-
-    Text CreatePanelIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, int panelLayer)
-    {
-        var buttonObject = new GameObject($"Button_{symbol}", typeof(RectTransform), typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(parent, false);
-        ApplyPanelLayer(buttonObject, panelLayer);
-        RectTransform buttonRect = (RectTransform)buttonObject.transform;
-        buttonRect.sizeDelta = new Vector2(PanelButtonSize, PanelButtonSize);
-        buttonObject.GetComponent<Image>().color = PanelButtonColor;
-        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+        Image badgeImage = recBadge.GetComponent<Image>();
+        badgeImage.color = RecBadgeBackgroundColor;
+        badgeImage.raycastTarget = false;
 
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(buttonObject.transform, false);
+        textObject.transform.SetParent(badgeRect, false);
         ApplyPanelLayer(textObject, panelLayer);
         RectTransform textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -829,211 +702,26 @@ public class DirectorViewfinderController : MonoBehaviour
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
 
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = symbol;
-        text.fontSize = PanelIconFontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.color = PanelButtonTextColor;
-        text.alignment = TextAnchor.MiddleCenter;
-
-        return text;
-    }
-
-    void ApplyPanelLayer(GameObject obj, int panelLayer)
-    {
-        if (panelLayer >= 0)
-            obj.layer = panelLayer;
-    }
-
-    void OnSaveFramingClicked()
-    {
-        if (viewfinderCamera == null)
-            return;
-
-        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
-        if (database == null)
-        {
-            Debug.LogError("DirectorViewfinderController: no ShotListDatabase instance found, cannot save the framing.");
-            return;
-        }
-
-        Transform cameraTransform = viewfinderCamera.transform;
-        database.SaveCameraFraming(Bootstrap.CurrentShotNumber, cameraTransform.position, cameraTransform.rotation, viewfinderCamera.fieldOfView, currentFocalLengthMM);
-        SendHaptic();
-    }
-
-    void OnToggleFramingListClicked()
-    {
-        if (framingListObject != null)
-        {
-            Destroy(framingListObject);
-            framingListObject = null;
-            framingListTransform = null;
-            SendHaptic();
-            return;
-        }
-
-        ShowFramingList();
-        SendHaptic();
-    }
-
-    // Short, unscrolled list (no cap on how many a shot can have yet) of every framing
-    // saved for the active shot, most recent first - rebuilt fresh from the DB each time
-    // it's opened, as its own small canvas positioned above the main panel so it doesn't
-    // crowd the feed. Each row is self-contained (own background), rather than the panel
-    // having one shared background, since the canvas's own height is driven by a
-    // ContentSizeFitter reacting to the rows - simpler than sizing a wrapping background to
-    // match.
-    void ShowFramingList()
-    {
-        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
-        if (database == null)
-        {
-            Debug.LogError("DirectorViewfinderController: no ShotListDatabase instance found, cannot load framings.");
-            return;
-        }
-
-        List<CameraFraming> framings = database.GetCameraFramingsForShot(Bootstrap.CurrentShotNumber);
-        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
-        float pixelsToMeters = PanelWidth / RenderTextureWidth;
-
-        framingListObject = new GameObject("FramingList", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-        framingListObject.transform.SetParent(viewfinderRoot.transform, false);
-        ApplyPanelLayer(framingListObject, panelLayer);
-        framingListObject.transform.localPosition = PanelLocalPosition + FramingListLocalOffset;
-        framingListTransform = framingListObject.transform;
-
-        Canvas canvas = framingListObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        XRUISetup.EnableRayInteraction(framingListObject);
-
-        RectTransform listRect = (RectTransform)framingListObject.transform;
-        listRect.sizeDelta = new Vector2(RenderTextureWidth, FramingRowHeight); // height placeholder - ContentSizeFitter drives the real value
-        listRect.localScale = Vector3.one * pixelsToMeters;
-
-        VerticalLayoutGroup listLayout = framingListObject.GetComponent<VerticalLayoutGroup>();
-        listLayout.spacing = PanelRowSpacing;
-        listLayout.padding = new RectOffset(12, 12, 12, 12);
-        listLayout.childAlignment = TextAnchor.UpperCenter;
-        listLayout.childControlWidth = true;
-        listLayout.childControlHeight = true;
-        listLayout.childForceExpandWidth = true;
-        listLayout.childForceExpandHeight = false;
-
-        framingListObject.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        if (framings.Count == 0)
-        {
-            CreateFramingMessageRow(framingListObject.transform, "Sin framings guardados para este shot.", panelLayer);
-        }
-        else
-        {
-            foreach (CameraFraming framing in framings)
-                CreateFramingRow(framingListObject.transform, framing, panelLayer);
-        }
-    }
-
-    void CreateFramingMessageRow(Transform parent, string message, int panelLayer)
-    {
-        var textObject = new GameObject("Message", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
-        textObject.transform.SetParent(parent, false);
-        ApplyPanelLayer(textObject, panelLayer);
-        textObject.GetComponent<LayoutElement>().preferredHeight = FramingRowHeight;
-
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = message;
-        text.fontSize = FramingFontSize;
-        text.color = PanelButtonTextColor;
-        text.alignment = TextAnchor.MiddleCenter;
-    }
-
-    void CreateFramingRow(Transform parent, CameraFraming framing, int panelLayer)
-    {
-        var rowObject = new GameObject($"Framing_{framing.Id}", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-        rowObject.transform.SetParent(parent, false);
-        ApplyPanelLayer(rowObject, panelLayer);
-        rowObject.GetComponent<Image>().color = PanelRowColor;
-        rowObject.GetComponent<LayoutElement>().preferredHeight = FramingRowHeight;
-
-        HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
-        rowLayout.spacing = PanelRowSpacing;
-        rowLayout.padding = new RectOffset(12, 12, 4, 4);
-        rowLayout.childAlignment = TextAnchor.MiddleLeft;
-        rowLayout.childControlWidth = true;
-        rowLayout.childControlHeight = true;
-        rowLayout.childForceExpandWidth = false;
-        rowLayout.childForceExpandHeight = true;
-
-        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
-        labelObject.transform.SetParent(rowObject.transform, false);
-        ApplyPanelLayer(labelObject, panelLayer);
-        labelObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
-
-        Text label = labelObject.GetComponent<Text>();
+        Text label = textObject.GetComponent<Text>();
         label.font = uiFont;
-        label.text = FormatFramingDateTime(framing.Timestamp);
-        label.fontSize = FramingFontSize;
-        label.color = PanelButtonTextColor;
-        label.alignment = TextAnchor.MiddleLeft;
+        label.text = "● REC";
+        label.fontSize = RecBadgeFontSize;
+        label.fontStyle = FontStyle.Bold;
+        label.color = RecBadgeTextColor;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.raycastTarget = false;
 
-        var loadButtonObject = new GameObject("LoadButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-        loadButtonObject.transform.SetParent(rowObject.transform, false);
-        ApplyPanelLayer(loadButtonObject, panelLayer);
-        loadButtonObject.GetComponent<Image>().color = PanelButtonColor;
-        LayoutElement loadLayout = loadButtonObject.GetComponent<LayoutElement>();
-        loadLayout.preferredWidth = FramingLoadButtonWidth;
-        loadLayout.preferredHeight = FramingRowHeight - 12f;
-
-        var loadTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        loadTextObject.transform.SetParent(loadButtonObject.transform, false);
-        ApplyPanelLayer(loadTextObject, panelLayer);
-        RectTransform loadTextRect = (RectTransform)loadTextObject.transform;
-        loadTextRect.anchorMin = Vector2.zero;
-        loadTextRect.anchorMax = Vector2.one;
-        loadTextRect.offsetMin = Vector2.zero;
-        loadTextRect.offsetMax = Vector2.zero;
-
-        Text loadText = loadTextObject.GetComponent<Text>();
-        loadText.font = uiFont;
-        loadText.text = "Cargar";
-        loadText.fontSize = FramingFontSize;
-        loadText.fontStyle = FontStyle.Bold;
-        loadText.color = PanelButtonTextColor;
-        loadText.alignment = TextAnchor.MiddleCenter;
-
-        CameraFraming capturedFraming = framing;
-        loadButtonObject.GetComponent<Button>().onClick.AddListener(() => OnLoadFramingClicked(capturedFraming));
+        recBadge.SetActive(false);
     }
 
-    void OnLoadFramingClicked(CameraFraming framing)
+    void UpdateRecBadge()
     {
-        if (viewfinderCamera == null)
+        if (recBadge == null)
             return;
 
-        lockedPosition = new Vector3(framing.PositionX, framing.PositionY, framing.PositionZ);
-        lockedRotation = new Quaternion(framing.RotationX, framing.RotationY, framing.RotationZ, framing.RotationW);
-        currentFocalLengthMM = Mathf.Clamp(framing.FocalLengthMM, MinFocalLengthMM, MaxFocalLengthMM);
-
-        viewfinderCamera.transform.SetPositionAndRotation(lockedPosition, lockedRotation);
-        ApplyFocalLength();
-
-        isLocked = true;
-        if (rightControllerTransform != null)
-        {
-            controllerPositionAtLock = rightControllerTransform.position;
-            controllerRotationAtLock = rightControllerTransform.rotation;
-        }
-
-        SendHaptic();
-    }
-
-    static string FormatFramingDateTime(string timestamp)
-    {
-        return DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsed)
-            ? parsed.ToString("dd/MM/yyyy HH:mm")
-            : timestamp;
+        bool isRecording = RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.IsRecording;
+        if (recBadge.activeSelf != isRecording)
+            recBadge.SetActive(isRecording);
     }
 
     // Doesn't toggle on press anymore - just starts tracking the hold, so UpdateZoom can
@@ -1064,11 +752,15 @@ public class DirectorViewfinderController : MonoBehaviour
         viewfinderRoot.SetActive(isVisible);
 
         if (isVisible)
+        {
             PauseTurnLocomotion();
+            PauseRightTeleport();
+        }
         else
+        {
             ResumeTurnLocomotion();
-
-        SetRightHandUIInteraction(!isVisible);
+            ResumeRightTeleport();
+        }
 
         SendHaptic();
     }
@@ -1092,6 +784,42 @@ public class DirectorViewfinderController : MonoBehaviour
         if (disabledTurnObject != null)
             disabledTurnObject.SetActive(true);
         disabledTurnObject = null;
+    }
+
+    // Stick up is also the stock rig's right-hand "Teleport Mode", so zooming in would pop
+    // the teleport ray on every push. The right ControllerInputActionManager is what reacts
+    // to it (activating the Teleport Interactor), so it's switched off while the viewfinder
+    // is up. Disabling it only unsubscribes its callbacks - the Near-Far ray and UI keep
+    // working - and re-enabling it hides the Teleport Interactor and restores its actions.
+    void PauseRightTeleport()
+    {
+        if (rightControllerTransform == null)
+            return;
+
+        ControllerInputActionManager manager = rightControllerTransform.GetComponent<ControllerInputActionManager>();
+        if (manager == null || !manager.enabled)
+            return;
+
+        manager.enabled = false;
+        pausedRightInputManager = manager;
+
+        // In case the stick was already up when the viewfinder was raised: the manager had
+        // swapped the Near-Far ray out for the teleport ray, and with it disabled nothing
+        // would swap them back.
+        Transform teleportInteractor = rightControllerTransform.Find("Teleport Interactor");
+        if (teleportInteractor != null && teleportInteractor.gameObject.activeSelf)
+        {
+            teleportInteractor.gameObject.SetActive(false);
+            if (rightNearFarInteractor != null)
+                rightNearFarInteractor.gameObject.SetActive(true);
+        }
+    }
+
+    void ResumeRightTeleport()
+    {
+        if (pausedRightInputManager != null)
+            pausedRightInputManager.enabled = true;
+        pausedRightInputManager = null;
     }
 
     void SendHaptic()

@@ -462,6 +462,8 @@ public class RecordingPlaybackController : MonoBehaviour
         BuildSlider(rootRect);
         BuildTimeText(rootRect);
 
+        XRUISetup.MoveToUILayer(panelObject);
+
         XRUISetup.EnableRayInteraction(panelObject);
         XRUISetup.EnsureEventSystem();
     }
@@ -974,6 +976,18 @@ public class RecordingPlaybackController : MonoBehaviour
 
         if (monitorLayer >= 0)
             playbackCamera.cullingMask &= ~(1 << monitorLayer);
+
+        // Same "scene only" rule as the live viewfinder: no panels (this replay panel
+        // included) and no controller rays in the recorded camera's view.
+        playbackCamera.cullingMask &= ~(1 << XRUISetup.UILayer);
+
+        int rayLayer = XRUISetup.MoveControllerRaysToOwnLayer();
+        if (rayLayer >= 0)
+            playbackCamera.cullingMask &= ~(1 << rayLayer);
+
+        int viewfinderPanelLayer = LayerMask.NameToLayer("DirectorViewfinderPanel");
+        if (viewfinderPanelLayer >= 0)
+            playbackCamera.cullingMask &= ~(1 << viewfinderPanelLayer);
 
         playbackCamera.usePhysicalProperties = true;
         playbackCamera.sensorSize = new Vector2(36f, 24f);

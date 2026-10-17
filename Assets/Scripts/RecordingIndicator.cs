@@ -92,6 +92,10 @@ public class RecordingIndicator : MonoBehaviour
         dotImage.sprite = GetCircleSprite();
         dotImage.color = DotColor;
 
+        // Head-locked, so the viewfinder camera would otherwise see it floating in the shot;
+        // the viewfinder has its own REC badge on the panel instead.
+        XRUISetup.MoveToUILayer(indicatorObject);
+
         StartCoroutine(Pulse(dotImage));
     }
 

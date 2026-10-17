@@ -258,6 +258,8 @@ public class RehearsalRecorder : MonoBehaviour
         CreateDecisionButton(buttonRowObject.transform, "Guardar", OnSaveClicked);
         CreateDecisionButton(buttonRowObject.transform, "Descartar", OnDiscardClicked);
 
+        XRUISetup.MoveToUILayer(decisionPanelObject);
+
         XRUISetup.EnableRayInteraction(decisionPanelObject);
         XRUISetup.EnsureEventSystem();
     }

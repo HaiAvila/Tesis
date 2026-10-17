@@ -41,9 +41,6 @@ public class RehearsalSessionSync : MonoBehaviour
             Debug.LogError("RehearsalSessionSync: no RehearsalSessionState on this object - rehearsal start/end won't sync.");
         lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
 
-        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-        Debug.Log($"RehearsalSessionSync: Awake, lastKnownShotNumber={lastKnownShotNumber}");
-
         // Whatever this synced transform holds right as the connection settles - including
         // a stale value from Normcore's room persistence, carried over from an earlier test
         // session in the same room - is the starting point, not something to react to.
@@ -166,9 +163,6 @@ public class RehearsalSessionSync : MonoBehaviour
         if (currentShotNumber == lastKnownShotNumber)
             return;
 
-        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-        Debug.Log($"RehearsalSessionSync: position.x changed {lastKnownShotNumber} -> {currentShotNumber} (isOwnedLocallySelf={realtimeTransform.isOwnedLocallySelf})");
-
         lastKnownShotNumber = currentShotNumber;
 
         if (currentShotNumber != NoShotSelected)
@@ -179,9 +173,6 @@ public class RehearsalSessionSync : MonoBehaviour
     {
         realtimeTransform.RequestOwnership();
         transform.position = new Vector3(shotNumber, 0f, 0f);
-
-        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-        Debug.Log($"RehearsalSessionSync: SelectShot({shotNumber}) called, isOwnedLocallySelf={realtimeTransform.isOwnedLocallySelf}");
     }
 
     public void LoadSceneForShot(int shotNumber)
@@ -199,9 +190,6 @@ public class RehearsalSessionSync : MonoBehaviour
             Debug.LogError($"RehearsalSessionSync: could not resolve a scene for shot {shotNumber}.");
             return;
         }
-
-        // TEMPORARY diagnostic - remove once the "Ensayo Remoto" handoff is confirmed fixed.
-        Debug.Log($"RehearsalSessionSync: LoadSceneForShot({shotNumber}) resolved scene '{sceneName}', loading now.");
 
         Bootstrap.CurrentShotNumber = shotNumber;
         SceneManager.LoadSceneAsync(sceneName);

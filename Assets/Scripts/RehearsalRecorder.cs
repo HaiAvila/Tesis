@@ -102,7 +102,8 @@ public class RehearsalRecorder : MonoBehaviour
 #if DIRECTOR_BUILD
     void OnRecordingShortcutPressed(InputAction.CallbackContext context)
     {
-        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name))
+        // Ensayo Remoto only - Inspección de Escenas has no live actor to record.
+        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.IsInspecting)
             return;
 
         if (IsRecording)
@@ -423,9 +424,6 @@ public class RehearsalRecorder : MonoBehaviour
 
         // Read once and shared by both rows, so the timestamps are exactly equal.
         float tiempoRelativo = Time.time - recordingStartTime;
-
-        // TEMPORARY diagnostic - remove once the empty position/rotation issue is confirmed fixed.
-        Debug.Log($"RehearsalRecorder: sampled pos={position:F3} rot={rotation:F3}");
 
 #if DIRECTOR_BUILD
         cameraBuffer.Add(new CameraTrackSample

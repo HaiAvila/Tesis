@@ -44,8 +44,6 @@ public class ActorPositionSync : MonoBehaviour
     }
 
 #if !DIRECTOR_BUILD
-    float lastOwnershipLogTime;
-
     void Update()
     {
         XROrigin actorRig = FindFirstObjectByType<XROrigin>();
@@ -57,13 +55,6 @@ public class ActorPositionSync : MonoBehaviour
 
         Transform actorHead = actorRig.Camera.transform;
         transform.SetPositionAndRotation(actorHead.position, actorHead.rotation);
-
-        // TEMPORARY diagnostic - remove once the empty position/rotation issue is confirmed fixed.
-        if (Time.time - lastOwnershipLogTime > 1f)
-        {
-            lastOwnershipLogTime = Time.time;
-            Debug.Log($"ActorPositionSync: isOwnedLocallySelf={realtimeTransform.isOwnedLocallySelf} ownerIDSelf={realtimeTransform.ownerIDSelf} pos={transform.position:F3}");
-        }
     }
 #endif
 }

@@ -212,9 +212,6 @@ public class SceneSelectController : MonoBehaviour
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
 
-        // TEMPORARY diagnostic - remove once the actor-sync-on-pause-menu issue is confirmed fixed.
-        Debug.Log($"IsInspecting={Bootstrap.IsInspecting}, RehearsalSessionSync.Instance is null={RehearsalSessionSync.Instance == null}");
-
         // Only Inspección de Escenas (or solo actor practice) needs a session picker - a
         // live rehearsal never has past sessions to choose from. A shot with 0 or 1
         // sessions keeps loading directly, exactly as before.

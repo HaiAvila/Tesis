@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -131,8 +130,8 @@ public class FavoritesPanelController : MonoBehaviour
             foreach (RecordingSession session in favorites)
                 CreateFavoriteRow(listContent, database, session);
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(panelObject);
+        XRUISetup.EnsureEventSystem();
     }
 
     void BuildHeaderRow(RectTransform parent)

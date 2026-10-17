@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -34,8 +33,8 @@ public class DirectorHomeMenuController : MonoBehaviour
         canvasRect.rotation = Quaternion.Euler(CanvasEulerAngles);
         canvasRect.localScale = Vector3.one * CanvasWorldScale;
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(canvasObject);
+        XRUISetup.EnsureEventSystem();
 
         var layoutObject = new GameObject("ButtonLayout", typeof(RectTransform), typeof(HorizontalLayoutGroup));
         layoutObject.transform.SetParent(canvasObject.transform, false);
@@ -95,12 +94,12 @@ public class DirectorHomeMenuController : MonoBehaviour
             RehearsalSessionSync.Instance.BeginRemoteRehearsal();
 #endif
 
-        SceneManager.LoadSceneAsync("SceneSelect");
+        Bootstrap.LoadSceneSelect();
     }
 
     void OnSceneInspectionSelected()
     {
         Bootstrap.IsInspecting = true;
-        SceneManager.LoadSceneAsync("SceneSelect");
+        Bootstrap.LoadSceneSelect();
     }
 }

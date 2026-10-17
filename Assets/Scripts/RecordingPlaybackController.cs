@@ -462,8 +462,8 @@ public class RecordingPlaybackController : MonoBehaviour
         BuildSlider(rootRect);
         BuildTimeText(rootRect);
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(panelObject);
+        XRUISetup.EnsureEventSystem();
     }
 
     void BuildButtonRow(RectTransform parent)

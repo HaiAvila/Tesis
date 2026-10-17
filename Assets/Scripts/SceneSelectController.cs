@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -21,6 +20,15 @@ public class SceneSelectController : MonoBehaviour
     const int SessionIconFontSize = 26;
     const float SessionIconWidth = 48f;
 
+    // World Space so it's visible in the headset (Screen Space Overlay isn't drawn in VR) and
+    // reachable by the controller ray. 1200x900 canvas units at this scale is about
+    // 1.9m x 1.4m, 2m in front of the head - large enough that the existing font sizes stay
+    // readable at that distance. Placement is a starting point, meant to be tuned.
+    const float CanvasWidth = 1200f;
+    const float CanvasHeight = 900f;
+    const float CanvasWorldScale = 0.0016f;
+    const float CanvasDistance = 2f;
+
     static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
     static readonly Color PreferidaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
     static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
@@ -28,6 +36,7 @@ public class SceneSelectController : MonoBehaviour
 
     Font uiFont;
     ShotListDatabase database;
+    RectTransform canvasRect;
     RectTransform contentRect;
     SortedDictionary<int, List<Shot>> shotsByScene;
 
@@ -46,6 +55,36 @@ public class SceneSelectController : MonoBehaviour
 
         contentRect = BuildScrollingCanvas();
         BuildShotList(contentRect, shotsByScene);
+
+        StartCoroutine(PlaceAgainOnceTracked());
+    }
+
+    // The head pose may not be tracked yet on the frame this scene starts (it was just loaded
+    // together with MenuBackdrop), which would place the panel at the rig origin - so it's
+    // placed again a couple of frames later, once the camera has a real pose.
+    System.Collections.IEnumerator PlaceAgainOnceTracked()
+    {
+        yield return null;
+        yield return null;
+        PlaceInFrontOfHead();
+    }
+
+    // Yaw-only, same as the pause menu, so the panel stays upright regardless of where the
+    // director happens to be looking up or down.
+    void PlaceInFrontOfHead()
+    {
+        Camera headCamera = Camera.main;
+        if (headCamera == null || canvasRect == null)
+            return;
+
+        Transform head = headCamera.transform;
+        Vector3 forward = head.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        forward.Normalize();
+
+        canvasRect.SetPositionAndRotation(head.position + forward * CanvasDistance, Quaternion.LookRotation(forward, Vector3.up));
     }
 
     RectTransform BuildScrollingCanvas()
@@ -54,15 +93,16 @@ public class SceneSelectController : MonoBehaviour
         canvasObject.transform.SetParent(transform, false);
 
         Canvas canvas = canvasObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = Camera.main;
 
-        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 0.5f;
+        canvasRect = (RectTransform)canvasObject.transform;
+        canvasRect.sizeDelta = new Vector2(CanvasWidth, CanvasHeight);
+        canvasRect.localScale = Vector3.one * CanvasWorldScale;
+        PlaceInFrontOfHead();
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(canvasObject);
+        XRUISetup.EnsureEventSystem();
 
         var scrollObject = new GameObject("ShotScrollView", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
         scrollObject.transform.SetParent(canvasObject.transform, false);

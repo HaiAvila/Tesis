@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -259,8 +258,8 @@ public class RehearsalRecorder : MonoBehaviour
         CreateDecisionButton(buttonRowObject.transform, "Guardar", OnSaveClicked);
         CreateDecisionButton(buttonRowObject.transform, "Descartar", OnDiscardClicked);
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(decisionPanelObject);
+        XRUISetup.EnsureEventSystem();
     }
 
     // Simple checkbox: a plain button whose background color flips between on/off, with a

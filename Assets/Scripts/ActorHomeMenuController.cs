@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -46,8 +45,8 @@ public class ActorHomeMenuController : MonoBehaviour
         canvasRect.rotation = Quaternion.Euler(CanvasEulerAngles);
         canvasRect.localScale = Vector3.one * CanvasWorldScale;
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(canvasObject);
+        XRUISetup.EnsureEventSystem();
 
         buttonLayoutObject = new GameObject("ButtonLayout", typeof(RectTransform), typeof(HorizontalLayoutGroup));
         buttonLayoutObject.transform.SetParent(canvasRect, false);
@@ -168,6 +167,6 @@ public class ActorHomeMenuController : MonoBehaviour
         // happened to have, broadcasting a fake shot selection to anyone connected.
         Bootstrap.IsInspecting = true;
         Bootstrap.ActorJoinedRemoteRehearsal = false;
-        SceneManager.LoadSceneAsync("SceneSelect");
+        Bootstrap.LoadSceneSelect();
     }
 }

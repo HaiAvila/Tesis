@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if DIRECTOR_BUILD
@@ -8,6 +7,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Casters;
 #endif
 
 // Persistent (lives under Bootstrap, DontDestroyOnLoad). Director-only "virtual camera":
@@ -140,6 +141,7 @@ public class DirectorViewfinderController : MonoBehaviour
     RenderTexture renderTexture;
     Coroutine buildCoroutine;
     GameObject disabledTurnObject;
+    NearFarInteractor rightNearFarInteractor;
     Text focalLengthLabel;
     float currentFocalLengthMM;
     bool isVisible;
@@ -284,6 +286,7 @@ public class DirectorViewfinderController : MonoBehaviour
         // The GameObject itself belongs to the scene that just unloaded - already gone,
         // just drop the reference instead of re-enabling it.
         disabledTurnObject = null;
+        rightNearFarInteractor = null;
 
         isVisible = false;
         isLocked = false;
@@ -486,6 +489,7 @@ public class DirectorViewfinderController : MonoBehaviour
         }
 
         AssignRayVisualLayer(rightController);
+        IncludePanelLayerInRayMasks(rightController);
         rightControllerTransform = rightController.transform;
 
         renderTexture = new RenderTexture(RenderTextureWidth, RenderTextureHeight, 16);
@@ -535,6 +539,41 @@ public class DirectorViewfinderController : MonoBehaviour
         Transform lineVisual = controller.transform.Find("Near-Far Interactor/LineVisual");
         if (lineVisual != null)
             lineVisual.gameObject.layer = layer;
+    }
+
+    // The ray's UI raycast only hits graphics whose layer is in the far caster's raycast mask
+    // (the rig's mask is Default + UI), and both viewfinder canvases sit on the panel layer -
+    // so without this the ray would pass straight through them. Nothing on that layer has a
+    // collider, so this doesn't change what the ray can grab, only what UI it can press.
+    void IncludePanelLayerInRayMasks(GameObject rightController)
+    {
+        int panelLayer = LayerMask.NameToLayer(PanelLayerName);
+        if (panelLayer < 0)
+            return;
+
+        foreach (GameObject controller in new[] { rightController, GameObject.Find("Left Controller") })
+        {
+            if (controller == null)
+                continue;
+
+            Transform interactor = controller.transform.Find("Near-Far Interactor");
+            CurveInteractionCaster farCaster = interactor != null ? interactor.GetComponent<CurveInteractionCaster>() : null;
+            if (farCaster != null)
+                farCaster.raycastMask |= 1 << panelLayer;
+        }
+
+        Transform rightInteractor = rightController.transform.Find("Near-Far Interactor");
+        rightNearFarInteractor = rightInteractor != null ? rightInteractor.GetComponent<NearFarInteractor>() : null;
+    }
+
+    // The panel floats a few cm in front of the right controller, so while it's raised the
+    // right hand's own ray would always be hitting it - and the right trigger would press its
+    // buttons by accident. Right-hand UI interaction is off while the viewfinder is up (same
+    // idea as pausing Turn); the left hand's ray presses the viewfinder's buttons.
+    void SetRightHandUIInteraction(bool enabled)
+    {
+        if (rightNearFarInteractor != null)
+            rightNearFarInteractor.enableUIInteraction = enabled;
     }
 
     // Rigidly parented at the controller's own transform (zero local offset) - the simplest
@@ -646,8 +685,8 @@ public class DirectorViewfinderController : MonoBehaviour
 
         BuildButtonBar(rootRect, panelLayer);
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(canvasObject);
+        XRUISetup.EnsureEventSystem();
     }
 
     // Rule-of-thirds grid (2 horizontal + 2 vertical lines) and 16:9 aspect markers,
@@ -867,6 +906,7 @@ public class DirectorViewfinderController : MonoBehaviour
 
         Canvas canvas = framingListObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
+        XRUISetup.EnableRayInteraction(framingListObject);
 
         RectTransform listRect = (RectTransform)framingListObject.transform;
         listRect.sizeDelta = new Vector2(RenderTextureWidth, FramingRowHeight); // height placeholder - ContentSizeFitter drives the real value
@@ -1027,6 +1067,8 @@ public class DirectorViewfinderController : MonoBehaviour
             PauseTurnLocomotion();
         else
             ResumeTurnLocomotion();
+
+        SetRightHandUIInteraction(!isVisible);
 
         SendHaptic();
     }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -230,8 +229,8 @@ public class PauseMenuController : MonoBehaviour
         foreach (PauseMenuOption option in menuOptions)
             CreateButton(layoutRect, option);
 
-        if (FindFirstObjectByType<EventSystem>() == null)
-            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        XRUISetup.EnableRayInteraction(panelObject);
+        XRUISetup.EnsureEventSystem();
 
         LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
     }
@@ -303,7 +302,7 @@ public class PauseMenuController : MonoBehaviour
 #if DIRECTOR_BUILD
     void GoToSceneSelect()
     {
-        SceneManager.LoadSceneAsync("SceneSelect");
+        Bootstrap.LoadSceneSelect();
     }
 
     void ShowFavorites()

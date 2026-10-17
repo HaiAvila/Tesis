@@ -32,6 +32,15 @@ public class Bootstrap : MonoBehaviour
 
     static readonly string[] ContentSceneNames = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };
 
+    // SceneSelect has no camera or XR rig of its own, so it's loaded on top of MenuBackdrop
+    // (which has the XR Origin) - same pattern as the home menus. Without the rig the
+    // headset would have no tracked view and no controllers to point at the shot list.
+    public static void LoadSceneSelect()
+    {
+        SceneManager.LoadScene("MenuBackdrop");
+        SceneManager.LoadScene("SceneSelect", LoadSceneMode.Additive);
+    }
+
     public static bool IsContentScene(string sceneName)
     {
         foreach (string contentScene in ContentSceneNames)

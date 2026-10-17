@@ -18,7 +18,6 @@ public class FavoritesPanelController : MonoBehaviour
     const float RowHeight = 70f;
     const float JumpButtonWidth = 160f;
     const float UnfavoriteButtonWidth = 64f;
-    const int UnfavoriteIconFontSize = 26;
     const float PanelWidth = 900f;
     const float PanelHeight = 700f;
     const float Padding = 40f;
@@ -31,7 +30,7 @@ public class FavoritesPanelController : MonoBehaviour
 
     // Same heart color as SceneSelectController and RecordingPlaybackController - every
     // favorita is filled/red here, since this screen only ever lists favorited sessions.
-    static readonly Color FavoritaColor = new Color(0.85f, 0.25f, 0.35f, 1f);
+    static readonly Color FavoritaColor = new Color(1f, 0.2f, 0.25f, 1f);
 
     Font uiFont;
     GameObject panelObject;
@@ -309,21 +308,9 @@ public class FavoritesPanelController : MonoBehaviour
         unfavoriteLayout.preferredWidth = UnfavoriteButtonWidth;
         unfavoriteLayout.preferredHeight = RowHeight - 12f;
 
-        var unfavoriteTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        unfavoriteTextObject.transform.SetParent(unfavoriteButtonObject.transform, false);
-        RectTransform unfavoriteTextRect = (RectTransform)unfavoriteTextObject.transform;
-        unfavoriteTextRect.anchorMin = Vector2.zero;
-        unfavoriteTextRect.anchorMax = Vector2.one;
-        unfavoriteTextRect.offsetMin = Vector2.zero;
-        unfavoriteTextRect.offsetMax = Vector2.zero;
-
-        Text unfavoriteText = unfavoriteTextObject.GetComponent<Text>();
-        unfavoriteText.font = uiFont;
-        unfavoriteText.text = "♥"; // filled - every row here is already a favorite, clicking removes it
-        unfavoriteText.fontSize = UnfavoriteIconFontSize;
-        unfavoriteText.fontStyle = FontStyle.Bold;
-        unfavoriteText.color = FavoritaColor;
-        unfavoriteText.alignment = TextAnchor.MiddleCenter;
+        // Filled heart - every row here is already a favorite, clicking removes it. A sprite,
+        // not a glyph - see UIIcons for why.
+        UIIcons.CreateIcon(unfavoriteButtonObject.transform, UIIcons.Heart(true), FavoritaColor);
 
         Shot capturedShot = shot;
         RecordingSession capturedSession = session;

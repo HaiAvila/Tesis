@@ -17,7 +17,6 @@ public class SceneSelectController : MonoBehaviour
     const int ButtonFontSize = 22;
     const float ButtonHeight = 64f;
     const float Spacing = 10f;
-    const int SessionIconFontSize = 26;
     const float SessionIconWidth = 48f;
 
     // World Space so it's visible in the headset (Screen Space Overlay isn't drawn in VR) and
@@ -30,9 +29,9 @@ public class SceneSelectController : MonoBehaviour
     const float CanvasDistance = 2f;
 
     static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
-    static readonly Color PreferidaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
-    static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
-    static readonly Color FavoritaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    static readonly Color PreferidaOffColor = new Color(0.75f, 0.75f, 0.78f, 1f);
+    static readonly Color FavoritaOnColor = new Color(1f, 0.2f, 0.25f, 1f);
+    static readonly Color FavoritaOffColor = new Color(0.75f, 0.75f, 0.78f, 1f);
 
     Font uiFont;
     ShotListDatabase database;
@@ -339,46 +338,31 @@ public class SceneSelectController : MonoBehaviour
 
         infoButtonObject.GetComponent<Button>().onClick.AddListener(() => ProceedToSession(capturedShot, sceneName, capturedSession.Id));
 
-        Text preferidaIcon = CreateSessionIconButton(rowObject.transform,
-            session.EsPreferida ? "★" : "☆",
+        // Star and heart are sprites (UIIcons), not glyphs - see UIIcons for why.
+        CreateSessionIconButton(rowObject.transform, "Preferida",
+            UIIcons.Star(session.EsPreferida),
             session.EsPreferida ? PreferidaOnColor : PreferidaOffColor,
             out Button preferidaButton);
         preferidaButton.onClick.AddListener(() => OnPreferidaToggled(capturedShot, sceneName, capturedSession));
 
-        Text favoritaIcon = CreateSessionIconButton(rowObject.transform,
-            session.EsFavorita ? "♥" : "♡",
+        Image favoritaIcon = CreateSessionIconButton(rowObject.transform, "Favorita",
+            UIIcons.Heart(session.EsFavorita),
             session.EsFavorita ? FavoritaOnColor : FavoritaOffColor,
             out Button favoritaButton);
         favoritaButton.onClick.AddListener(() => OnFavoritaToggled(capturedSession, favoritaIcon));
     }
 
-    Text CreateSessionIconButton(Transform parent, string symbol, Color color, out Button button)
+    Image CreateSessionIconButton(Transform parent, string name, Sprite sprite, Color color, out Button button)
     {
-        var buttonObject = new GameObject($"Icon_{symbol}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        var buttonObject = new GameObject($"Icon_{name}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
         buttonObject.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 1f);
         LayoutElement layoutElement = buttonObject.GetComponent<LayoutElement>();
         layoutElement.preferredWidth = SessionIconWidth;
         layoutElement.preferredHeight = ButtonHeight;
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(buttonObject.transform, false);
-        var textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = symbol;
-        text.fontSize = SessionIconFontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.color = color;
-        text.alignment = TextAnchor.MiddleCenter;
-
         button = buttonObject.GetComponent<Button>();
-        return text;
+        return UIIcons.CreateIcon(buttonObject.transform, sprite, color);
     }
 
     // Exclusive - marking one preferida unmarks every other one for this shot, so the whole
@@ -390,13 +374,13 @@ public class SceneSelectController : MonoBehaviour
     }
 
     // Non-exclusive - only this row's own heart changes.
-    void OnFavoritaToggled(RecordingSession session, Text favoritaIcon)
+    void OnFavoritaToggled(RecordingSession session, Image favoritaIcon)
     {
         bool newValue = !session.EsFavorita;
         database.SetFavorita(session.Id, newValue);
         session.EsFavorita = newValue;
 
-        favoritaIcon.text = newValue ? "♥" : "♡";
+        favoritaIcon.sprite = UIIcons.Heart(newValue);
         favoritaIcon.color = newValue ? FavoritaOnColor : FavoritaOffColor;
     }
 

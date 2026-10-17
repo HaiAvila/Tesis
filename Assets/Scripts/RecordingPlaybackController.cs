@@ -62,9 +62,9 @@ public class RecordingPlaybackController : MonoBehaviour
     // Same star/heart colors as SceneSelectController and FavoritesPanelController - the
     // visual language for preferida/favorita is consistent everywhere it appears.
     static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
-    static readonly Color PreferidaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
-    static readonly Color FavoritaOnColor = new Color(0.85f, 0.25f, 0.35f, 1f);
-    static readonly Color FavoritaOffColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    static readonly Color PreferidaOffColor = new Color(0.75f, 0.75f, 0.78f, 1f);
+    static readonly Color FavoritaOnColor = new Color(1f, 0.2f, 0.25f, 1f);
+    static readonly Color FavoritaOffColor = new Color(0.75f, 0.75f, 0.78f, 1f);
 
     // Recorded-camera playback. The monitor and the scene marker live on their own project
     // layer, excluded from the playback camera's culling mask - otherwise that camera would
@@ -85,10 +85,11 @@ public class RecordingPlaybackController : MonoBehaviour
 
     GameObject capsule;
     GameObject panelObject;
+    Image playPauseIcon;
     Text loopText;
     Text timeText;
-    Text preferidaIcon;
-    Text favoritaIcon;
+    Image preferidaIcon;
+    Image favoritaIcon;
     Slider scrubSlider;
     Font uiFont;
 
@@ -117,7 +118,6 @@ public class RecordingPlaybackController : MonoBehaviour
     bool isPlaying;
     bool isLooping;
     bool isScrubbing;
-    bool wasPlayingBeforeScrub;
     Coroutine playbackCoroutine;
 
     Vector3 anchorPosition;
@@ -218,6 +218,7 @@ public class RecordingPlaybackController : MonoBehaviour
         monitorToggleText = null;
         monitorEnabled = false;
         currentVisorActive = false;
+        playPauseIcon = null;
         loopText = null;
         timeText = null;
         preferidaIcon = null;
@@ -411,7 +412,7 @@ public class RecordingPlaybackController : MonoBehaviour
         ComputeDesiredAnchor(head, out anchorPosition, out anchorRotation);
         isTransitioning = false;
 
-        float buttonCount = 2f; // restart + loop
+        float buttonCount = 3f; // play/pause + restart + loop
         if (currentSession != null)
             buttonCount += 2f; // preferida + favorita - only when a saved session (not an unsaved buffer) is playing
         if (onManualClose != null)
@@ -482,8 +483,13 @@ public class RecordingPlaybackController : MonoBehaviour
         rowLayout.childForceExpandWidth = false;
         rowLayout.childForceExpandHeight = false;
 
-        // Symbols instead of labels, per design direction - real icon sprites come later.
-        // Play/Pause has no UI button - it's the physical controller shortcut only.
+        // Symbols instead of labels, per design direction. Star and heart are sprites
+        // (UIIcons), not glyphs - see UIIcons for why.
+        // Play/Pause is also on left A (OnPlayPausePressed); both go through SetPlaying, which
+        // keeps this icon in sync.
+        playPauseIcon = CreateSpriteIconButton(rowObject.transform, "PlayPause", OnPlayPauseClicked);
+        playPauseIcon.sprite = isPlaying ? UIIcons.Pause() : UIIcons.Play();
+        playPauseIcon.color = TextColor;
         CreateIconButton(rowObject.transform, "↺", OnRestartClicked, ButtonColor); // ↺
         loopText = CreateIconButton(rowObject.transform, "∞", OnLoopToggleClicked, ButtonColor); // ∞ (loop toggle; color indicates on/off)
 
@@ -493,11 +499,11 @@ public class RecordingPlaybackController : MonoBehaviour
         // exclusive per shot, there's no "unset" from here, same as the session list.
         if (currentSession != null)
         {
-            preferidaIcon = CreateIconButton(rowObject.transform, currentSession.EsPreferida ? "★" : "☆", OnPreferidaClicked, ButtonColor);
-            preferidaIcon.color = currentSession.EsPreferida ? PreferidaOnColor : PreferidaOffColor;
+            preferidaIcon = CreateSpriteIconButton(rowObject.transform, "Preferida", OnPreferidaClicked);
+            ApplyPreferidaVisual(currentSession.EsPreferida);
 
-            favoritaIcon = CreateIconButton(rowObject.transform, currentSession.EsFavorita ? "♥" : "♡", OnFavoritaClicked, ButtonColor);
-            favoritaIcon.color = currentSession.EsFavorita ? FavoritaOnColor : FavoritaOffColor;
+            favoritaIcon = CreateSpriteIconButton(rowObject.transform, "Favorita", OnFavoritaClicked);
+            ApplyFavoritaVisual(currentSession.EsFavorita);
         }
 
         // Shows/hides the recorded-camera monitor (on by default; color indicates on/off,
@@ -538,11 +544,7 @@ public class RecordingPlaybackController : MonoBehaviour
         database.SetPreferida(currentSession.Id, currentSession.ShotNumber);
         currentSession.EsPreferida = true;
 
-        if (preferidaIcon != null)
-        {
-            preferidaIcon.text = "★";
-            preferidaIcon.color = PreferidaOnColor;
-        }
+        ApplyPreferidaVisual(true);
     }
 
     void OnFavoritaClicked()
@@ -561,21 +563,48 @@ public class RecordingPlaybackController : MonoBehaviour
         database.SetFavorita(currentSession.Id, newValue);
         currentSession.EsFavorita = newValue;
 
-        if (favoritaIcon != null)
-        {
-            favoritaIcon.text = newValue ? "♥" : "♡";
-            favoritaIcon.color = newValue ? FavoritaOnColor : FavoritaOffColor;
-        }
+        ApplyFavoritaVisual(newValue);
     }
 
-    Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color)
+    void ApplyPreferidaVisual(bool isPreferida)
     {
-        var buttonObject = new GameObject($"Button_{symbol}", typeof(RectTransform), typeof(Image), typeof(Button));
+        if (preferidaIcon == null)
+            return;
+
+        preferidaIcon.sprite = UIIcons.Star(isPreferida);
+        preferidaIcon.color = isPreferida ? PreferidaOnColor : PreferidaOffColor;
+    }
+
+    void ApplyFavoritaVisual(bool isFavorita)
+    {
+        if (favoritaIcon == null)
+            return;
+
+        favoritaIcon.sprite = UIIcons.Heart(isFavorita);
+        favoritaIcon.color = isFavorita ? FavoritaOnColor : FavoritaOffColor;
+    }
+
+    GameObject CreateButtonObject(Transform parent, string name, UnityEngine.Events.UnityAction onClick, Color color)
+    {
+        var buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
         RectTransform buttonRect = (RectTransform)buttonObject.transform;
         buttonRect.sizeDelta = new Vector2(ButtonSize, ButtonSize);
         buttonObject.GetComponent<Image>().color = color;
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+        return buttonObject;
+    }
+
+    // The sprite and its color are set by the caller.
+    Image CreateSpriteIconButton(Transform parent, string name, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject buttonObject = CreateButtonObject(parent, $"Button_{name}", onClick, ButtonColor);
+        return UIIcons.CreateIcon(buttonObject.transform, null, Color.white);
+    }
+
+    Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color)
+    {
+        GameObject buttonObject = CreateButtonObject(parent, $"Button_{symbol}", onClick, color);
 
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
         textObject.transform.SetParent(buttonObject.transform, false);
@@ -631,14 +660,21 @@ public class RecordingPlaybackController : MonoBehaviour
         RectTransform handleAreaRect = (RectTransform)handleArea.transform;
         handleAreaRect.anchorMin = Vector2.zero;
         handleAreaRect.anchorMax = Vector2.one;
-        handleAreaRect.offsetMin = Vector2.zero;
-        handleAreaRect.offsetMax = Vector2.zero;
+        // Inset by half a handle so the handle stays inside the bar at 0% and 100%.
+        handleAreaRect.offsetMin = new Vector2(SliderHandleSize / 2f, 0f);
+        handleAreaRect.offsetMax = new Vector2(-SliderHandleSize / 2f, 0f);
 
+        // The Slider stretches the handle vertically to the slider's own height
+        // (SliderHandleSize), so sizeDelta.y stays 0 - a non-zero y is added on top of that
+        // stretch, which is what made the old square handle twice as tall as intended.
         var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
         handle.transform.SetParent(handleArea.transform, false);
         RectTransform handleRect = (RectTransform)handle.transform;
-        handleRect.sizeDelta = new Vector2(SliderHandleSize, SliderHandleSize);
-        handle.GetComponent<Image>().color = SliderHandleColor;
+        handleRect.sizeDelta = new Vector2(SliderHandleSize, 0f);
+        Image handleImage = handle.GetComponent<Image>();
+        handleImage.sprite = UIIcons.Circle();
+        handleImage.preserveAspect = true;
+        handleImage.color = SliderHandleColor;
 
         scrubSlider = sliderObject.GetComponent<Slider>();
         scrubSlider.targetGraphic = handle.GetComponent<Image>();
@@ -715,16 +751,15 @@ public class RecordingPlaybackController : MonoBehaviour
 
     void OnScrubStart()
     {
-        wasPlayingBeforeScrub = isPlaying;
         isScrubbing = true;
         SetPlaying(false);
     }
 
+    // Stays paused where the slider was dropped, even if it was playing before - the
+    // director scrubs to look at a moment, and resumes explicitly with ▶ or left A.
     void OnScrubEnd()
     {
         isScrubbing = false;
-        if (wasPlayingBeforeScrub)
-            SetPlaying(true);
     }
 
     void OnSliderValueChanged(float value)
@@ -737,9 +772,14 @@ public class RecordingPlaybackController : MonoBehaviour
         UpdateTimeText();
     }
 
+    // The one place isPlaying changes, so the ▶/❚❚ button always matches the real state -
+    // whether it was toggled from the button, left A, the slider, restart or reaching the end.
     void SetPlaying(bool playing)
     {
         isPlaying = playing;
+
+        if (playPauseIcon != null)
+            playPauseIcon.sprite = playing ? UIIcons.Pause() : UIIcons.Play();
     }
 
     IEnumerator PlaybackLoop()

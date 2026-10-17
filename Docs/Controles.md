@@ -7,7 +7,9 @@ comportamiento cambia.
 ## Cómo probar en el Editor (XR Device Simulator)
 
 Todos los controles de mano de este documento se prueban con el **XR Device Simulator**, ya
-presente en las 3 escenas de contenido. Antes de presionar cualquier tecla de control, hay que
+presente en las 3 escenas de contenido. Tiene el tag `EditorOnly`, así que Unity lo quita de
+los builds: en el Quest no existe (si estuviera, reemplazaría el headset real por uno simulado
+quieto y la vista dejaría de seguir la cabeza). Antes de presionar cualquier tecla de control, hay que
 seleccionar qué mano está "sosteniendo" el control virtual:
 
 - Mantén **`T`** para que las teclas siguientes controlen el **control izquierdo**.

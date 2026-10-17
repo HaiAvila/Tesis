@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using SQLite4Unity3d;
 using UnityEngine;
+using UnityEngine.Networking;
 
 public class ShotListDatabase : MonoBehaviour
 {
@@ -394,13 +395,12 @@ public class ShotListDatabase : MonoBehaviour
     void ImportCsv(SQLiteConnection connection)
     {
         string csvPath = Path.Combine(Application.streamingAssetsPath, CsvFileName);
-        if (!File.Exists(csvPath))
+        string[] lines = ReadStreamingAssetLines(csvPath);
+        if (lines == null)
         {
             Debug.LogError($"ShotListDatabase: CSV not found at {csvPath}");
             return;
         }
-
-        string[] lines = File.ReadAllLines(csvPath, Encoding.UTF8);
 
         Dictionary<string, int> columnIndex = FindHeaderRow(lines, out int headerLineIndex);
         if (columnIndex == null)
@@ -486,6 +486,32 @@ public class ShotListDatabase : MonoBehaviour
     }
 
     // Parser CSV simple que respeta comas dentro de comillas y comillas escapadas ("").
+    // On Android (Quest) StreamingAssets lives inside the APK, so streamingAssetsPath is a
+    // jar:file:// URL that System.IO can't open - File.Exists is always false there. Only
+    // UnityWebRequest can read it. The wait is synchronous on purpose: the rest of Start()
+    // and every other component's first query expect the shots to be in the DB already, and
+    // reading a small file out of the local APK finishes almost immediately. On PC the path
+    // is a plain folder and keeps using File.
+    static string[] ReadStreamingAssetLines(string path)
+    {
+        if (!path.Contains("://"))
+            return File.Exists(path) ? File.ReadAllLines(path, Encoding.UTF8) : null;
+
+        using (UnityWebRequest request = UnityWebRequest.Get(path))
+        {
+            UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+            while (!operation.isDone) { }
+
+            if (request.result != UnityWebRequest.Result.Success)
+                return null;
+
+            // Same result as File.ReadAllLines(path, UTF8): a leading BOM dropped, split on
+            // either line ending.
+            string text = Encoding.UTF8.GetString(request.downloadHandler.data).TrimStart('﻿');
+            return text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        }
+    }
+
     static string[] ParseCsvLine(string line)
     {
         var fields = new List<string>();

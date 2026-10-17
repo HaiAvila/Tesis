@@ -48,47 +48,55 @@ Cues 6-13 are meant to be used across the 3 demo scenes (Scene1_mountain/giant, 
 ### XR / networking architecture
 
 Dual-view VR setup, synchronized over the network:
-- **Actor's view** and **director's view**: currently **both build for Meta Quest 3/3S only**. Apple Vision Pro / PolySpatial is paused for now — a possible future migration if there's time, but do not install or scaffold PolySpatial/Vision Pro support unless asked.
-- **Network sync between the two**: **Normcore**.
+- **Actor's view** and **director's view**: currently **both build for Meta Quest 3/3S only**, through OpenXR + XR Interaction Toolkit (the stock XRI Starter Assets rig, `XR Origin (XR Rig)`). Apple Vision Pro / PolySpatial is paused for now — a possible future migration if there's time, but do not install or scaffold PolySpatial/Vision Pro support unless asked.
+- **Network sync between the two**: **Normcore**. The shot the director picks is synced as a `RealtimeTransform` position (`RehearsalSessionSync`); the rehearsal's active/ended state is a `[RealtimeModel(createMetaModel: true)]` (`RehearsalSessionStateModel` / `RehearsalSessionState`) — the meta model is required for ownership, which the "director disconnected" detection relies on. The actor's head pose is synced by `ActorPositionSync`.
+- Day-to-day testing so far: actor as a build on a Quest 3, director in the Editor's Play mode with the XR Device Simulator.
 
-Normcore is installed with a minimal sync demo scene. Meta XR/OpenXR packages are not yet in `Packages/manifest.json` — check before assuming either is present.
+### Roles and build profiles
+
+One codebase, role chosen at compile time: `DIRECTOR_BUILD` = director, no define = actor, `SERVER_BUILD` = future PC server (not checked by any code yet, so it behaves like actor). The role is set with **Tesis → Role → Director / Actor / Server** ([`RoleSwitcher.cs`](Assets/Editor/RoleSwitcher.cs)), which writes it into every build profile's own Scripting Defines — never into Player Settings. There are 4 build profiles under `Assets/Settings/Build Profiles/` (PC/Quest × Actor/Director; the Quest ones carry their own Player Settings with the Quest-specific values). The role only applies while a build profile is active. Don't put role defines back into Player Settings, and don't use internal Unity APIs to read/write a profile's Player Settings — `PlayerSettings.GetScriptingDefineSymbols_Internal` crashed the Editor.
 
 ## Project state
 
-This is a Unity **2022.3.58f1 LTS** project (see `ProjectSettings/ProjectVersion.txt`). It has moved past the empty scaffold stage: there's a scene-flow (Bootstrap → SceneSelect → content scene), a shot-list SQLite database driving the scene-select UI, a Normcore sync demo, and 3 content scenes with imported 3D assets. There is still no README, no CI workflow, and no build/test tooling configured — all iteration happens inside the Unity Editor.
+This is a Unity **6000.3.24f1** project (see `ProjectSettings/ProjectVersion.txt`). There is still no README, no CI workflow, and no build/test tooling configured — all iteration happens inside the Unity Editor. Controls (every button, per role and context) are documented in Spanish in [`Docs/Controles.md`](Docs/Controles.md) — keep it updated when controls change.
 
 The repo is pushed to `origin` at `https://github.com/HaiAvila/Tesis` (private).
 
 ### Scenes and flow
 
-- **`Assets/Scenes/Bootstrap.unity`** — entry point. [`Bootstrap.cs`](Assets/Scripts/Bootstrap.cs) marks itself `DontDestroyOnLoad`, holds the `Realtime` (Normcore) connection, and on `didConnectToRoom` loads `NormcoreDemo` by scene name.
-- **`Assets/Scenes/NormcoreDemo.unity`** — Normcore proof-of-concept: a `Realtime` object plus a `NetworkedCube` (`RealtimeView` + `RealtimeTransform`) that syncs across clients in the same room. Connector script: [`NormcoreDemoConnector.cs`](Assets/Scripts/NormcoreDemoConnector.cs) (connects to a hardcoded room name, logs connect/disconnect). Editor setup script: [`NormcoreDemoSetup.cs`](Assets/Editor/NormcoreDemoSetup.cs), menu item `Tools/Normcore/Create Demo Scene`, regenerates this scene + `Assets/Settings/NormcoreAppSettings.asset` from scratch.
-- **`Assets/Scenes/SceneSelect.unity`** — reads the shot list from [`ShotListDatabase.cs`](Assets/Scripts/ShotListDatabase.cs) (a persisted object, expected already in the scene from Bootstrap), groups shots by scene number via [`SceneSelectController.cs`](Assets/Scripts/SceneSelectController.cs), and builds a scrollable uGUI list (all UI built at runtime in code, no prefab) of shot buttons. Clicking a shot loads the matching content scene (`Scene1_mountain` / `Scene2_spaceship` / `Scene3_apartment`) via `SceneManager.LoadSceneAsync`. [`OpenSceneSelectButton.cs`](Assets/Scripts/OpenSceneSelectButton.cs) is a small helper that spawns a button to jump into `SceneSelect` from elsewhere (test/dev convenience).
-- **`Assets/Scenes/Scene1_mountain.unity`**, **`Scene2_spaceship.unity`**, **`Scene3_apartment.unity`** — the 3 content scenes, one per "shot" location. Each has matching imported `.glb` models under `Assets/Models/Scene1|2|3/` and a matching skybox material under `Assets/Skyboxes/` (`Skybox_Scene1/2/3.mat`, built from `.exr` HDRIs).
+- **`Bootstrap.unity`** — entry point. [`Bootstrap.cs`](Assets/Scripts/Bootstrap.cs) is `DontDestroyOnLoad`, holds the `Realtime` connection and the persistent controllers (database, recorder, playback, viewfinder, session sync…), and on `didConnectToRoom` loads `MenuBackdrop` plus `Director_HomeMenu` or `Actor_HomeMenu` additively, depending on the role.
+- **`MenuBackdrop.unity`** — the XR rig and backdrop that the menu scenes (home menus, `SceneSelect`) load on top of. `SceneSelect` has no rig of its own, so it's always loaded via `Bootstrap.LoadSceneSelect()`.
+- **Director home**: "Ensayo Remoto" (live rehearsal with the actor) and "Inspección de Escenas" (review recorded sessions). **Actor home**: "Ensayo Remoto" (wait for the director's pick, then follow into the take) and "Ensayar Solo".
+- **`SceneSelect.unity`** — shot list from the database, grouped by scene ([`SceneSelectController.cs`](Assets/Scripts/SceneSelectController.cs)); World Space, placed in front of the head.
+- **`Scene1_mountain` / `Scene2_spaceship` / `Scene3_apartment`** — the 3 content scenes, each with its `.glb` models under `Assets/Models/Scene1|2|3/` and a skybox under `Assets/Skyboxes/`. Each contains an **XR Device Simulator** tagged `EditorOnly` so it's stripped from builds — left in a build, it replaces the real headset with a still, simulated one (scene locked to the head, view at floor level).
+- **`NormcoreDemo.unity`** — the original Normcore proof-of-concept, not part of the app flow.
+
+All UI is World Space and built at runtime in code (no prefabs). Panels get controller-ray support through [`XRUISetup.cs`](Assets/Scripts/XRUISetup.cs) (`XRUIInputModule` + `TrackedDeviceGraphicRaycaster`). Panels that can be on screen while a virtual camera renders go on the `UI` layer, which those cameras exclude. Project layers: `DirectorViewfinderPanel` (8), `ControllerRayVisual` (9), `PlaybackMonitor` (10). Icons that the legacy font renders badly (star, heart, play/pause) are generated sprites in [`UIIcons.cs`](Assets/Scripts/UIIcons.cs).
 
 ### Shot list database
 
-[`ShotListDatabase.cs`](Assets/Scripts/ShotListDatabase.cs) is a `MonoBehaviour` that, on `Start()`, opens/creates a SQLite DB at `Application.persistentDataPath/shotlist.db` (via the `SQLite4Unity3d` plugin, see Packages below), creates a `Shots` table, and imports `Assets/StreamingAssets/ShotListDB.csv` into it (custom CSV parser that finds the header row by the `scene_number` marker, handles quoted fields). `GetShotsGroupedByScene()` queries the DB and returns shots grouped/sorted by scene and shot number for `SceneSelectController` to render. There's also `Assets/StreamingAssets/shotlist_test.csv` for test data. The `Shot` POCO and its SQLite column mapping live in the same file.
+[`ShotListDatabase.cs`](Assets/Scripts/ShotListDatabase.cs) opens/creates SQLite at `Application.persistentDataPath/shotlist.db` and imports `Assets/StreamingAssets/ShotListDB.csv` into the `Shots` table on start (on Android the CSV is read with `UnityWebRequest`, since StreamingAssets is inside the APK). Recorded rehearsals go to `Sesiones` (with `es_preferida` / `es_favorita`), the actor's samples to `Metricas`, the director's viewfinder camera to `CamaraTrack`. `CameraFramings` still exists in the schema but nothing reads or writes it anymore. New columns are added with a `PRAGMA table_info` check + `ALTER TABLE`, so older databases keep working.
 
 ## Working with this project
 
-**Split of responsibility**: Claude may add GameObjects, attach components, and wire serialized-field references directly (scene YAML edits or live Editor control) — this no longer requires the user to do it by hand. What stays the user's job is visual/spatial judgment: positioning objects, choosing materials or skyboxes, aesthetic decisions. If a task crosses from "wire this reference" to "decide how it should look or exactly where it should sit," say so instead of guessing.
+**Split of responsibility**: Claude may add GameObjects, attach components, and wire serialized-field references directly — this doesn't require the user to do it by hand. What stays the user's job is visual/spatial judgment: positioning objects, choosing materials or skyboxes, aesthetic decisions. If a task crosses from "wire this reference" to "decide how it should look or exactly where it should sit," say so instead of guessing.
 
-**No live Editor control here.** The `unity-cli` skill's live-Editor-control path requires the project's `com.unity.pipeline` package, which itself requires **Unity 6.0+**. This project is on **2022.3.58f1** and doesn't have that package (`unity status` returns `STATUS_NO_INSTANCES`) — confirmed, not just a caveat. So scene/GameObject/component edits in this project mean **hand-editing `.unity`/`.prefab` YAML directly**, carefully: fileIDs and GUIDs are assigned by hand, a live Editor won't pick up the change until it regains focus/reimports, and a mistake can produce valid-looking YAML that silently doesn't do what was intended. When editing scene YAML by hand, do one scene first and let the user confirm it opens correctly in the Editor before repeating the change across other scenes.
+**Live Editor control works** through the `unity` CLI (`unity status`, `unity command eval_file --file …`, `recompile` / `recompile_status`, `menu --path …`, `editor_play` / `editor_stop`, `open_scene`, `save_scene`…). Prefer it over hand-editing scene YAML. Before opening or saving scenes, check which scenes are open and whether they have unsaved changes. To compile-check both roles, use the Tesis → Role menu and switch back to the user's role afterwards.
 
-There is no CLI build/test pipeline in the repo yet — all iteration happens inside the Unity Editor. Use the `unity-package-management` skill for adding/removing UPM packages headlessly, rather than editing `Packages/manifest.json` by hand.
+Use the `unity-package-management` skill for adding/removing UPM packages, rather than editing `Packages/manifest.json` by hand.
 
 ## Packages
 
-`Packages/manifest.json` includes, beyond Unity's default/standard packages (TextMeshPro, Timeline, UGUI, Visual Scripting, collab-proxy, and the built-in engine modules):
-- **Normcore** (`com.normalvr.normcore`, 3.6.0, via the `Normal` scoped registry at `https://normcore-registry.normcore.io`) — network sync between actor and director.
-- **`com.unity.cloud.gltfast`** (6.14.1) — runtime/import support for the `.glb` models used in the 3 content scenes.
+`Packages/manifest.json` includes, beyond Unity's default/standard packages:
+- **Normcore** (`com.normalvr.normcore`, 3.6.1, via the `Normal` scoped registry at `https://normcore-registry.normcore.io`).
+- **XR**: `com.unity.xr.openxr` (1.18.0), `com.unity.xr.interaction.toolkit` (3.6.1, with its Starter Assets and XR Device Simulator samples under `Assets/Samples/`), `com.unity.xr.management` (4.7.0).
+- **`com.unity.cloud.gltfast`** (6.14.1) — the `.glb` models in the content scenes.
 
-Meta XR/OpenXR and PolySpatial packages are **not** installed yet — check `Packages/manifest.json` before assuming either is present. (PolySpatial is paused indefinitely for now; see "XR / networking architecture" above.)
+PolySpatial is **not** installed (paused indefinitely).
 
-Outside UPM, `Assets/Plugins/SQLite4Unity3d/` (`SQLite.cs`) plus the native `Assets/Plugins/x64/sqlite3.dll` provide the SQLite binding used by `ShotListDatabase.cs`.
+Outside UPM, `Assets/Plugins/SQLite4Unity3d/` (`SQLite.cs`) is the SQLite binding, with two native libraries: `Assets/Plugins/x64/sqlite3.dll` (Editor/PC) and `Assets/Plugins/Android/libs/arm64-v8a/libsqlite3.so` (Quest; compiled from the official SQLite amalgamation with Unity's bundled Android NDK).
 
-A minimal Normcore integration exists under `Assets/Normal/`, `Assets/Settings/NormcoreAppSettings.asset`, `Assets/NormcoreProjectSettingsBuildProcessor/`, and the demo scene `Assets/Scenes/NormcoreDemo.unity`. `Assets/EasySyncBuildProcessor/` is also present (Normcore-related build processor).
+Normcore-related assets: `Assets/Normal/`, `Assets/Settings/NormcoreAppSettings.asset`, `Assets/NormcoreProjectSettingsBuildProcessor/`, `Assets/EasySyncBuildProcessor/`.
 
 ## Git / gitignore
 

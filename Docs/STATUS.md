@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (play area outline).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (actor real-space docs + tutorial).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 

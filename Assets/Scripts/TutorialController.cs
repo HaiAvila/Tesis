@@ -115,6 +115,7 @@ public class TutorialController : MonoBehaviour
     Vector3 baselineHeadPosition;
     Transform rig;
     float baselineRigYaw;
+    int baselineAlignCount;
 #if DIRECTOR_BUILD
     float baselineFocalLength;
     bool baselinePlaying;
@@ -348,6 +349,7 @@ public class TutorialController : MonoBehaviour
         XROrigin origin = FindFirstObjectByType<XROrigin>();
         rig = origin != null ? origin.transform : null;
         baselineRigYaw = rig != null ? rig.eulerAngles.y : 0f;
+        baselineAlignCount = StartMarkAligner.Instance != null ? StartMarkAligner.Instance.ManualAlignCount : 0;
 
 #if DIRECTOR_BUILD
         baselineFocalLength = DirectorViewfinderController.Instance != null ? DirectorViewfinderController.Instance.CurrentFocalLengthMM : 0f;
@@ -385,6 +387,8 @@ public class TutorialController : MonoBehaviour
             case Mode.ActorRemote:
                 list.Add(WalkStep());
                 list.Add(TurnStep());
+                list.Add(PlayAreaStep());
+                list.Add(SetStartStep());
                 list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Si termina el ensayo, {Act("regresas al menú principal")}." });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")}."));
                 break;
@@ -392,6 +396,8 @@ public class TutorialController : MonoBehaviour
             case Mode.ActorSolo:
                 list.Add(WalkStep());
                 list.Add(TurnStep());
+                list.Add(PlayAreaStep());
+                list.Add(SetStartStep());
                 list.Add(new Step { Text = $"La {Key("marca de cinta")} en el piso es el {Act("inicio de la toma")}: párate sobre ella, con la punta de los pies en la barra." });
                 list.Add(new Step
                 {
@@ -434,6 +440,20 @@ public class TutorialController : MonoBehaviour
         SimulatorHint = "Simulador: mantén Y + A/D.",
         IsDone = () => Mathf.Abs(rightStickAction.ReadValue<Vector2>().x) > StickThreshold
                        || (rig != null && Mathf.Abs(Mathf.DeltaAngle(baselineRigYaw, rig.eulerAngles.y)) > RigTurnDegrees),
+    };
+
+    // Actor only: the real room's outline (PlayAreaOutline).
+    Step PlayAreaStep() => new Step
+    {
+        Text = $"La {Key("línea celeste")} en el piso es el {Act("límite de tu espacio real")}: si la cruzas, el Quest te muestra tu cuarto.",
+    };
+
+    // Actor only: "Fijar inicio aquí" (StartMarkAligner).
+    Step SetStartStep() => new Step
+    {
+        Text = $"Ve a un extremo de tu espacio, mira hacia donde vas a caminar y presiona {Key("X")} (control izquierdo) para {Act("fijar el inicio de la toma aquí")}.",
+        SimulatorHint = "Simulador: mantén T + B.",
+        IsDone = () => StartMarkAligner.Instance != null && StartMarkAligner.Instance.ManualAlignCount > baselineAlignCount,
     };
 
     Step MenuStep(string text) => new Step

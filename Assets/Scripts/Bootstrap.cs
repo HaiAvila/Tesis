@@ -1,3 +1,4 @@
+using System;
 using Normal.Realtime;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -34,13 +35,18 @@ public class Bootstrap : MonoBehaviour
 
     public static AppMode Mode { get; private set; } = AppMode.None;
 
+    // (previous, new) - raised after the mode changes.
+    public static event Action<AppMode, AppMode> ModeChanged;
+
     public static void SetMode(AppMode mode, string reason)
     {
         if (Mode == mode)
             return;
 
         Debug.Log($"[Solo] mode {Mode} -> {mode} ({reason})");
+        AppMode previous = Mode;
         Mode = mode;
+        ModeChanged?.Invoke(previous, mode);
     }
 
     static readonly string[] ContentSceneNames = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };

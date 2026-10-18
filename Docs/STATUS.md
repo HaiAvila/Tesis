@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (explicit mode).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (SoloSessionModel).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -37,6 +37,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (explicit mo
 - **Director disconnects:** Normcore clears the ownership the director held on the state model → `OwnerLeft` → the actor goes home with "Se perdió la conexión con el director". This only works once the director has written the state at least once.
 - **Late join:** pressing Ensayo Remoto calls `JoinRemoteRehearsal()`, which loads the current shot only if the state is active **and** the model has an owner. A stale model left by a client that's gone is ignored.
 - **Mode:** one local value, `Bootstrap.Mode` (`None` / `Remote` / `Solo` / `Inspect`), not synced. It replaces the old `IsInspecting` and `ActorJoinedRemoteRehearsal` flags; Ensayar Solo used to reuse the director's "inspecting" flag. It's set at every entry (home menu buttons, Favoritos → Ver) and reset to `None` at every exit (first connect, Menú Principal, the actor sent home, a disconnect during Remote). Pause → Selección de Escenas keeps the mode. Every director tool and every director-driven event checks for its own mode, so Solo shows no director tools and ignores the director entirely.
+- **Solo session (actor):** `SoloSessionModel` (`[RealtimeModel(createMetaModel: true)]`, all properties reliable with change events) on its own `SoloSession` object (`RealtimeView` + `SoloSession` + `SoloRehearsalController`). Fields: `mode`, `sceneNumber`, `shotNumber`, `commandId`, `commandCounter`. The actor owns it only while in solo: when a take loads it writes mode=Solo + scene + shot (and writes again if the model arrives late or after a reconnect); on leaving solo it writes mode=None and clears ownership. Command channel with the same counter + baseline contract as the director's. It never touches the director's model. `[Solo]` logs.
 - **Actor head pose:** `ActorPositionSync` (actor build only). It's a `RealtimeTransform` that the actor requests ownership of every frame it doesn't hold it. The recorder reads it. **The director has no live visual of it.**
 - **Who owns what:**
   - The director owns the shot transform and the state model.

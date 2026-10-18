@@ -68,6 +68,9 @@ public class RehearsalRecorder : MonoBehaviour
     bool markAsFavorita;
     Image preferidaCheckboxImage;
     Image favoritaCheckboxImage;
+
+    // The Ver replay / Guardar / Descartar panel shown after stopping (read by the tutorial).
+    public bool IsDecisionPanelOpen => decisionPanelObject != null;
 #endif
 
     void Awake()

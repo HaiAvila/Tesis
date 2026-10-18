@@ -73,6 +73,10 @@ The repo is pushed to `origin` at `https://github.com/HaiAvila/Tesis` (private).
 
 All UI is World Space and built at runtime in code (no prefabs). Panels get controller-ray support through [`XRUISetup.cs`](Assets/Scripts/XRUISetup.cs) (`XRUIInputModule` + `TrackedDeviceGraphicRaycaster`). Panels that can be on screen while a virtual camera renders go on the `UI` layer, which those cameras exclude. Project layers: `DirectorViewfinderPanel` (8), `ControllerRayVisual` (9), `PlaybackMonitor` (10). Icons that the legacy font renders badly (star, heart, play/pause) are generated sprites in [`UIIcons.cs`](Assets/Scripts/UIIcons.cs).
 
+A per-mode controls tutorial ([`TutorialController.cs`](Assets/Scripts/TutorialController.cs)) is offered the first time each mode's content scene opens (remembered in `PlayerPrefs`) and can be replayed from the pause menu. When a control changes, update its tutorial step too.
+
+All on-screen text and `Docs/Controles.md` are in **Mexican Spanish** (tú: "presiona", "puedes", "¿Quieres…?") — never Argentine voseo ("apretá", "podés", "¿Querés…?") or Argentine vocabulary ("tildar").
+
 ### Shot list database
 
 [`ShotListDatabase.cs`](Assets/Scripts/ShotListDatabase.cs) opens/creates SQLite at `Application.persistentDataPath/shotlist.db` and imports `Assets/StreamingAssets/ShotListDB.csv` into the `Shots` table on start (on Android the CSV is read with `UnityWebRequest`, since StreamingAssets is inside the APK). Recorded rehearsals go to `Sesiones` (with `es_preferida` / `es_favorita`), the actor's samples to `Metricas`, the director's viewfinder camera to `CamaraTrack`. `CameraFramings` still exists in the schema but nothing reads or writes it anymore. New columns are added with a `PRAGMA table_info` check + `ALTER TABLE`, so older databases keep working.

@@ -26,6 +26,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Control | Qué hace | Dónde está activo | Tecla en el Simulador | Botón físico Quest | Estado |
 |---|---|---|---|---|---|
 | Menu (control izquierdo) | Abre/cierra el menú de pausa | Las 3 escenas de contenido — Ensayo Remoto **e** Inspección de Escenas, actor y director | Mantener `T` + `M` | Botón Menu (control izquierdo) | ✅ Implementado, sin probar en hardware real |
+| "Tutorial" (menú de pausa) | Repite el tutorial de controles del modo actual (ver "Tutorial de controles" abajo) | Las 3 escenas de contenido, actor y director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado |
 | Secondary Button "B" (control derecho) | Inicia/detiene la grabación de la toma | Solo Ensayo Remoto (escena de contenido, no Inspección de Escenas) | Mantener `Y` + `N` | Botón B (control derecho) | ✅ Implementado |
 | Joystick izquierdo | Mueve la cámara libremente (vuelo) en la dirección donde mira la cabeza, sin gravedad ni colisión | Solo mientras hay una reproducción activa en Inspección de Escenas | Mantener `T` + `W,A,S,D` | Joystick del control izquierdo | ✅ Implementado, sin probar en hardware real |
 | Primary Button "A" (control izquierdo) | Play/Pause del fantasma en reproducción (lo mismo que el botón ▶/❚❚ del panel) | Solo mientras hay un panel de reproducción abierto (Inspección de Escenas o "Ver replay" en Ensayo Remoto) | Mantener `T` + `B` | Botón A (control izquierdo) | ✅ Implementado, sin probar en hardware real |
@@ -33,7 +34,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Reiniciar (↺) | Salta al inicio de la reproducción y reanuda | Panel de reproducción (Inspección de Escenas o "Ver replay") | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
 | Repetir (∞) | Activa/desactiva loop automático al llegar al final | Panel de reproducción (Inspección de Escenas o "Ver replay") | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
 | Slider de scrubbing | Salta a cualquier punto de la reproducción, arrastrando. Al soltarlo queda **en pausa** en ese punto, aunque antes estuviera reproduciendo; se reanuda con ▶ o A izquierdo | Panel de reproducción (Inspección de Escenas o "Ver replay") | Clic + arrastre con mouse (Game view) | Apuntar con el rayo, mantener gatillo y arrastrar | ✅ Decidido: solo UI |
-| Casillas "Marcar como preferida" / "Marcar como favorita" | Al tildarlas antes de "Guardar", la nueva sesión se guarda con `es_preferida`/`es_favorita` ya en el mismo INSERT (preferida desmarca cualquier otra de la misma toma) | Panel de decisión (Ver replay/Guardar/Descartar) al detener una grabación — solo director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
+| Casillas "Marcar como preferida" / "Marcar como favorita" | Al marcarlas antes de "Guardar", la nueva sesión se guarda con `es_preferida`/`es_favorita` ya en el mismo INSERT (preferida desmarca cualquier otra de la misma toma) | Panel de decisión (Ver replay/Guardar/Descartar) al detener una grabación — solo director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
 | Estrella (★/☆) y corazón (♥/♡) por sesión | Marca/desmarca preferida (exclusiva por toma) y favorita (no exclusiva, bookmark) de una sesión ya guardada | Lista de sesiones en Selección de Escenas — solo aparece cuando un shot tiene más de una sesión guardada, durante Inspección de Escenas | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
 | "Ver" en Favoritos | Salta directo a reproducir esa sesión en Inspección de Escenas, interrumpiendo cualquier Ensayo Remoto activo | Pantalla Favoritos (ver entrada "Favoritos" del menú de pausa) | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Decidido: solo UI por ahora |
 | Joystick izquierdo (locomoción normal) | Caminar | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto o el vuelo libre está activo | Mantener `T`, mover joystick | Joystick del control izquierdo | ✅ De fábrica (XRI Starter Assets) |
@@ -113,7 +114,7 @@ abajo).
 
 ### Interacción con los paneles — rayo del control
 **Scripts:** `XRUISetup.cs` (helper compartido), usado por cada panel al construirse.
-**Cómo apretar:** apuntá el rayo del control (izquierdo o derecho) al botón y presioná el **gatillo**. Para el slider de reproducción y las listas con scroll (Selección de Escenas, Favoritos): apuntá, mantené el gatillo y arrastrá.
+**Cómo presionar:** apunta el rayo del control (izquierdo o derecho) al botón y presiona el **gatillo**. Para el slider de reproducción y las listas con scroll (Selección de Escenas, Favoritos): apunta, mantén el gatillo y arrastra.
 **En el Editor:** el clic con mouse en la vista Game sigue funcionando. Con el XR Device Simulator, el gatillo es el clic izquierdo del mouse mientras se mantiene `T` (izquierdo) o `Y` (derecho) para elegir el control.
 **Cómo está armado:**
 - El EventSystem usa `XRUIInputModule` (de XRI) en vez de `StandaloneInputModule`. Es uno solo y persistente (`DontDestroyOnLoad`); los Near-Far Interactor del rig (que ya traen la interacción con UI activada de fábrica) se registran solos. Con la configuración del proyecto (input "Both"), el módulo usa sus acciones de mouse integradas, por eso el clic con mouse sigue andando.
@@ -122,6 +123,19 @@ abajo).
 - **Selección de Escenas** antes era Screen Space Overlay (no se ve en el headset) y su escena no tenía rig XR. Ahora se carga encima de `MenuBackdrop` (como los home menus, vía `Bootstrap.LoadSceneSelect()`) y es World Space, a 2 m delante de la cabeza.
 - **Capas:** el rayo solo detecta UI en las capas de su raycast mask (Default + UI en el rig). Los paneles con botones están en esas capas. Los rayos visuales están en `ControllerRayVisual`, excluida de la cámara del visor y de la que reproduce el track grabado.
 - **Íconos:** la estrella, el corazón y ▶/❚❚ son imágenes generadas en código (`UIIcons.cs`), no caracteres de la fuente: con la fuente, el ♥ relleno no aparecía y el ❚❚ se veía como un solo bloque.
+
+### Tutorial de controles
+**Script:** `TutorialController.cs` (persistente, objeto "Tutorial" bajo Bootstrap).
+**Cuándo aparece:** la primera vez que se entra a una escena de contenido en cada modo, un panel pregunta "¿Quieres ver un tutorial de los controles?" (Sí / No). La respuesta se guarda en el headset (`PlayerPrefs`, una clave por modo: `Tutorial.Seen.DirectorRemote`, `DirectorInspection`, `ActorRemote`, `ActorSolo`), así que no vuelve a preguntar. Se puede repetir siempre desde el menú de pausa → **Tutorial** (entra directo a los pasos, sin preguntar).
+**Cómo funciona:** un paso por vez. Los pasos que piden una acción avanzan solos cuando se detecta (muestran "¡Muy bien!" y un pulso háptico); los pasos informativos tienen **Siguiente**. **Saltar tutorial** está siempre. En el Editor, cada paso muestra también las teclas del XR Device Simulator.
+**Pasos por modo:**
+- **Director — Ensayo Remoto (10):** rayo + gatillo · caminar · girar · Grip para levantar el visor · cambiar de lente · zoom fino · B para grabar · B para detener · elegir Ver replay / Guardar / Descartar (espera a que se guarde o descarte, aunque se pase por Ver replay) · Menu.
+- **Director — Inspección de Escenas (7):** rayo + gatillo · pausar/reanudar (botón o A izquierdo) · arrastrar la barra · ↺ / ∞ / ▣ · estrella y corazón · volar con el joystick izquierdo · Menu. Los pasos del panel de reproducción solo aparecen si el shot tiene una grabación.
+- **Actor — Ensayo Remoto (5):** rayo + gatillo · caminar · girar · el director elige la toma · Menu.
+- **Actor — Ensayar Solo (4):** rayo + gatillo · caminar · girar · Menu.
+**Texto:** en español de México (tú). En cada paso, el control que hay que presionar está resaltado en **ámbar** y lo que hace en **celeste** (negritas).
+**Panel:** arriba a la izquierda de la vista, sigue a la cabeza con retraso (como el panel de reproducción). Nunca queda encima de otro panel con botones (menú de pausa, panel de fin de grabación, Favoritos, panel de reproducción): si lo taparía, se mueve a la izquierda o arriba de ese panel, lo que implique moverse menos (arriba solo si no queda más alto de ~22°, porque mirar hacia arriba cansa más). En la práctica, el panel de fin de grabación (ancho y bajo) lo manda arriba y el menú de pausa (alto) lo manda a la izquierda. Al cerrarse ese panel, vuelve a su lugar. Solo sus botones atrapan el rayo (fondo y texto no). Está en la capa `UI`, así que no aparece en el feed del visor. Posición provisoria, sin ajustar.
+**Para volver a ver la pregunta en el Editor:** borrar esas claves de `PlayerPrefs` (Edit → Clear All PlayerPrefs borra todas).
 
 ---
 

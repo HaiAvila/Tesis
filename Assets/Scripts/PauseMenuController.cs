@@ -31,6 +31,11 @@ public class PauseMenuController : MonoBehaviour
 
     readonly List<GameObject> pausedLocomotionObjects = new List<GameObject>();
 
+    public static PauseMenuController Instance { get; private set; }
+
+    // Read by the tutorial's "open the pause menu" step.
+    public bool IsOpen => isOpen;
+
     InputAction menuAction;
     GameObject panelObject;
     Font uiFont;
@@ -38,6 +43,7 @@ public class PauseMenuController : MonoBehaviour
 
     void Awake()
     {
+        Instance = this;
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
         // Standard OpenXR binding path for the left controller's Menu button (matches
@@ -57,6 +63,9 @@ public class PauseMenuController : MonoBehaviour
 
     void OnDestroy()
     {
+        if (Instance == this)
+            Instance = null;
+
         menuAction.performed -= OnMenuButtonPressed;
         menuAction.Disable();
         menuAction.Dispose();
@@ -114,6 +123,10 @@ public class PauseMenuController : MonoBehaviour
         menuOptions.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
         menuOptions.Add(new PauseMenuOption { Label = "Favoritos", OnSelected = ShowFavorites });
 #endif
+
+        // Replays the controls tutorial for the current mode - it's only offered
+        // automatically the first time.
+        menuOptions.Add(new PauseMenuOption { Label = "Tutorial", OnSelected = ShowTutorial });
 
         return menuOptions;
     }
@@ -269,6 +282,12 @@ public class PauseMenuController : MonoBehaviour
         SendHaptic();
 
         option.OnSelected?.Invoke();
+    }
+
+    void ShowTutorial()
+    {
+        if (TutorialController.Instance != null)
+            TutorialController.Instance.StartTutorial();
     }
 
     void GoToMainMenu()

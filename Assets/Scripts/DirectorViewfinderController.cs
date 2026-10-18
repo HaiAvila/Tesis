@@ -145,6 +145,11 @@ public class DirectorViewfinderController : MonoBehaviour
     // Hysteresis state for the joystick-X discrete cycling - see CycleTriggerThreshold/
     // CycleRearmThreshold.
     bool cycleArmed = true;
+
+    // Read by the tutorial to tell when the director raised the viewfinder or zoomed.
+    public bool IsVisible => isVisible;
+    public float CurrentFocalLengthMM => currentFocalLengthMM;
+    public static bool IsNamedFocalLength(float mm) => Mathf.Abs(NamedFocalLengthsMM[FindClosestNamedIndex(mm)] - mm) < 0.5f;
 #endif
 
     public static DirectorViewfinderController Instance { get; private set; }

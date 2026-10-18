@@ -30,6 +30,12 @@ public class RecordingPlaybackController : MonoBehaviour
 {
     public static RecordingPlaybackController Instance { get; private set; }
 
+    // Read by the tutorial: whether a replay panel is up, its play state, and how many
+    // times the slider has been dragged and released.
+    public bool IsPanelOpen => panelObject != null;
+    public bool IsPlaying => isPlaying;
+    public int ScrubCount { get; private set; }
+
     const float CapsuleHeight = 1.8f;
     const float CapsuleRadius = 0.25f;
     const int IconFontSize = 36;
@@ -760,6 +766,7 @@ public class RecordingPlaybackController : MonoBehaviour
     void OnScrubEnd()
     {
         isScrubbing = false;
+        ScrubCount++;
     }
 
     void OnSliderValueChanged(float value)

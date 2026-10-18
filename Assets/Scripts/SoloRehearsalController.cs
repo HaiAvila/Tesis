@@ -35,7 +35,10 @@ public class SoloRehearsalController : MonoBehaviour
     const float StartMarkBarLength = 0.4f;
     const float StartMarkStemLength = 0.25f;
     const float StartMarkToeOffset = 0.12f; // bar a little ahead of the mark's center
-    const float StartMarkFloorOffset = 0.005f;
+    // Above the floor *collider*. The visible floor sits ~1.2 cm higher in scenes 2 and 3
+    // (measured: spaceship 0.012 vs 0.000, apartment 0.005 vs -0.006), and a 5 mm lift left
+    // the tape under it there. 2.5 cm clears both and still reads as on the floor.
+    const float StartMarkFloorOffset = 0.025f;
     const float StartMarkRaycastHeight = 0.5f;   // start just above the marker
     const float StartMarkRaycastDistance = 50f;  // and look all the way down
     static readonly Color StartMarkTapeColor = new Color(1f, 0.85f, 0.1f, 1f);
@@ -202,8 +205,8 @@ public class SoloRehearsalController : MonoBehaviour
     // Start mark, like gaffer tape on a set: a "T" on the floor at the shot's start
     // (Shot{N}_Start, the same marker ShotStartPositioner puts the rig on). The bar is where
     // the toes go, across the facing direction; the stem runs back between the feet.
-    // Dropped onto whatever floor collider is under the marker, a few mm up to avoid
-    // flickering, with no colliders of its own. Solo only.
+    // Dropped onto whatever floor collider is under the marker, lifted StartMarkFloorOffset so
+    // it sits on top of the visible floor, with no colliders of its own. Solo only.
     void BuildStartMark(Transform marker, Scene scene)
     {
         Vector3 position = FindFloorBelow(marker.position) + Vector3.up * StartMarkFloorOffset;

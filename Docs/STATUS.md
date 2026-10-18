@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (start mark on the floor in every scene).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (start mark above the visible floor).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -78,7 +78,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (start mark 
 | 6 | Editor háptico | ⬜ |
 | 6 | Favoritos unchanged | ✅ |
 | 7 | Actor waiting screen: pod status, T-pose | ⬜ ("Esperando selección del director..." only) |
-| 7 | Start mark on the floor | 🟡 In **Solo** a yellow gaffer-tape "T" is drawn on the floor below `Shot{N}_Start` (the markers float 1.6 m up in every scene; the first collider below, up to 50 m, skipping the XR rig) (bar = toes, stem back between the feet; unlit UI images on a flat canvas). Not shown in Ensayo Remoto |
+| 7 | Start mark on the floor | 🟡 In **Solo** a yellow gaffer-tape "T" is drawn on the floor below `Shot{N}_Start` (the markers float 1.6 m up in every scene; the first collider below, up to 50 m, skipping the XR rig, then lifted 2.5 cm because the visible floor sits ~1.2 cm above the collider in scenes 2 and 3) (bar = toes, stem back between the feet; unlit UI images on a flat canvas). Not shown in Ensayo Remoto |
 | 8 | Ensayar Solo with reference, pods, Iniciar/Parar | 🟡 Own mode (only the set, no director tools). SceneSelect filtered by the approved-reference hook (always true for now). Start mark. Iniciar/Parar on B through `SoloSessionModel`. Pods: empty stubs only (`SoloPods.GuideToMark` is called when a take loads, `OnPodStatus` isn't called yet). Nothing is recorded or cued yet (needs the server) |
 | 9 | Pause menu: Calibrar, Estado de pods | ⬜ Menu has Menú Principal, (director) Selección de Escenas, Favoritos, and Tutorial |
 | 10 | Server scene and modules | ⬜ |

@@ -93,6 +93,10 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<StartMarkAligner>() == null)
             gameObject.AddComponent<StartMarkAligner>();
 
+        // Actor only: draws the Quest's real play area on the floor - see PlayAreaOutline.
+        if (GetComponent<PlayAreaOutline>() == null)
+            gameObject.AddComponent<PlayAreaOutline>();
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 

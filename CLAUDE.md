@@ -83,6 +83,8 @@ All on-screen text and `Docs/Controles.md` are in **Mexican Spanish** (tú: "pre
 
 ## Working with this project
 
+**After every task, update [`Docs/STATUS.md`](Docs/STATUS.md) and commit it with the change. If a prompt references code that doesn't exist, stop and report before doing anything.** `STATUS.md` audits the code against the plans in `Docs/plan/` (`unity-cambios-existentes.md`, `unity-priorities.md`) and describes the networking as it actually is.
+
 **Split of responsibility**: Claude may add GameObjects, attach components, and wire serialized-field references directly — this doesn't require the user to do it by hand. What stays the user's job is visual/spatial judgment: positioning objects, choosing materials or skyboxes, aesthetic decisions. If a task crosses from "wire this reference" to "decide how it should look or exactly where it should sit," say so instead of guessing.
 
 **Live Editor control works** through the `unity` CLI (`unity status`, `unity command eval_file --file …`, `recompile` / `recompile_status`, `menu --path …`, `editor_play` / `editor_stop`, `open_scene`, `save_scene`…). Prefer it over hand-editing scene YAML. Before opening or saving scenes, check which scenes are open and whether they have unsaved changes. To compile-check both roles, use the Tesis → Role menu and switch back to the user's role afterwards.

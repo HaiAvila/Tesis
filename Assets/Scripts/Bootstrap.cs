@@ -89,6 +89,10 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<PanelFocusManager>() == null)
             gameObject.AddComponent<PanelFocusManager>();
 
+        // Actor only: puts the shot's start under where the actor stands - see StartMarkAligner.
+        if (GetComponent<StartMarkAligner>() == null)
+            gameObject.AddComponent<StartMarkAligner>();
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 

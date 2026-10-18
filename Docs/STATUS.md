@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (panel focus + pause dimming).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (start mark under the actor).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -117,6 +117,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (panel focus
 
 ## Done but not in either plan
 
+- **Start mark under the actor** (`StartMarkAligner`, actor only, Ensayo Remoto + Solo). `ShotStartPositioner` puts the XR Origin, the center of the real play area, on `Shot{N}_Start`. Right after that, the rig is turned about the actor's head and shifted so the head is over the mark, facing the mark's direction. This happens automatically when a take loads, and again with **left X** ("Fijar inicio aquí": walk to one end of the real room, face the open space, press X). Only the rig moves, never the head or camera. The director isn't affected. `[StartAlign]` logs.
 - **Panel focus** (`PanelFocusManager`, on the Bootstrap object, both builds). Panels register as **modal** (pause menu, Favoritos, decision panel), **persistent** (replay panel, recorded-camera monitor, viewfinder) or **guide** (tutorial). Only one modal is shown: a newer one hides the older until it closes. While any modal is open, persistent panels are hidden through a CanvasGroup (no ray hits) and come back exactly as they were. The replay pauses and resumes only if it was playing. Left X, free-fly and the viewfinder's Grip and zoom are ignored. The world dims inside a 2 m dark box around the head. The tutorial is never hidden and docks beside what the manager reports; this replaced its own canvas scan. `[PanelFocus]` logs.
 - Scene 2 (spaceship) lighting: the scene asked for skybox ambient, but its ambient was never generated (measured as zero), and the floor is fully metallic with no reflection probe, so shadows were pure black. It now has a cool trilight ambient (sky 0.45/0.52/0.58, equator 0.30/0.35/0.38, ground 0.16/0.16/0.17), the directional light goes from 0.7 to 0.9, and a realtime `ReflectionProbe_Interior` refreshes once on load over the walkable area, at intensity 2.5. Placeholder values, tuned by eye. Scenes 1 and 3 also have no generated ambient, but they're lit directly.
 - Director viewfinder: virtual camera on the right hand, named lenses + fine zoom, REC badge, "scene only" feed. Its camera track is recorded (`CamaraTrack`) and replayed on a monitor.

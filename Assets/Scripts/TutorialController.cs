@@ -391,6 +391,18 @@ public class TutorialController : MonoBehaviour
             case Mode.ActorSolo:
                 list.Add(WalkStep());
                 list.Add(TurnStep());
+                list.Add(new Step
+                {
+                    Text = $"Presiona {Key("B")} (control derecho) para {Act("iniciar")} el ensayo de la toma.",
+                    SimulatorHint = "Simulador: mantén Y + N.",
+                    IsDone = () => SoloRehearsalController.Instance != null && SoloRehearsalController.Instance.IsRunning,
+                });
+                list.Add(new Step
+                {
+                    Text = $"Presiona {Key("B")} otra vez para {Act("detenerlo")}. Si abres el menú de pausa o sales de la toma, se detiene solo.",
+                    SimulatorHint = "Simulador: mantén Y + N.",
+                    IsDone = () => SoloRehearsalController.Instance != null && !SoloRehearsalController.Instance.IsRunning,
+                });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te regresa al inicio")} para elegir otra toma."));
                 break;
 #endif

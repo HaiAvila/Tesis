@@ -301,8 +301,95 @@ public class PanelFocusManager : MonoBehaviour
         }
     }
 
-    // Dim bubble - added in the next commit.
+    // --- Dim bubble ----------------------------------------------------------------------
+    //
+    // While any modal is open the world is dimmed, like a game's pause screen: VR has no flat
+    // screen to lay a dark overlay over, so instead a dark, semi-transparent box surrounds the
+    // head (DimHalfSize each way, following the head's position, world-aligned). The menu
+    // (1.5 m) and the tutorial (1.25 m) sit inside it, so they stay bright; everything farther
+    // away is seen through it, darkened - as the Quest's own system menu does. The world isn't
+    // frozen: the other device keeps moving in Ensayo Remoto; only the replay pauses.
+    //
+    // Six UI images on world-space canvases: unlit, double-sided, no raycast target, drawn
+    // before other canvases (sortingOrder), and the UI shader is always in the build. Fades
+    // in/out over DimFadeSeconds.
+    const float DimAlpha = 0.6f;
+    const float DimFadeSeconds = 0.2f;
+    const float DimHalfSize = 2f;
+    const int DimSortingOrder = -100;
+
+    GameObject dimRoot;
+    readonly List<UnityEngine.UI.Image> dimFaces = new List<UnityEngine.UI.Image>();
+    float dimAlpha;
+    bool dimTargetOn;
+
     void UpdateDim()
     {
+        bool targetOn = modals.Count > 0;
+        if (targetOn != dimTargetOn)
+        {
+            dimTargetOn = targetOn;
+            Debug.Log($"[PanelFocus] dim {(targetOn ? "on" : "off")}");
+        }
+
+        float target = targetOn ? DimAlpha : 0f;
+        if (Mathf.Approximately(dimAlpha, target) && (target > 0f || dimRoot == null || !dimRoot.activeSelf))
+        {
+            FollowHead();
+            return;
+        }
+
+        dimAlpha = Mathf.MoveTowards(dimAlpha, target, DimAlpha / DimFadeSeconds * Time.unscaledDeltaTime);
+
+        if (dimAlpha > 0f && dimRoot == null)
+            BuildDim();
+        if (dimRoot == null)
+            return;
+
+        dimRoot.SetActive(dimAlpha > 0f);
+        foreach (UnityEngine.UI.Image face in dimFaces)
+            face.color = new Color(0f, 0f, 0f, dimAlpha);
+
+        FollowHead();
+    }
+
+    void FollowHead()
+    {
+        if (dimRoot == null || !dimRoot.activeSelf)
+            return;
+
+        Camera head = Camera.main;
+        if (head != null)
+            dimRoot.transform.position = head.transform.position;
+    }
+
+    void BuildDim()
+    {
+        dimRoot = new GameObject("PauseDim");
+        dimRoot.transform.SetParent(transform, false);
+        dimRoot.layer = XRUISetup.UILayer;
+
+        Vector3[] directions = { Vector3.forward, Vector3.back, Vector3.left, Vector3.right, Vector3.up, Vector3.down };
+        foreach (Vector3 direction in directions)
+        {
+            var face = new GameObject("DimFace", typeof(RectTransform), typeof(Canvas), typeof(UnityEngine.UI.Image));
+            face.layer = XRUISetup.UILayer;
+            face.transform.SetParent(dimRoot.transform, false);
+
+            Canvas canvas = face.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.sortingOrder = DimSortingOrder;
+
+            var rect = (RectTransform)face.transform;
+            rect.sizeDelta = Vector2.one * (DimHalfSize * 2f * 1000f); // 1 canvas unit = 1 mm
+            rect.localScale = Vector3.one * 0.001f;
+            rect.localPosition = direction * DimHalfSize;
+            rect.localRotation = Quaternion.LookRotation(direction, direction == Vector3.up || direction == Vector3.down ? Vector3.forward : Vector3.up);
+
+            var image = face.GetComponent<UnityEngine.UI.Image>();
+            image.color = new Color(0f, 0f, 0f, 0f);
+            image.raycastTarget = false;
+            dimFaces.Add(image);
+        }
     }
 }

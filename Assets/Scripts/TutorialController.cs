@@ -510,7 +510,7 @@ public class TutorialController : MonoBehaviour
         {
             list.Add(new Step
             {
-                Text = $"La toma se reproduce sola. Usa el {Key("botón de pausa")} del panel o {Key("A")} (control izquierdo) para {Act("pausar o reanudar")}.",
+                Text = $"La toma se reproduce sola. Usa el {Key("botón de pausa")} del panel o {Key("X")} (control izquierdo) para {Act("pausar o reanudar")}.",
                 SimulatorHint = "Simulador: mantén T + B.",
                 IsDone = () => playback.IsPlaying != baselinePlaying,
             });

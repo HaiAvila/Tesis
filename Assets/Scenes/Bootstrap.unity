@@ -119,6 +119,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &68884930 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5396319754484432749, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
+  m_PrefabInstance: {fileID: 1690822990}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &233107374
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -741,7 +746,7 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 8678808007511643474, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
   m_PrefabInstance: {fileID: 1690822990}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 68884930}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: -1424795628, guid: ebae63e7edba59945a994528ada1f7a2, type: 3}
@@ -752,6 +757,18 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2332661745713502799, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
   m_PrefabInstance: {fileID: 1690822990}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1236625592
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 68884930}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 2130093491, guid: ebae63e7edba59945a994528ada1f7a2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Normal.Realtime.dll::Normal.Realtime.AutoReconnect
 --- !u!4 &1661538453 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2304139540374330456, guid: 0e99c0fa84b304f47a7a96e5437add3e, type: 3}
@@ -903,7 +920,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5396319754484432749, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1236625592}
   m_SourcePrefab: {fileID: 100100000, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}
 --- !u!1 &1739909072
 GameObject:

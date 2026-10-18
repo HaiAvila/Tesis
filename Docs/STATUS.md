@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (command channel).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (disconnect handling).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -18,8 +18,13 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (command cha
 
 ## Networking today (Normcore)
 
-- **Room:** the `Realtime` prefab in `Bootstrap.unity` joins room `TesisEnsayo01` on start, on both roles. On `didConnectToRoom`, `Bootstrap` loads `MenuBackdrop` plus the role's home menu.
-- **Disconnects are not handled:** Bootstrap only listens to `didConnectToRoom`, once.
+- **Room:** the `Realtime` prefab in `Bootstrap.unity` joins room **`Test Room`** on start (its own "Join Room On Start" setting), on both roles. The `TesisEnsayo01` value in the scene is on a *disabled* `NormcoreDemoConnector` and isn't used. On the first `didConnectToRoom`, `Bootstrap` loads `MenuBackdrop` plus the role's home menu.
+- **Disconnects:** Normcore's `AutoReconnect` is on the `Realtime` object (exponential backoff after a network error or the device sleeping). `Bootstrap` follows connect and disconnect for the whole session:
+  - **Disconnect during Ensayo Remoto** → the user goes home with "Se perdió la conexión. Reconectando...". For the director, Ensayo Remoto means SceneSelect or a take with `IsInspecting` false. For the actor, it's the joined flag (waiting or in a take).
+  - **Anywhere else** (menus, Inspección, Ensayar Solo) → nothing is interrupted, since those work offline.
+  - **Reconnect** → only logged; no scene reload.
+  - The director's home menu now shows notices too (`DirectorHomeMenuController.PendingNotice`).
+  - An initial connection that never succeeds still leaves the app on the Bootstrap scene.
 - **Shot sync:** `RehearsalSessionSync` encodes the shot number in a `RealtimeTransform`'s `position.x`.
   - The director calls `RequestOwnership()` and then sets it.
   - The actor reacts to changes in `Update()`, but only while `Bootstrap.ActorJoinedRemoteRehearsal` is set.

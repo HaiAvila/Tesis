@@ -54,6 +54,14 @@ public class Bootstrap : MonoBehaviour
 
     public Realtime realtime;
 
+    const string ConnectionLostNotice = "Se perdió la conexión. Reconectando...";
+
+    // Connect and disconnect are followed for the whole session, not just the first connect.
+    // Reconnecting is Normcore's own AutoReconnect component on the Realtime object
+    // (exponential backoff, so a flaky network doesn't get the app rate-limited) - Bootstrap
+    // only decides what the user sees.
+    bool hasConnectedOnce;
+
     private void Awake()
     {
         DontDestroyOnLoad(gameObject);
@@ -62,17 +70,78 @@ public class Bootstrap : MonoBehaviour
             realtime = GetComponentInChildren<Realtime>();
 
         realtime.didConnectToRoom += OnConnectedToRoom;
+        realtime.didDisconnectFromRoom += OnDisconnectedFromRoom;
+    }
+
+    private void OnDestroy()
+    {
+        if (realtime == null)
+            return;
+
+        realtime.didConnectToRoom -= OnConnectedToRoom;
+        realtime.didDisconnectFromRoom -= OnDisconnectedFromRoom;
     }
 
     private void OnConnectedToRoom(Realtime rt)
     {
-        realtime.didConnectToRoom -= OnConnectedToRoom;
+        // A reconnect: whoever lost the connection mid-rehearsal was already sent home, and
+        // anything else (menus, Inspección, Ensayar Solo) works offline and was never
+        // interrupted - so nothing to reload.
+        if (hasConnectedOnce)
+        {
+            Debug.Log($"[Bootstrap] reconnected to room '{rt.room.name}' as client {rt.clientID}.");
+            return;
+        }
+
+        hasConnectedOnce = true;
+        Debug.Log($"[Bootstrap] connected to room '{rt.room.name}' as client {rt.clientID}.");
 
         // Neutral state on the very first entry into the app - see IsInspecting's own
         // comment for why this must never be left to whatever a static field defaults to.
         IsInspecting = false;
         ActorJoinedRemoteRehearsal = false;
 
+        LoadHomeMenu();
+    }
+
+    // Only Ensayo Remoto needs the room, so only it is interrupted: the user goes home with a
+    // notice while AutoReconnect works. When the director is the one who dropped, the actor
+    // is also sent home on its side, by RehearsalSessionState.OwnerLeft.
+    private void OnDisconnectedFromRoom(Realtime rt)
+    {
+        bool wasInRemoteRehearsal = IsInRemoteRehearsal();
+        Debug.Log($"[Bootstrap] disconnected from the room (in Ensayo Remoto: {wasInRemoteRehearsal}).");
+
+        if (!wasInRemoteRehearsal)
+            return;
+
+        ActorJoinedRemoteRehearsal = false;
+        IsInspecting = false;
+#if DIRECTOR_BUILD
+        DirectorHomeMenuController.PendingNotice = ConnectionLostNotice;
+#else
+        ActorHomeMenuController.PendingNotice = ConnectionLostNotice;
+#endif
+        LoadHomeMenu();
+    }
+
+    static bool IsInRemoteRehearsal()
+    {
+#if DIRECTOR_BUILD
+        // From the moment Ensayo Remoto was picked: SceneSelect (choosing the shot) or a take.
+        string activeScene = SceneManager.GetActiveScene().name;
+        bool inRemoteFlow = IsContentScene(activeScene) || SceneManager.GetSceneByName("SceneSelect").isLoaded;
+        return inRemoteFlow && !IsInspecting;
+#else
+        // Waiting on the home menu or in a take.
+        return ActorJoinedRemoteRehearsal;
+#endif
+    }
+
+    // Actor_HomeMenu/Director_HomeMenu have no camera of their own - they rely on
+    // MenuBackdrop being loaded first.
+    static void LoadHomeMenu()
+    {
         SceneManager.LoadScene("MenuBackdrop");
 
 #if DIRECTOR_BUILD

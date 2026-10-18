@@ -16,6 +16,14 @@ public class DirectorHomeMenuController : MonoBehaviour
     static readonly Color PanelColor = new Color(0.5f, 0.32f, 0.12f, 0.55f);
     static readonly Color TextColor = new Color(0.98f, 0.94f, 0.85f, 1f);
 
+    const int NoticeFontSize = 28;
+    const float NoticeDurationSeconds = 5f;
+
+    // One-shot message to show when this menu next opens (e.g. "Se perdió la conexión"),
+    // set by Bootstrap right before it sends the director home. Same mechanism as
+    // ActorHomeMenuController.PendingNotice.
+    public static string PendingNotice;
+
     void Start()
     {
         Font uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -56,6 +64,35 @@ public class DirectorHomeMenuController : MonoBehaviour
         CreateButton(layoutRect, uiFont, "Inspección de Escenas", OnSceneInspectionSelected);
 
         LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
+
+        ShowPendingNotice(canvasRect, uiFont);
+    }
+
+    // Shown above the buttons for a few seconds, then removed; cleared so it only shows once.
+    void ShowPendingNotice(RectTransform canvasRect, Font uiFont)
+    {
+        if (string.IsNullOrEmpty(PendingNotice))
+            return;
+
+        var noticeObject = new GameObject("Notice", typeof(RectTransform), typeof(Text));
+        noticeObject.transform.SetParent(canvasRect, false);
+        var noticeRect = (RectTransform)noticeObject.transform;
+        noticeRect.anchorMin = new Vector2(0.5f, 0.5f);
+        noticeRect.anchorMax = new Vector2(0.5f, 0.5f);
+        noticeRect.pivot = new Vector2(0.5f, 0.5f);
+        noticeRect.anchoredPosition = new Vector2(0f, ButtonHeight);
+        noticeRect.sizeDelta = new Vector2(ButtonWidth * 2 + Spacing, ButtonHeight * 0.75f);
+
+        Text noticeText = noticeObject.GetComponent<Text>();
+        noticeText.font = uiFont;
+        noticeText.text = PendingNotice;
+        noticeText.fontSize = NoticeFontSize;
+        noticeText.fontStyle = FontStyle.Bold;
+        noticeText.color = TextColor;
+        noticeText.alignment = TextAnchor.MiddleCenter;
+
+        PendingNotice = null;
+        Destroy(noticeObject, NoticeDurationSeconds);
     }
 
     void CreateButton(RectTransform parent, Font font, string label, UnityEngine.Events.UnityAction onClick)

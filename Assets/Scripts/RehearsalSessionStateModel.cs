@@ -1,8 +1,8 @@
 using Normal.Realtime;
 
-// Synced remote-rehearsal state, owned by the director. Plain int properties (see
-// RehearsalSessionState for the values) - discrete synced values rather than the
-// transform-position encoding RehearsalSessionSync uses for the shot number.
+// Synced remote-rehearsal state, owned by the director: session state, the selected shot
+// and the command channel. Plain int properties (see RehearsalSessionState for the values).
+// The shot used to be encoded in a RealtimeTransform's position.x; it's a real property now.
 //
 // createMetaModel is required for ownership: without it RequestOwnership() only logs an
 // error and ownerIDSelf stays unowned, so HasOwner (late join) and OwnerLeft ("Se perdió la
@@ -19,4 +19,5 @@ public partial class RehearsalSessionStateModel
     [RealtimeProperty(1, true, true)] private int _sessionState;
     [RealtimeProperty(2, true, true)] private int _commandId;
     [RealtimeProperty(3, true, true)] private int _commandCounter;
+    [RealtimeProperty(4, true, true)] private int _shotNumber;
 }

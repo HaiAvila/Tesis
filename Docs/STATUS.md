@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (disconnect handling).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (shot number moved into the model).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -25,10 +25,10 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (disconnect 
   - **Reconnect** → only logged; no scene reload.
   - The director's home menu now shows notices too (`DirectorHomeMenuController.PendingNotice`).
   - An initial connection that never succeeds still leaves the app on the Bootstrap scene.
-- **Shot sync:** `RehearsalSessionSync` encodes the shot number in a `RealtimeTransform`'s `position.x`.
-  - The director calls `RequestOwnership()` and then sets it.
-  - The actor reacts to changes in `Update()`, but only while `Bootstrap.ActorJoinedRemoteRehearsal` is set.
-  - A baseline taken on connect ignores a stale value left in the room.
+- **Shot sync:** `shotNumber` property of `RehearsalSessionStateModel` (the transform hack is gone; the `RehearsalSession` object no longer has a `RealtimeTransform`, and its `RealtimeView` keeps component id 1 as deprecated).
+  - The director writes it through `RehearsalSessionSync.SelectShot` → `RehearsalSessionState.SetShot` (`RequestOwnership()` and then set). −1 = no shot.
+  - The actor reacts to the change event, but only while `Bootstrap.ActorJoinedRemoteRehearsal` is set.
+  - Whatever the room already holds when joining doesn't fire the event, so a stale shot never loads by itself. A late joiner reads it explicitly (see "Late join").
   - The scene isn't synced: the actor looks it up from the shot in its own database.
 - **Session state:** `RehearsalSessionStateModel` (`[RealtimeModel(createMetaModel: true)]`), with `sessionState`: 0 none, 1 active, 2 ended.
   - Written only by the director (`RequestOwnership()` and then set).
@@ -48,7 +48,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (disconnect 
 
 | # | Item | Status |
 |---|---|---|
-| 1 | SessionModel replaces the shot-in-transform hack | ⬜ Still `RehearsalSessionSync` (position.x) |
+| 1 | SessionModel replaces the shot-in-transform hack | 🟡 The shot is now a property of `RehearsalSessionStateModel` (with session state and commands); scene, mode, actorJoined, recording and sessionId aren't synced yet |
 | 1 | Session active/ended + actor joined inside one model | 🟡 `sessionState` is in `RehearsalSessionStateModel`; "joined" is a local flag |
 | 1 | Ensayar Solo also joins a room | 🟡 Every client joins the room at startup; Solo just ignores all sync. No mode is sent |
 | 1 | Persistent shot listener acts only when remote + joined | 🟡 Gated by the local joined flag, not a synced mode |
@@ -87,7 +87,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (disconnect 
 | # | Item | Status |
 |---|---|---|
 | P0-1 | Controller ray UI on a real Quest, both builds | 🟡 Actor build tested on a Quest 3. Director only tested in the Editor |
-| P0-2 | SessionModel | 🟡 See networking above. Command channel ✅ (logging only, no sender besides the debug key) |
+| P0-2 | SessionModel | 🟡 One model now holds the shot, session state and commands (✅, commands log only). Missing: scene, mode, actorJoined, recording, sessionId |
 | P0-3 | SERVER_BUILD .exe | 🟡 Define only |
 | P0-4 | IPodSource + PodSimulator | ⬜ |
 | P0-5 | SerialBridge | ⬜ |

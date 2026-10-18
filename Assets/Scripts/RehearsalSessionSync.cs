@@ -1,37 +1,25 @@
 using System;
-using Normal.Realtime;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
-// Encodes the director's selected shot number as a synced Transform position
-// (position.x) instead of a custom [RealtimeModel]. This project's Unity 6.3 +
-// Normcore combination fails to run the RealtimeModel Roslyn source generator
-// (selectedShotNumberDidChange never gets generated, compile error every time,
-// confirmed even after a full reimport and updating Normcore to 3.6.1). A
-// RealtimeTransform is precompiled into the Normcore package - no code
-// generation involved - and is already proven working in this project via
-// NetworkedCube, so it sidesteps the issue entirely.
+// Remote-rehearsal flow on top of RehearsalSessionState (the synced model, on this same
+// object): the director's selected shot, session start/end and the command channel. The
+// director writes; the actor follows - loading the selected shot's scene, and going back to
+// Actor_HomeMenu when the director ends the rehearsal or disconnects.
 //
-// (Later finding: the generator does run in this project - RehearsalSessionStateModel is a
-// proper [RealtimeModel] and compiles fine. The shot number was left on the proven
-// transform path rather than migrated; the rehearsal's active/ended state uses the model.)
-//
-// Session state (active/ended) lives on RehearsalSessionState, on this same object: the
-// director sets it at every entry to and exit from Ensayo Remoto, and the actor is sent back
-// to Actor_HomeMenu when it ends or when the director disconnects.
-[RequireComponent(typeof(RealtimeTransform))]
+// The shot number is a property of RehearsalSessionStateModel. It used to be encoded in a
+// RealtimeTransform's position.x (from a time the RealtimeModel source generator seemed not
+// to run in this project), polled every frame against a baseline taken on connect.
 public class RehearsalSessionSync : MonoBehaviour
 {
-    public const int NoShotSelected = -1;
+    public const int NoShotSelected = RehearsalSessionState.NoShotSelected;
 
     public static RehearsalSessionSync Instance { get; private set; }
 
     public event Action<int> ShotSelected;
 
-    RealtimeTransform realtimeTransform;
     RehearsalSessionState sessionState;
-    int lastKnownShotNumber;
 #if DIRECTOR_BUILD
     InputAction debugCalibrateAction;
 #endif
@@ -39,19 +27,11 @@ public class RehearsalSessionSync : MonoBehaviour
     void Awake()
     {
         Instance = this;
-        realtimeTransform = GetComponent<RealtimeTransform>();
         sessionState = GetComponent<RehearsalSessionState>();
         if (sessionState == null)
-            Debug.LogError("RehearsalSessionSync: no RehearsalSessionState on this object - rehearsal start/end won't sync.");
-        lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
-
-        // Whatever this synced transform holds right as the connection settles - including
-        // a stale value from Normcore's room persistence, carried over from an earlier test
-        // session in the same room - is the starting point, not something to react to.
-        // Unsubscribes after its one use, same as Bootstrap's own didConnectToRoom handler.
-        Realtime realtime = FindFirstObjectByType<Realtime>();
-        if (realtime != null)
-            realtime.didConnectToRoom += OnConnectedToRoom;
+            Debug.LogError("RehearsalSessionSync: no RehearsalSessionState on this object - the rehearsal won't sync.");
+        else
+            sessionState.ShotChanged += OnShotChanged;
 
 #if !DIRECTOR_BUILD
         // Permanent, for the app's entire lifetime - deliberately never unsubscribes and
@@ -114,12 +94,6 @@ public class RehearsalSessionSync : MonoBehaviour
     }
 #endif
 
-    void OnConnectedToRoom(Realtime rt)
-    {
-        rt.didConnectToRoom -= OnConnectedToRoom;
-        lastKnownShotNumber = Mathf.RoundToInt(transform.position.x);
-    }
-
 #if DIRECTOR_BUILD
     // Director: the one entry point into Ensayo Remoto. Also clears the synced shot, so an
     // actor who joins before the director picks one waits instead of being pulled into
@@ -166,7 +140,7 @@ public class RehearsalSessionSync : MonoBehaviour
             || !sessionState.HasOwner)
             return;
 
-        int currentShotNumber = Mathf.RoundToInt(transform.position.x);
+        int currentShotNumber = sessionState.ShotNumber;
         if (currentShotNumber != NoShotSelected)
             LoadSceneForShot(currentShotNumber);
     }
@@ -196,22 +170,20 @@ public class RehearsalSessionSync : MonoBehaviour
     }
 #endif
 
-    void Update()
+    // Every change after this client received the model - never the value the room already
+    // held on joining (see RehearsalSessionState.ShotChanged). "No shot" (the reset at the
+    // start of every rehearsal) isn't a selection.
+    void OnShotChanged(int shotNumber)
     {
-        int currentShotNumber = Mathf.RoundToInt(transform.position.x);
-        if (currentShotNumber == lastKnownShotNumber)
-            return;
-
-        lastKnownShotNumber = currentShotNumber;
-
-        if (currentShotNumber != NoShotSelected)
-            ShotSelected?.Invoke(currentShotNumber);
+        if (shotNumber != NoShotSelected)
+            ShotSelected?.Invoke(shotNumber);
     }
 
+    // Director only - see RehearsalSessionState.SetShot.
     public void SelectShot(int shotNumber)
     {
-        realtimeTransform.RequestOwnership();
-        transform.position = new Vector3(shotNumber, 0f, 0f);
+        if (sessionState != null)
+            sessionState.SetShot(shotNumber);
     }
 
     public void LoadSceneForShot(int shotNumber)

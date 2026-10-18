@@ -54,6 +54,7 @@ public class FavoritesPanelController : MonoBehaviour
 
     public void Show()
     {
+        PanelFocusManager.CloseModal(panelObject);
         if (panelObject != null)
             Destroy(panelObject);
 
@@ -133,6 +134,8 @@ public class FavoritesPanelController : MonoBehaviour
 
         XRUISetup.EnableRayInteraction(panelObject);
         XRUISetup.EnsureEventSystem();
+
+        PanelFocusManager.OpenModal(panelObject, "Favoritos");
     }
 
     void BuildHeaderRow(RectTransform parent)
@@ -359,6 +362,7 @@ public class FavoritesPanelController : MonoBehaviour
 
     void Close()
     {
+        PanelFocusManager.CloseModal(panelObject);
         if (panelObject != null)
             Destroy(panelObject);
         panelObject = null;

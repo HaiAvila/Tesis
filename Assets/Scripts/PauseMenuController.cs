@@ -103,6 +103,7 @@ public class PauseMenuController : MonoBehaviour
 
         PauseLocomotion();
         BuildPanel(headCamera.transform, BuildOptions());
+        PanelFocusManager.OpenModal(panelObject, "Menú de pausa");
         SendHaptic();
         isOpen = true;
     }
@@ -139,6 +140,7 @@ public class PauseMenuController : MonoBehaviour
 
     void ClosePanelAndResumeLocomotion()
     {
+        PanelFocusManager.CloseModal(panelObject);
         if (panelObject != null)
             Destroy(panelObject);
         panelObject = null;

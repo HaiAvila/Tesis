@@ -107,8 +107,8 @@ public class DirectorFreeFlyCamera : MonoBehaviour
 
     void Update()
     {
-        if (!isActive)
-            return;
+        if (!isActive || PanelFocusManager.IsModalOpen)
+            return; // not flying while a menu is open
 
         XROrigin xrOrigin = FindFirstObjectByType<XROrigin>();
         if (xrOrigin == null || xrOrigin.Camera == null)

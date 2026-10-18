@@ -124,6 +124,7 @@ public class RecordingPlaybackController : MonoBehaviour
     bool isPlaying;
     bool isLooping;
     bool isScrubbing;
+    bool wasPlayingBeforeFocus;
     Coroutine playbackCoroutine;
 
     Vector3 anchorPosition;
@@ -175,8 +176,9 @@ public class RecordingPlaybackController : MonoBehaviour
     void OnPlayPausePressed(InputAction.CallbackContext context)
     {
         // Only while an inspection playback session is actually loaded - this same
-        // physical button means something else (or nothing) on every other screen.
-        if (panelObject == null)
+        // physical button means something else (or nothing) on every other screen. And not
+        // while a menu is open: the replay is paused for it and resumes when it closes.
+        if (panelObject == null || PanelFocusManager.IsModalOpen)
             return;
 
         OnPlayPauseClicked();
@@ -200,6 +202,9 @@ public class RecordingPlaybackController : MonoBehaviour
         if (playbackCoroutine != null)
             StopCoroutine(playbackCoroutine);
         playbackCoroutine = null;
+
+        PanelFocusManager.Unregister(panelObject);
+        PanelFocusManager.Unregister(monitorObject);
 
         if (capsule != null)
             Destroy(capsule);
@@ -325,12 +330,35 @@ public class RecordingPlaybackController : MonoBehaviour
         UpdateTimeText();
         SetPlaying(true);
 
+        // Persistent panels: hidden (and the replay paused) while a menu is open - see
+        // PanelFocusManager. Registered after SetPlaying, so if a menu is already open the
+        // replay starts paused and resumes when it closes.
+        PanelFocusManager.RegisterPersistent(panelObject, "Panel de reproducción", OnFocusSuspend, OnFocusResume);
+        if (monitorObject != null)
+            PanelFocusManager.RegisterPersistent(monitorObject, "Monitor de cámara grabada");
+
 #if DIRECTOR_BUILD
         if (DirectorFreeFlyCamera.Instance != null)
             DirectorFreeFlyCamera.Instance.EnableFly();
 #endif
 
         playbackCoroutine = StartCoroutine(PlaybackLoop());
+    }
+
+    // A menu opened over the replay: pause, remembering whether it was playing.
+    void OnFocusSuspend()
+    {
+        wasPlayingBeforeFocus = isPlaying;
+        SetPlaying(false);
+        Debug.Log($"[PanelFocus] replay paused for a menu (was playing: {wasPlayingBeforeFocus})");
+    }
+
+    // The last menu closed: back to exactly the play state it had.
+    void OnFocusResume()
+    {
+        if (wasPlayingBeforeFocus)
+            SetPlaying(true);
+        Debug.Log($"[PanelFocus] replay restored (playing: {isPlaying})");
     }
 
     void Update()

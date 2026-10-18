@@ -171,6 +171,7 @@ public class RehearsalRecorder : MonoBehaviour
 #if DIRECTOR_BUILD
     void ShowDecisionPanel()
     {
+        PanelFocusManager.CloseModal(decisionPanelObject);
         if (decisionPanelObject != null)
             Destroy(decisionPanelObject);
 
@@ -266,6 +267,8 @@ public class RehearsalRecorder : MonoBehaviour
 
         XRUISetup.EnableRayInteraction(decisionPanelObject);
         XRUISetup.EnsureEventSystem();
+
+        PanelFocusManager.OpenModal(decisionPanelObject, "Fin de grabación");
     }
 
     // Simple checkbox: a plain button whose background color flips between on/off, with a
@@ -348,6 +351,7 @@ public class RehearsalRecorder : MonoBehaviour
 
     void DestroyDecisionPanel()
     {
+        PanelFocusManager.CloseModal(decisionPanelObject);
         if (decisionPanelObject != null)
             Destroy(decisionPanelObject);
         decisionPanelObject = null;

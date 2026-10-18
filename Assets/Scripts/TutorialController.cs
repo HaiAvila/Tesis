@@ -23,10 +23,11 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // - In the Editor each hint also shows the XR Device Simulator keys for that control.
 //
 // The panel floats up and to the left of the view and follows the head with a lag (same idea
-// as the replay panel). It never sits on top of another panel with buttons (pause menu,
-// stop-recording decision panel, Favoritos, replay panel): if it would, it docks to that
-// panel's left side, and comes back once the panel closes - see ComputeAnchor. Only its
-// buttons catch the ray, and it's on the UI layer, so virtual cameras don't see it.
+// as the replay panel). It's a "guide" in PanelFocusManager: never hidden when a menu opens,
+// and it never sits on top of the panels the manager reports (the open menu, or the shown
+// persistent panels): if it would, it docks to that panel's left or above it, and comes
+// back once the panel closes - see ComputeAnchor. Only its buttons catch the ray, and it's
+// on the UI layer, so virtual cameras don't see it.
 public class TutorialController : MonoBehaviour
 {
     enum Mode { None, DirectorRemote, DirectorInspection, ActorRemote, ActorSolo }
@@ -592,6 +593,7 @@ public class TutorialController : MonoBehaviour
         XRUISetup.MoveToUILayer(panelObject);
         XRUISetup.EnableRayInteraction(panelObject);
         XRUISetup.EnsureEventSystem();
+        PanelFocusManager.RegisterGuide(panelObject, "Tutorial");
         return true;
     }
 
@@ -685,27 +687,18 @@ public class TutorialController : MonoBehaviour
 
     // --- Placement -----------------------------------------------------------------------
 
-    // Every open world-space panel with buttons (it has a GraphicRaycaster) on the UI layer,
-    // other than this one: pause menu, stop-recording decision panel, Favoritos, replay
-    // panel. Display-only canvases (REC indicator, viewfinder, recorded-camera monitor) don't
-    // count. Refreshed a few times a second rather than every frame.
+    // The panels the tutorial must not cover come from PanelFocusManager - the one place that
+    // knows what's open: the modal on top, or, with no menu open, every persistent panel
+    // that's shown (replay panel, recorded-camera monitor, viewfinder). The tutorial is
+    // registered there as a guide, so it's never hidden itself. Refreshed a few times a
+    // second rather than every frame.
     void RefreshObstacles()
     {
-        obstacles.Clear();
+        PanelFocusManager.GetObstacles(obstacles);
+
         int signature = 0;
-
-        foreach (Canvas canvas in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
-        {
-            if (!canvas.isRootCanvas
-                || canvas.renderMode != RenderMode.WorldSpace
-                || canvas.gameObject == panelObject
-                || canvas.gameObject.layer != XRUISetup.UILayer
-                || canvas.GetComponent<GraphicRaycaster>() == null)
-                continue;
-
-            obstacles.Add((RectTransform)canvas.transform);
-            signature ^= canvas.GetInstanceID();
-        }
+        foreach (RectTransform obstacle in obstacles)
+            signature ^= obstacle.GetInstanceID();
 
         if (signature != obstacleSignature)
             obstaclesChanged = true;
@@ -876,6 +869,7 @@ public class TutorialController : MonoBehaviour
             StopCoroutine(promptCoroutine);
         promptCoroutine = null;
 
+        PanelFocusManager.Unregister(panelObject);
         if (panelObject != null)
             Destroy(panelObject);
         panelObject = null;

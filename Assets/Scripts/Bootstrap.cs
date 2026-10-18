@@ -85,6 +85,10 @@ public class Bootstrap : MonoBehaviour
     {
         DontDestroyOnLoad(gameObject);
 
+        // Decides which panels are shown when several are up - see PanelFocusManager.
+        if (GetComponent<PanelFocusManager>() == null)
+            gameObject.AddComponent<PanelFocusManager>();
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 

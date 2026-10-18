@@ -251,6 +251,8 @@ public class DirectorViewfinderController : MonoBehaviour
             StopCoroutine(buildCoroutine);
         buildCoroutine = null;
 
+        if (panelTransform != null)
+            PanelFocusManager.Unregister(panelTransform.gameObject);
         if (viewfinderRoot != null)
             Destroy(viewfinderRoot);
         viewfinderRoot = null;
@@ -278,7 +280,8 @@ public class DirectorViewfinderController : MonoBehaviour
 
     void Update()
     {
-        if (viewfinderRoot == null || !isVisible)
+        // While a menu is open the panel is hidden (PanelFocusManager) - no zooming blind.
+        if (viewfinderRoot == null || !isVisible || PanelFocusManager.IsModalOpen)
             return;
 
         UpdateZoom();
@@ -570,6 +573,9 @@ public class DirectorViewfinderController : MonoBehaviour
         feed.raycastTarget = false;
 
         BuildFramingOverlay(feedRect, panelLayer);
+
+        // Persistent: hidden while a menu is open, back as it was (raised or not) after.
+        PanelFocusManager.RegisterPersistent(canvasObject, "Visor");
     }
 
     void ApplyPanelLayer(GameObject obj, int panelLayer)
@@ -750,7 +756,7 @@ public class DirectorViewfinderController : MonoBehaviour
         if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
-        if (viewfinderRoot == null)
+        if (viewfinderRoot == null || PanelFocusManager.IsModalOpen)
             return;
 
         isVisible = !isVisible;

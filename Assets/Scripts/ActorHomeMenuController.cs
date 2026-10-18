@@ -149,8 +149,8 @@ public class ActorHomeMenuController : MonoBehaviour
         // Actually listening for the director's pick (this shot and every one after it)
         // is handled by a permanent, never-unsubscribing listener living on
         // RehearsalSessionSync itself - see its own comment for why. That listener only acts
-        // while this flag is set, so this is the entry point that turns it on.
-        Bootstrap.ActorJoinedRemoteRehearsal = true;
+        // in Remote mode, so this is the entry point that turns it on.
+        Bootstrap.SetMode(Bootstrap.AppMode.Remote, "actor pressed Ensayo Remoto");
 
 #if !DIRECTOR_BUILD
         if (RehearsalSessionSync.Instance != null)
@@ -166,12 +166,10 @@ public class ActorHomeMenuController : MonoBehaviour
 
     void OnRehearseAloneSelected()
     {
-        // No director on the other end to sync to - same semantics as Inspección de
-        // Escenas. Without this, SceneSelectController.OnShotSelected() (not build-gated)
-        // would call RehearsalSessionSync.SelectShot() on whatever stale value this flag
-        // happened to have, broadcasting a fake shot selection to anyone connected.
-        Bootstrap.IsInspecting = true;
-        Bootstrap.ActorJoinedRemoteRehearsal = false;
+        // Its own mode: no director tools, and the director's shot / end / disconnect events
+        // and commands are all ignored. SceneSelect only syncs a shot in Remote mode, so
+        // picking one here never broadcasts a fake selection.
+        Bootstrap.SetMode(Bootstrap.AppMode.Solo, "actor pressed Ensayar Solo");
         Bootstrap.LoadSceneSelect();
     }
 }

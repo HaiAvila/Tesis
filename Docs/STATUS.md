@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (shot number moved into the model).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (explicit mode).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -20,14 +20,14 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (shot number
 
 - **Room:** the `Realtime` prefab in `Bootstrap.unity` joins room **`Test Room`** on start (its own "Join Room On Start" setting), on both roles. The `TesisEnsayo01` value in the scene is on a *disabled* `NormcoreDemoConnector` and isn't used. On the first `didConnectToRoom`, `Bootstrap` loads `MenuBackdrop` plus the role's home menu.
 - **Disconnects:** Normcore's `AutoReconnect` is on the `Realtime` object (exponential backoff after a network error or the device sleeping). `Bootstrap` follows connect and disconnect for the whole session:
-  - **Disconnect during Ensayo Remoto** → the user goes home with "Se perdió la conexión. Reconectando...". For the director, Ensayo Remoto means SceneSelect or a take with `IsInspecting` false. For the actor, it's the joined flag (waiting or in a take).
+  - **Disconnect during Ensayo Remoto** → the user goes home with "Se perdió la conexión. Reconectando...". That means `Bootstrap.Mode == Remote` (from the Ensayo Remoto button through SceneSelect or the waiting screen and every take).
   - **Anywhere else** (menus, Inspección, Ensayar Solo) → nothing is interrupted, since those work offline.
   - **Reconnect** → only logged; no scene reload.
   - The director's home menu now shows notices too (`DirectorHomeMenuController.PendingNotice`).
   - An initial connection that never succeeds still leaves the app on the Bootstrap scene.
 - **Shot sync:** `shotNumber` property of `RehearsalSessionStateModel` (the transform hack is gone; the `RehearsalSession` object no longer has a `RealtimeTransform`, and its `RealtimeView` keeps component id 1 as deprecated).
   - The director writes it through `RehearsalSessionSync.SelectShot` → `RehearsalSessionState.SetShot` (`RequestOwnership()` and then set). −1 = no shot.
-  - The actor reacts to the change event, but only while `Bootstrap.ActorJoinedRemoteRehearsal` is set.
+  - The actor reacts to the change event, but only in `Remote` mode.
   - Whatever the room already holds when joining doesn't fire the event, so a stale shot never loads by itself. A late joiner reads it explicitly (see "Late join").
   - The scene isn't synced: the actor looks it up from the shot in its own database.
 - **Session state:** `RehearsalSessionStateModel` (`[RealtimeModel(createMetaModel: true)]`), with `sessionState`: 0 none, 1 active, 2 ended.
@@ -36,7 +36,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (shot number
 - **Director leaves the rehearsal:** `sessionState = 2` → `RehearsalEnded` → the actor goes home with "El director terminó el ensayo".
 - **Director disconnects:** Normcore clears the ownership the director held on the state model → `OwnerLeft` → the actor goes home with "Se perdió la conexión con el director". This only works once the director has written the state at least once.
 - **Late join:** pressing Ensayo Remoto calls `JoinRemoteRehearsal()`, which loads the current shot only if the state is active **and** the model has an owner. A stale model left by a client that's gone is ignored.
-- **"Joined" and Ensayar Solo protection:** both are local flags (`Bootstrap.ActorJoinedRemoteRehearsal`, `Bootstrap.IsInspecting`), not synced. Ensayar Solo sets joined = false, so every shot or session event is ignored.
+- **Mode:** one local value, `Bootstrap.Mode` (`None` / `Remote` / `Solo` / `Inspect`), not synced. It replaces the old `IsInspecting` and `ActorJoinedRemoteRehearsal` flags; Ensayar Solo used to reuse the director's "inspecting" flag. It's set at every entry (home menu buttons, Favoritos → Ver) and reset to `None` at every exit (first connect, Menú Principal, the actor sent home, a disconnect during Remote). Pause → Selección de Escenas keeps the mode. Every director tool and every director-driven event checks for its own mode, so Solo shows no director tools and ignores the director entirely.
 - **Actor head pose:** `ActorPositionSync` (actor build only). It's a `RealtimeTransform` that the actor requests ownership of every frame it doesn't hold it. The recorder reads it. **The director has no live visual of it.**
 - **Who owns what:**
   - The director owns the shot transform and the state model.

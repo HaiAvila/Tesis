@@ -293,21 +293,18 @@ public class PauseMenuController : MonoBehaviour
     void GoToMainMenu()
     {
         // Back to neutral - this is the only way back to the home menu from a content
-        // scene, on either build, so it's an exit point IsInspecting must reset at (see
-        // its own comment on Bootstrap.cs). This is the only change here: GoToSceneSelect
-        // below is untouched, it keeps inheriting whatever's already set.
+        // scene, on either build, so it's an exit point the mode must reset at (see
+        // Bootstrap.AppMode). GoToSceneSelect below is not an exit: it keeps the current mode.
         //
         // Also an exit from a remote rehearsal for both roles: the director ends the synced
-        // session (sending the actor home - checked before IsInspecting is reset below, since
-        // EndRemoteRehearsal is a no-op during Inspección de Escenas), and the actor leaves
-        // it, so later shot selections stop pulling them.
+        // session (sending the actor home - checked before the mode is reset below, since
+        // EndRemoteRehearsal is a no-op outside Remote mode), and the actor leaves it, so later
+        // shot selections stop pulling them. Leaving Solo sends Parar first if it was running.
 #if DIRECTOR_BUILD
         if (RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.EndRemoteRehearsal();
-#else
-        Bootstrap.ActorJoinedRemoteRehearsal = false;
 #endif
-        Bootstrap.IsInspecting = false;
+        Bootstrap.SetMode(Bootstrap.AppMode.None, "pause menu Menú Principal");
 
         // Actor_HomeMenu/Director_HomeMenu have no camera of their own - they rely on
         // MenuBackdrop being loaded first, same as Bootstrap's initial connect flow.

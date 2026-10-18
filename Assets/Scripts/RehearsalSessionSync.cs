@@ -107,12 +107,12 @@ public class RehearsalSessionSync : MonoBehaviour
     }
 
     // Director: call at every exit from Ensayo Remoto. A no-op unless the director is
-    // actually in one (IsInspecting false), so it's safe to call from paths that are also
+    // actually in one (Remote mode), so it's safe to call from paths that are also
     // reachable during Inspección de Escenas. Not called for pause menu Selección de
     // Escenas - that's still the same rehearsal.
     public void EndRemoteRehearsal()
     {
-        if (Bootstrap.IsInspecting || sessionState == null)
+        if (Bootstrap.Mode != Bootstrap.AppMode.Remote || sessionState == null)
             return;
 
         sessionState.SetState(RehearsalSessionState.StateEnded);
@@ -120,9 +120,8 @@ public class RehearsalSessionSync : MonoBehaviour
 #else
     void OnShotSelectedForActor(int shotNumber)
     {
-        // Only while the actor has joined a remote rehearsal - never from the home menu or
-        // Ensayar Solo.
-        if (!Bootstrap.ActorJoinedRemoteRehearsal)
+        // Only in Ensayo Remoto - never from the home menu or Ensayar Solo.
+        if (Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
         LoadSceneForShot(shotNumber);
@@ -147,22 +146,21 @@ public class RehearsalSessionSync : MonoBehaviour
 
     void OnRehearsalEndedForActor()
     {
-        if (Bootstrap.ActorJoinedRemoteRehearsal)
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote)
             SendActorHome("El director terminó el ensayo");
     }
 
     void OnDirectorLeftForActor()
     {
-        if (Bootstrap.ActorJoinedRemoteRehearsal)
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote)
             SendActorHome("Se perdió la conexión con el director");
     }
 
-    // Exit point: clears the joined flag, then the same home-menu load as the pause menu's
+    // Exit point: resets the mode, then the same home-menu load as the pause menu's
     // Menú Principal, with a notice shown once on arrival.
     void SendActorHome(string notice)
     {
-        Bootstrap.ActorJoinedRemoteRehearsal = false;
-        Bootstrap.IsInspecting = false;
+        Bootstrap.SetMode(Bootstrap.AppMode.None, "sent home: " + notice);
         ActorHomeMenuController.PendingNotice = notice;
 
         SceneManager.LoadScene("MenuBackdrop");

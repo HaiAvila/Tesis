@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 // Persistent (lives under Bootstrap, DontDestroyOnLoad). When a content scene loads while
-// Bootstrap.IsInspecting is true, loads the most recent recorded session for the current
+// Bootstrap.Mode is Inspect, loads the most recent recorded session for the current
 // shot and plays it back on a placeholder capsule at the original relative speed between
 // samples (not instant, not accelerated), with a small transport panel (play/pause,
 // restart, loop, scrub slider, time label). Never touches the director's own camera/rig -
@@ -187,7 +187,9 @@ public class RecordingPlaybackController : MonoBehaviour
     {
         CleanUp();
 
-        if (!Bootstrap.IsInspecting || !Bootstrap.IsContentScene(scene.name))
+        // Inspección only - never Ensayar Solo, which used to share the "inspecting" flag
+        // and so showed the replay panel, the ghost and the recorded camera to the actor.
+        if (Bootstrap.Mode != Bootstrap.AppMode.Inspect || !Bootstrap.IsContentScene(scene.name))
             return;
 
         LoadAndStart(Bootstrap.CurrentShotNumber);

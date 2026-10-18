@@ -199,11 +199,19 @@ public class TutorialController : MonoBehaviour
             return Mode.None;
 
 #if DIRECTOR_BUILD
-        return Bootstrap.IsInspecting ? Mode.DirectorInspection : Mode.DirectorRemote;
+        switch (Bootstrap.Mode)
+        {
+            case Bootstrap.AppMode.Remote: return Mode.DirectorRemote;
+            case Bootstrap.AppMode.Inspect: return Mode.DirectorInspection;
+            default: return Mode.None;
+        }
 #else
-        if (Bootstrap.ActorJoinedRemoteRehearsal)
-            return Mode.ActorRemote;
-        return Bootstrap.IsInspecting ? Mode.ActorSolo : Mode.None;
+        switch (Bootstrap.Mode)
+        {
+            case Bootstrap.AppMode.Remote: return Mode.ActorRemote;
+            case Bootstrap.AppMode.Solo: return Mode.ActorSolo;
+            default: return Mode.None;
+        }
 #endif
     }
 

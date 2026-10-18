@@ -106,7 +106,7 @@ public class RehearsalRecorder : MonoBehaviour
     void OnRecordingShortcutPressed(InputAction.CallbackContext context)
     {
         // Ensayo Remoto only - Inspección de Escenas has no live actor to record.
-        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.IsInspecting)
+        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
         if (IsRecording)

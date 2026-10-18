@@ -42,7 +42,7 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 // XRI locomotion) - disabled for as long as the panel is visible (see PauseTurnLocomotion),
 // the same way PauseMenuController already suspends Move/Turn while its own panel is open.
 //
-// Only active during Ensayo Remoto - a content scene, director build, IsInspecting false.
+// Only active during Ensayo Remoto - a content scene, director build, Remote mode.
 // Never during Inspección de Escenas or any menu.
 public class DirectorViewfinderController : MonoBehaviour
 {
@@ -239,7 +239,7 @@ public class DirectorViewfinderController : MonoBehaviour
         // Whatever existed belonged to the scene that just unloaded.
         CleanUp();
 
-        if (!Bootstrap.IsContentScene(scene.name) || Bootstrap.IsInspecting)
+        if (!Bootstrap.IsContentScene(scene.name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
         buildCoroutine = StartCoroutine(BuildViewfinderWhenReady());
@@ -747,7 +747,7 @@ public class DirectorViewfinderController : MonoBehaviour
         if (didFineTuneDuringGripHold)
             return;
 
-        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.IsInspecting)
+        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
         if (viewfinderRoot == null)

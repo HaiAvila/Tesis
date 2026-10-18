@@ -215,7 +215,7 @@ public class SceneSelectController : MonoBehaviour
         // Only Inspección de Escenas (or solo actor practice) needs a session picker - a
         // live rehearsal never has past sessions to choose from. A shot with 0 or 1
         // sessions keeps loading directly, exactly as before.
-        if (Bootstrap.IsInspecting)
+        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
         {
             List<RecordingSession> sessions = database.GetSessionsForShot(shot.ShotNumber);
             if (sessions.Count > 1)
@@ -234,7 +234,7 @@ public class SceneSelectController : MonoBehaviour
     {
         // Inspecting a past recording is a solo review, not a live rehearsal - don't
         // sync/teleport the actor for it.
-        if (!Bootstrap.IsInspecting && RehearsalSessionSync.Instance != null)
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote && RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SelectShot(shot.ShotNumber);
 
         Bootstrap.CurrentShotNumber = shot.ShotNumber;

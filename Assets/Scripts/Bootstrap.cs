@@ -14,21 +14,34 @@ public class Bootstrap : MonoBehaviour
     // never leak into an unrelated later shot selection.
     public static int? CurrentSessionId;
 
-    // True while picking a shot in SceneSelect is for solo review (Inspección de Escenas,
-    // or the actor practicing alone), not a live synced rehearsal with a director/actor on
-    // the other end. Every entry point into SceneSelect must set this explicitly - it's
-    // never inferred - and every return to the home menu resets it to false (neutral), so
-    // a value from an earlier session can never survive into a new one unnoticed.
-    public static bool IsInspecting;
+    // What the user is doing right now - one explicit value instead of the two booleans
+    // (IsInspecting, ActorJoinedRemoteRehearsal) that used to be combined, and overloaded:
+    // the actor's Ensayar Solo reused the director's "inspecting" flag, so solo showed the
+    // replay panel and the session picker.
+    //
+    //   None    - home menu / not in any flow.
+    //   Remote  - Ensayo Remoto, either role: from the button press through SceneSelect
+    //             (director) or the waiting screen (actor) and every take.
+    //   Solo    - the actor's Ensayar Solo: only the set, no director tools, ignores the
+    //             director entirely (see SoloRehearsalController).
+    //   Inspect - the director's Inspección de Escenas (and Favoritos → Ver).
+    //
+    // Set explicitly at every entry point (the home menu buttons, Favoritos) and reset to
+    // None at every exit (initial connect, pause menu Menú Principal, the actor being sent
+    // home, a disconnect during Remote). Pause menu → Selección de Escenas is *not* an exit:
+    // it stays in the same flow. Every director tool checks for its own mode.
+    public enum AppMode { None, Remote, Solo, Inspect }
 
-    // Actor only: true while the actor has joined a remote rehearsal - pressed Ensayo Remoto
-    // and is either waiting or in a content scene. RehearsalSessionSync only lets the
-    // director's shot selections (and end/disconnect) move the actor while this is set, so
-    // an actor on the home menu or in Ensayar Solo is never pulled anywhere. Same rule as
-    // IsInspecting: set explicitly at the one entry point (ActorHomeMenuController's Ensayo
-    // Remoto button) and cleared at every exit - initial connect, Ensayar Solo, pause menu
-    // Menú Principal, and the director ending the rehearsal or disconnecting.
-    public static bool ActorJoinedRemoteRehearsal;
+    public static AppMode Mode { get; private set; } = AppMode.None;
+
+    public static void SetMode(AppMode mode, string reason)
+    {
+        if (Mode == mode)
+            return;
+
+        Debug.Log($"[Solo] mode {Mode} -> {mode} ({reason})");
+        Mode = mode;
+    }
 
     static readonly string[] ContentSceneNames = { "Scene1_mountain", "Scene2_spaceship", "Scene3_apartment" };
 
@@ -96,46 +109,33 @@ public class Bootstrap : MonoBehaviour
         hasConnectedOnce = true;
         Debug.Log($"[Bootstrap] connected to room '{rt.room.name}' as client {rt.clientID}.");
 
-        // Neutral state on the very first entry into the app - see IsInspecting's own
-        // comment for why this must never be left to whatever a static field defaults to.
-        IsInspecting = false;
-        ActorJoinedRemoteRehearsal = false;
+        // Neutral state on the very first entry into the app - never left to whatever a
+        // static field happens to hold.
+        SetMode(AppMode.None, "first connect");
 
         LoadHomeMenu();
     }
 
-    // Only Ensayo Remoto needs the room, so only it is interrupted: the user goes home with a
-    // notice while AutoReconnect works. When the director is the one who dropped, the actor
-    // is also sent home on its side, by RehearsalSessionState.OwnerLeft.
+    // Only Ensayo Remoto depends on the other device, so only it is interrupted: the user goes
+    // home with a notice while AutoReconnect works. When the director is the one who dropped,
+    // the actor is also sent home on its side, by RehearsalSessionState.OwnerLeft. Solo and
+    // Inspección keep running (they work offline; Solo's model is written again on
+    // reconnect - see SoloRehearsalController).
     private void OnDisconnectedFromRoom(Realtime rt)
     {
-        bool wasInRemoteRehearsal = IsInRemoteRehearsal();
+        bool wasInRemoteRehearsal = Mode == AppMode.Remote;
         Debug.Log($"[Bootstrap] disconnected from the room (in Ensayo Remoto: {wasInRemoteRehearsal}).");
 
         if (!wasInRemoteRehearsal)
             return;
 
-        ActorJoinedRemoteRehearsal = false;
-        IsInspecting = false;
+        SetMode(AppMode.None, "disconnected during Ensayo Remoto");
 #if DIRECTOR_BUILD
         DirectorHomeMenuController.PendingNotice = ConnectionLostNotice;
 #else
         ActorHomeMenuController.PendingNotice = ConnectionLostNotice;
 #endif
         LoadHomeMenu();
-    }
-
-    static bool IsInRemoteRehearsal()
-    {
-#if DIRECTOR_BUILD
-        // From the moment Ensayo Remoto was picked: SceneSelect (choosing the shot) or a take.
-        string activeScene = SceneManager.GetActiveScene().name;
-        bool inRemoteFlow = IsContentScene(activeScene) || SceneManager.GetSceneByName("SceneSelect").isLoaded;
-        return inRemoteFlow && !IsInspecting;
-#else
-        // Waiting on the home menu or in a take.
-        return ActorJoinedRemoteRehearsal;
-#endif
     }
 
     // Actor_HomeMenu/Director_HomeMenu have no camera of their own - they rely on

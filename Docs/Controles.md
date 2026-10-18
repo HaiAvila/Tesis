@@ -41,7 +41,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Joystick izquierdo (locomoción normal) | Caminar | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto o el vuelo libre está activo | Mantener `T`, mover joystick | Joystick del control izquierdo | ✅ De fábrica (XRI Starter Assets) |
 | Joystick derecho | Girar (turn/snap-turn) | Cualquier escena de contenido, excepto mientras el menú de pausa está abierto **o el visor de la cámara virtual del director está visible** | Mantener `Y`, mover joystick | Joystick del control derecho | ✅ De fábrica (XRI Starter Assets) |
 | Primary Button "A" (control derecho) | Jump | Cualquier escena de contenido | Mantener `Y` + `B` | Botón A (control derecho) | ✅ De fábrica (XRI Starter Assets) — **este es el motivo por el que el atajo de Play/Pause se puso en el control izquierdo y no en el derecho** |
-| Grip (control derecho) — toque | Muestra/oculta el panel de la cámara virtual del director ("visor", como levantar un celular para mirarlo) | Solo Ensayo Remoto (`#if DIRECTOR_BUILD`, escena de contenido, `IsInspecting == false`) | Mantener `Y` + `G` (toque, sin mover el joystick) | Grip (control derecho) | ✅ Implementado, sin probar en hardware real |
+| Grip (control derecho) — toque | Muestra/oculta el panel de la cámara virtual del director ("visor", como levantar un celular para mirarlo) | Solo Ensayo Remoto (`#if DIRECTOR_BUILD`, escena de contenido, `Bootstrap.Mode == Remote`) | Mantener `Y` + `G` (toque, sin mover el joystick) | Grip (control derecho) | ✅ Implementado, sin probar en hardware real |
 | Joystick derecho izq/der (sin Grip) | Cicla entre distancias focales con nombre: 24/35/50/85mm/135mm, de más ancho a más acercado | Solo mientras el panel del visor está visible | Mantener `Y` + `A/D` | Joystick del control derecho | ✅ Implementado, sin probar en hardware real |
 | Grip (control derecho) — mantener + joystick arriba/abajo | Ajuste fino continuo de la distancia focal alrededor del valor actual (no cicla entre los nombrados): **arriba = más zoom**, abajo = menos zoom | Solo mientras el panel del visor está visible | Mantener `Y` + `G` + `W/S` | Grip + joystick del control derecho | ✅ Implementado, sin probar en hardware real |
 
@@ -62,7 +62,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 **Binding real:** `<XRController>{RightHand}/{secondaryButton}`
 **Binding en el Simulador:** `<XRSimulatedController>{RightHand}/secondaryButton`
 **Contexto:** `#if DIRECTOR_BUILD` (solo existe en el build de director) y `Bootstrap.IsContentScene(...)`.
-**Solo Ensayo Remoto:** el gate revisa que sea una escena de contenido **y** que `Bootstrap.IsInspecting` sea falso. Antes solo revisaba lo primero, así que B también "grababa" en Inspección de Escenas, donde no hay un actor en vivo.
+**Solo Ensayo Remoto:** el gate revisa que sea una escena de contenido **y** que el modo sea `Remote` (`Bootstrap.Mode`). Antes solo revisaba lo primero, así que B también "grababa" en Inspección de Escenas, donde no hay un actor en vivo.
 
 ### Vuelo libre del director — joystick izquierdo
 **Script:** `DirectorFreeFlyCamera.cs`, activado/desactivado por `RecordingPlaybackController.cs`
@@ -97,7 +97,7 @@ abajo).
 **Script:** `DirectorViewfinderController.cs`
 **Binding real (Grip):** `<XRController>{RightHand}/{gripButton}`; **binding en el Simulador:** `<XRSimulatedController>{RightHand}/gripButton`
 **Binding real (joystick):** `<XRController>{RightHand}/{Primary2DAxis}`; **binding en el Simulador:** `<XRSimulatedController>{RightHand}/primary2DAxis`
-**Contexto:** `#if DIRECTOR_BUILD`, solo Ensayo Remoto (`Bootstrap.IsContentScene(...)` y `Bootstrap.IsInspecting == false`). Nunca en Inspección de Escenas ni en ningún menú.
+**Contexto:** `#if DIRECTOR_BUILD`, solo Ensayo Remoto (`Bootstrap.IsContentScene(...)` y `Bootstrap.Mode == Remote`). Nunca en Inspección de Escenas ni en ningún menú.
 **Comportamiento general:** una cámara parentada rígidamente al control derecho (sin offset local) renderiza a un RenderTexture de 640×480, mostrado en un panel World Space Canvas pequeño también parentado al control derecho (posición fija respecto a la mano, pero la rotación se recalcula cada frame para mirar siempre hacia la cabeza del director — ver el comentario de `UpdatePanelFacing()`). `Turn` se desactiva mientras el panel está visible y se reactiva al ocultarlo (mismo joystick físico que el encuadre) — mismo patrón que `PauseMenuController` ya usa para Move/Turn.
 **Grip — toque vs. mantener:** Grip ahora es de doble propósito. Un toque simple (sin mover el joystick mientras está presionado) alterna la visibilidad del panel, igual que antes — pero la decisión se toma recién al **soltar** Grip (`OnGripReleased`), no al presionarlo, para poder distinguir un toque de un ajuste fino. Si el joystick se movió en el eje Y mientras Grip estaba sostenido, ese gesto se interpreta como ajuste fino (ver abajo) y soltar Grip **no** alterna la visibilidad.
 **Encuadre — vocabulario real de distancias focales:** el zoom ya no es un FOV crudo, es `focalLength` (mm) sobre el modelo de cámara física de Unity (`usePhysicalProperties`, sensor 36×24mm tipo full-frame 35mm, `gateFit = Horizontal`) — el Field of View resultante lo calcula Unity mismo a partir del focal length, no una fórmula propia.

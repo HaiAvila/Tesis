@@ -123,7 +123,7 @@ public class DirectorHomeMenuController : MonoBehaviour
 
     void OnRemoteRehearsalSelected()
     {
-        Bootstrap.IsInspecting = false;
+        Bootstrap.SetMode(Bootstrap.AppMode.Remote, "director pressed Ensayo Remoto");
 
 #if DIRECTOR_BUILD
         // The one entry point into Ensayo Remoto - marks the synced session active.
@@ -136,7 +136,7 @@ public class DirectorHomeMenuController : MonoBehaviour
 
     void OnSceneInspectionSelected()
     {
-        Bootstrap.IsInspecting = true;
+        Bootstrap.SetMode(Bootstrap.AppMode.Inspect, "director pressed Inspección de Escenas");
         Bootstrap.LoadSceneSelect();
     }
 }

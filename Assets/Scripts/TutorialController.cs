@@ -391,6 +391,7 @@ public class TutorialController : MonoBehaviour
             case Mode.ActorSolo:
                 list.Add(WalkStep());
                 list.Add(TurnStep());
+                list.Add(new Step { Text = $"La {Key("marca de cinta")} en el piso es el {Act("inicio de la toma")}: párate sobre ella, con la punta de los pies en la barra." });
                 list.Add(new Step
                 {
                     Text = $"Presiona {Key("B")} (control derecho) para {Act("iniciar")} el ensayo de la toma.",

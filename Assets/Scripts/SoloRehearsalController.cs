@@ -30,6 +30,15 @@ public class SoloRehearsalController : MonoBehaviour
     static readonly Color MessageColor = new Color(1f, 1f, 1f, 1f);
     static readonly Color MessageBackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.75f);
 
+    // Start mark - gaffer-tape "T", in meters. Placeholder look, not tuned.
+    const float StartMarkTapeWidth = 0.05f;
+    const float StartMarkBarLength = 0.4f;
+    const float StartMarkStemLength = 0.25f;
+    const float StartMarkToeOffset = 0.12f; // bar a little ahead of the mark's center
+    const float StartMarkFloorOffset = 0.005f;
+    const float StartMarkRaycastHeight = 1f;
+    static readonly Color StartMarkTapeColor = new Color(1f, 0.85f, 0.1f, 1f);
+
     public static SoloRehearsalController Instance { get; private set; }
 
     // Read by the tutorial's solo steps.
@@ -177,6 +186,68 @@ public class SoloRehearsalController : MonoBehaviour
 
         if (SoloSession.Instance != null)
             SoloSession.Instance.Begin(currentSceneNumber, currentShotNumber);
+
+        GameObject marker = GameObject.Find($"Shot{shotNumber}_Start");
+        if (marker == null)
+        {
+            Debug.LogWarning($"[Solo] no 'Shot{shotNumber}_Start' marker in this scene - no start mark shown.");
+            return;
+        }
+
+        BuildStartMark(marker.transform, scene: marker.scene);
+        SoloPods.GuideToMark(marker.transform.position, marker.transform.rotation);
+    }
+
+    // Start mark, like gaffer tape on a set: a "T" on the floor at the shot's start
+    // (Shot{N}_Start, the same marker ShotStartPositioner puts the rig on). The bar is where
+    // the toes go, across the facing direction; the stem runs back between the feet.
+    // Dropped onto whatever floor collider is under the marker, a few mm up to avoid
+    // flickering, with no colliders of its own. Solo only.
+    void BuildStartMark(Transform marker, Scene scene)
+    {
+        Vector3 position = marker.position;
+        if (Physics.Raycast(position + Vector3.up * StartMarkRaycastHeight, Vector3.down, out RaycastHit hit, StartMarkRaycastHeight * 2f, ~0, QueryTriggerInteraction.Ignore))
+            position = hit.point;
+        position += Vector3.up * StartMarkFloorOffset;
+
+        Vector3 forward = marker.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        forward.Normalize();
+
+        // A world-space canvas lying flat (1 canvas unit = 1 mm): UI images are unlit, so the
+        // tape reads as bright tape whatever the scene's lighting - a lit quad came out dark
+        // olive on the mountain set - and the UI shader is always in the build.
+        var root = new GameObject("SoloStartMark", typeof(RectTransform), typeof(Canvas));
+        SceneManager.MoveGameObjectToScene(root, scene);
+        root.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+
+        var rootRect = (RectTransform)root.transform;
+        rootRect.sizeDelta = new Vector2(StartMarkBarLength, StartMarkBarLength) * 1000f; // pivot = the mark's center
+        rootRect.SetPositionAndRotation(position, Quaternion.LookRotation(Vector3.down, forward)); // face up, canvas "up" = facing direction
+        rootRect.localScale = Vector3.one * 0.001f;
+
+        // Canvas space: +y is the facing direction, origin is the mark's center.
+        CreateTapeStrip(rootRect, "Bar", new Vector2(0f, StartMarkToeOffset), new Vector2(StartMarkBarLength, StartMarkTapeWidth));
+        CreateTapeStrip(rootRect, "Stem", new Vector2(0f, StartMarkToeOffset - StartMarkStemLength / 2f), new Vector2(StartMarkTapeWidth, StartMarkStemLength));
+
+        Debug.Log($"[Solo] start mark shown at {position} for shot {currentShotNumber}");
+    }
+
+    // center/size in meters, in the mark's own frame (x = right, y = facing direction).
+    static void CreateTapeStrip(RectTransform parent, string name, Vector2 center, Vector2 size)
+    {
+        var strip = new GameObject(name, typeof(RectTransform), typeof(Image));
+        strip.transform.SetParent(parent, false);
+        var rect = (RectTransform)strip.transform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = center * 1000f;
+        rect.sizeDelta = size * 1000f;
+
+        Image image = strip.GetComponent<Image>();
+        image.color = StartMarkTapeColor;
+        image.raycastTarget = false;
     }
 
     void LeaveTake(string reason)

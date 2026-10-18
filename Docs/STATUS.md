@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (approved-reference hook).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (solo start mark + pod stubs).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -78,8 +78,8 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (approved-re
 | 6 | Editor háptico | ⬜ |
 | 6 | Favoritos unchanged | ✅ |
 | 7 | Actor waiting screen: pod status, T-pose | ⬜ ("Esperando selección del director..." only) |
-| 7 | Start mark on the floor | ⬜ The rig is placed at `Shot{N}_Start`; nothing is drawn |
-| 8 | Ensayar Solo with reference, pods, Iniciar/Parar | 🟡 Navigation only: SceneSelect → scene |
+| 7 | Start mark on the floor | 🟡 In **Solo** a yellow gaffer-tape "T" is drawn on the floor at `Shot{N}_Start` (bar = toes, stem back between the feet; unlit UI images on a flat canvas). Not shown in Ensayo Remoto |
+| 8 | Ensayar Solo with reference, pods, Iniciar/Parar | 🟡 Own mode (only the set, no director tools). SceneSelect filtered by the approved-reference hook (always true for now). Start mark. Iniciar/Parar on B through `SoloSessionModel`. Pods: empty stubs only (`SoloPods.GuideToMark` is called when a take loads, `OnPodStatus` isn't called yet). Nothing is recorded or cued yet (needs the server) |
 | 9 | Pause menu: Calibrar, Estado de pods | ⬜ Menu has Menú Principal, (director) Selección de Escenas, Favoritos, and Tutorial |
 | 10 | Server scene and modules | ⬜ |
 
@@ -106,7 +106,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (approved-re
 | P2-17 | Structured cues per shot | ⬜ |
 | P3-18 | Server window UI | ⬜ |
 | P3-19 | Take report | ⬜ |
-| P3-20 | Ensayar Solo complete | 🟡 Navigation only |
+| P3-20 | Ensayar Solo complete | 🟡 See cambios #8: mode, synced session, Iniciar/Parar, start mark, hooks. Missing: server, real reference check, pods guiding, cues, recording |
 | P3-21 | Pod status in both apps | ⬜ |
 | P3-22 | CSV export for Python | ⬜ |
 | P4-23 | Bone lengths from MediaPipe | ⬜ |

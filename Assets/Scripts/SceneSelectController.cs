@@ -152,13 +152,23 @@ public class SceneSelectController : MonoBehaviour
 
     void BuildShotList(RectTransform content, SortedDictionary<int, List<Shot>> shotsByScene)
     {
+        // Ensayar Solo: single shots only, and only those with an approved reference to
+        // practice against (see ApprovedReferences - every shot, until the server answers).
+        bool solo = Bootstrap.Mode == Bootstrap.AppMode.Solo;
+
         foreach (var scene in shotsByScene)
         {
             string sceneName = SceneNameByNumber.TryGetValue(scene.Key, out string name) ? name : $"Scene {scene.Key}";
 
+            List<Shot> shots = scene.Value;
+            if (solo)
+                shots = shots.FindAll(shot => ApprovedReferences.HasApprovedReference(scene.Key, shot.ShotNumber));
+            if (shots.Count == 0)
+                continue;
+
             CreateHeader(content, sceneName);
 
-            foreach (Shot shot in scene.Value)
+            foreach (Shot shot in shots)
                 CreateShotButton(content, shot, sceneName);
         }
     }

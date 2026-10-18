@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026.
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (command channel).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -36,7 +36,8 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026.
 - **Who owns what:**
   - The director owns the shot transform and the state model.
   - The actor owns `ActorPositionSync`.
-  - There's no presence model and no command channel.
+  - There's no presence model.
+- **Command channel:** `commandId` + `commandCounter` on `RehearsalSessionStateModel`, written by the director (`RehearsalSessionSync.SendCommand` → `RehearsalSessionState.SendCommand`: id first, then counter + 1). Every other client fires `OnCommand` only when the counter goes above its baseline. The baseline is taken when receiving the model on joining and reset when the actor enters Ensayo Remoto, so a late joiner never replays an old command. The sender doesn't fire its own, and Ensayar Solo ignores commands (the baseline still moves up). Enum `SessionCommand`: Calibrate, Grabar, SiguienteToma, Accion, Corte, Guardar, Descartar, Aprobar. **No command does anything yet beyond logging** (`[SessionSync]`). Temporary debug key on the director: **C** = Calibrate.
 
 ## `unity-cambios-existentes.md`
 
@@ -57,7 +58,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026.
 | 3 | SceneSelect "Escena completa" entry | ⬜ |
 | 3 | Approved-reference icon; Solo only allows those | 🟡 The session list has a star per session; no icon at shot level; Solo isn't restricted |
 | 4 | ShotStartPositioner uses the approved reference start | ⬜ Only `Shot{N}_Start` |
-| 5 | Grabar → Acción / Corte through the network | ⬜ B starts/stops a local recording; the actor isn't told |
+| 5 | Grabar → Acción / Corte through the network | 🟡 The command channel exists, but B still only starts/stops a local recording and sends nothing |
 | 5 | Siguiente toma / Calibrar buttons | ⬜ |
 | 5 | Full avatar of the actor | ⬜ No live visual (headset pose is synced but not drawn) |
 | 5 | Pod status indicator | ⬜ |
@@ -81,7 +82,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026.
 | # | Item | Status |
 |---|---|---|
 | P0-1 | Controller ray UI on a real Quest, both builds | 🟡 Actor build tested on a Quest 3. Director only tested in the Editor |
-| P0-2 | SessionModel | 🟡 See networking above. Command channel ⬜ |
+| P0-2 | SessionModel | 🟡 See networking above. Command channel ✅ (logging only, no sender besides the debug key) |
 | P0-3 | SERVER_BUILD .exe | 🟡 Define only |
 | P0-4 | IPodSource + PodSimulator | ⬜ |
 | P0-5 | SerialBridge | ⬜ |

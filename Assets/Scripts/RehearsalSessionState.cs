@@ -1,5 +1,6 @@
 using System;
 using Normal.Realtime;
+using UnityEngine;
 
 // Synced remote-rehearsal state, written only by the director (who requests ownership
 // before every write). Lives on the same persistent RehearsalSession object as
@@ -9,6 +10,15 @@ using Normal.Realtime;
 // client leaves the room the server clears ownership of every model it owned. So the
 // director's ownership of this model going back to "unowned" means the director
 // disconnected or closed the app - no timeout involved.
+//
+// Command channel (SendCommand / OnCommand): the director sets commandId, then increments
+// commandCounter. Every other client fires OnCommand when the counter goes above its own
+// baseline, then moves the baseline up to it. The baseline starts at whatever counter the
+// client finds when it receives the model (joining the room) and is reset again when the
+// actor enters Ensayo Remoto (ResetCommandBaseline) - so a late joiner never replays a
+// command that was sent before it arrived. Several increments arriving at once fire only
+// the latest command (the ones in between are logged as skipped). The sender doesn't fire
+// OnCommand for its own commands.
 public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateModel>
 {
     public const int StateNone = 0;
@@ -24,7 +34,12 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // cleared, i.e. the director left the room.
     public event Action OwnerLeft;
 
+    // Raised on receivers (not the sender) for each new command above the baseline.
+    public event Action<SessionCommand> OnCommand;
+
     int lastKnownOwnerID = NoOwner;
+    int commandBaseline;
+    int lastSentCounter = -1;
 
     public int State => model != null ? model.sessionState : StateNone;
 
@@ -39,6 +54,32 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
 
         model.RequestOwnership();
         model.sessionState = state;
+        Debug.Log($"[SessionSync] write sessionState={state}");
+    }
+
+    // Director only. commandId first, then the counter - receivers react to the counter.
+    public void SendCommand(SessionCommand command)
+    {
+        if (model == null)
+        {
+            Debug.LogWarning($"[SessionSync] SendCommand({command}) ignored: not connected to a room yet.");
+            return;
+        }
+
+        model.RequestOwnership();
+        model.commandId = (int)command;
+        int counter = model.commandCounter + 1;
+        lastSentCounter = counter;
+        commandBaseline = counter;
+        model.commandCounter = counter;
+        Debug.Log($"[SessionSync] write command {command} (commandId={(int)command}, commandCounter={counter})");
+    }
+
+    // Called when entering Ensayo Remoto: nothing sent before this moment will fire.
+    public void ResetCommandBaseline()
+    {
+        commandBaseline = model != null ? model.commandCounter : 0;
+        Debug.Log($"[SessionSync] command baseline reset to {commandBaseline}");
     }
 
     protected override void OnRealtimeModelReplaced(RehearsalSessionStateModel previousModel, RehearsalSessionStateModel currentModel)
@@ -47,6 +88,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
         {
             previousModel.sessionStateDidChange -= OnSessionStateDidChange;
             previousModel.ownerIDSelfDidChange -= OnOwnerIDDidChange;
+            previousModel.commandCounterDidChange -= OnCommandCounterDidChange;
         }
 
         if (currentModel != null)
@@ -55,13 +97,18 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
                 currentModel.sessionState = StateNone;
 
             lastKnownOwnerID = currentModel.ownerIDSelf;
+            commandBaseline = currentModel.commandCounter;
+            Debug.Log($"[SessionSync] joined: sessionState={currentModel.sessionState}, commandCounter={currentModel.commandCounter} (baseline), owner={currentModel.ownerIDSelf}");
+
             currentModel.sessionStateDidChange += OnSessionStateDidChange;
             currentModel.ownerIDSelfDidChange += OnOwnerIDDidChange;
+            currentModel.commandCounterDidChange += OnCommandCounterDidChange;
         }
     }
 
     void OnSessionStateDidChange(RehearsalSessionStateModel changedModel, int value)
     {
+        Debug.Log($"[SessionSync] received sessionState={value}");
         if (value == StateEnded)
             RehearsalEnded?.Invoke();
     }
@@ -70,9 +117,43 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     {
         int previousOwnerID = lastKnownOwnerID;
         lastKnownOwnerID = ownerID;
+        Debug.Log($"[SessionSync] received owner {previousOwnerID} -> {ownerID}");
 
         bool ownerWasSomeoneElse = previousOwnerID != NoOwner && previousOwnerID != realtime.clientID;
         if (ownerID == NoOwner && ownerWasSomeoneElse)
             OwnerLeft?.Invoke();
+    }
+
+    void OnCommandCounterDidChange(RehearsalSessionStateModel changedModel, int counter)
+    {
+        var command = (SessionCommand)changedModel.commandId;
+
+        if (counter == lastSentCounter)
+        {
+            Debug.Log($"[SessionSync] command {command} counter={counter}: own command, not fired here");
+            return;
+        }
+
+        if (counter <= commandBaseline)
+        {
+            Debug.Log($"[SessionSync] command {command} ignored: counter={counter} <= baseline={commandBaseline}");
+            return;
+        }
+
+#if !DIRECTOR_BUILD
+        // Ensayar Solo (or the home menu) ignores the director's commands. The baseline still
+        // moves up, so nothing from now is replayed later either.
+        if (!Bootstrap.ActorJoinedRemoteRehearsal)
+        {
+            Debug.Log($"[SessionSync] command {command} ignored: not in Ensayo Remoto (counter={counter}, baseline={commandBaseline})");
+            commandBaseline = counter;
+            return;
+        }
+#endif
+
+        int skipped = counter - commandBaseline - 1;
+        Debug.Log($"[SessionSync] command {command} fired: counter={counter}, baseline={commandBaseline}" + (skipped > 0 ? $", {skipped} earlier command(s) skipped" : ""));
+        commandBaseline = counter;
+        OnCommand?.Invoke(command);
     }
 }

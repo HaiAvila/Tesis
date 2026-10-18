@@ -26,6 +26,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 | Control | Qué hace | Dónde está activo | Tecla en el Simulador | Botón físico Quest | Estado |
 |---|---|---|---|---|---|
 | Menu (control izquierdo) | Abre/cierra el menú de pausa | Las 3 escenas de contenido — Ensayo Remoto **e** Inspección de Escenas, actor y director | Mantener `T` + `M` | Botón Menu (control izquierdo) | ✅ Implementado, sin probar en hardware real |
+| Tecla **C** (teclado, **temporal**) | Envía el comando `Calibrate` por el canal de comandos; en el actor solo se registra en el log (`[SessionSync] OnCommand(Calibrate)`) | Build de director, en cualquier momento | `C` | — (solo teclado, para probar) | 🧪 Debug temporal |
 | "Tutorial" (menú de pausa) | Repite el tutorial de controles del modo actual (ver "Tutorial de controles" abajo) | Las 3 escenas de contenido, actor y director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado |
 | Secondary Button "B" (control derecho) | Inicia/detiene la grabación de la toma | Solo Ensayo Remoto (escena de contenido, no Inspección de Escenas) | Mantener `Y` + `N` | Botón B (control derecho) | ✅ Implementado |
 | Joystick izquierdo | Mueve la cámara libremente (vuelo) en la dirección donde mira la cabeza, sin gravedad ni colisión | Solo mientras hay una reproducción activa en Inspección de Escenas | Mantener `T` + `W,A,S,D` | Joystick del control izquierdo | ✅ Implementado, sin probar en hardware real |

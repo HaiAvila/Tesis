@@ -153,9 +153,14 @@ public class ActorHomeMenuController : MonoBehaviour
         Bootstrap.ActorJoinedRemoteRehearsal = true;
 
 #if !DIRECTOR_BUILD
-        // If the director's rehearsal is already running with a shot picked, join it now.
         if (RehearsalSessionSync.Instance != null)
+        {
+            // Commands sent before entering Ensayo Remoto are never replayed.
+            RehearsalSessionSync.Instance.ResetCommandBaseline();
+
+            // If the director's rehearsal is already running with a shot picked, join it now.
             RehearsalSessionSync.Instance.JoinRemoteRehearsal();
+        }
 #endif
     }
 

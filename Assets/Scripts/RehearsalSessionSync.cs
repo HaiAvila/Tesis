@@ -1,6 +1,7 @@
 using System;
 using Normal.Realtime;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 // Encodes the director's selected shot number as a synced Transform position
@@ -31,6 +32,9 @@ public class RehearsalSessionSync : MonoBehaviour
     RealtimeTransform realtimeTransform;
     RehearsalSessionState sessionState;
     int lastKnownShotNumber;
+#if DIRECTOR_BUILD
+    InputAction debugCalibrateAction;
+#endif
 
     void Awake()
     {
@@ -65,7 +69,16 @@ public class RehearsalSessionSync : MonoBehaviour
         {
             sessionState.RehearsalEnded += OnRehearsalEndedForActor;
             sessionState.OwnerLeft += OnDirectorLeftForActor;
+            sessionState.OnCommand += OnCommandForActor;
         }
+#endif
+
+#if DIRECTOR_BUILD
+        // TEMPORARY debug - C sends Calibrate, to test the command channel before any real
+        // button sends commands. Remove once a real sender exists.
+        debugCalibrateAction = new InputAction("DebugSendCalibrate", InputActionType.Button, "<Keyboard>/c");
+        debugCalibrateAction.performed += _ => SendCommand(SessionCommand.Calibrate);
+        debugCalibrateAction.Enable();
 #endif
     }
 
@@ -73,7 +86,33 @@ public class RehearsalSessionSync : MonoBehaviour
     {
         if (Instance == this)
             Instance = null;
+
+#if DIRECTOR_BUILD
+        debugCalibrateAction?.Disable();
+        debugCalibrateAction?.Dispose();
+#endif
     }
+
+    // Command channel - see RehearsalSessionState. SendCommand is for the director.
+    public void SendCommand(SessionCommand command)
+    {
+        if (sessionState != null)
+            sessionState.SendCommand(command);
+    }
+
+    public void ResetCommandBaseline()
+    {
+        if (sessionState != null)
+            sessionState.ResetCommandBaseline();
+    }
+
+#if !DIRECTOR_BUILD
+    // No command does anything yet - this only proves the actor receives each one once.
+    void OnCommandForActor(SessionCommand command)
+    {
+        Debug.Log($"[SessionSync] OnCommand({command}) on the actor - no action yet");
+    }
+#endif
 
     void OnConnectedToRoom(Realtime rt)
     {

@@ -13,6 +13,9 @@ public static class FloatingMessage
     const float FadeSeconds = 1f;
     const float WorldScale = 0.002f;
     const int FontSize = 64;
+    const float MinWidth = 620f;
+    const float Height = 140f;
+    const float HorizontalPadding = 50f;
     static readonly Color TextColor = new Color(1f, 1f, 1f, 1f);
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.75f);
 
@@ -41,7 +44,7 @@ public static class FloatingMessage
         canvas.worldCamera = head;
 
         var rect = (RectTransform)messageObject.transform;
-        rect.sizeDelta = new Vector2(620f, 140f);
+        rect.sizeDelta = new Vector2(MinWidth, Height);
         rect.SetPositionAndRotation(head.transform.position + forward * Distance, Quaternion.LookRotation(forward, Vector3.up));
         rect.localScale = Vector3.one * WorldScale;
 
@@ -65,6 +68,12 @@ public static class FloatingMessage
         label.color = TextColor;
         label.alignment = TextAnchor.MiddleCenter;
         label.raycastTarget = false;
+
+        // One line, and the box grows to fit it: a fixed width cut longer messages ("Te
+        // regresamos al inicio") down to their first line.
+        label.horizontalOverflow = HorizontalWrapMode.Overflow;
+        label.verticalOverflow = VerticalWrapMode.Overflow;
+        rect.sizeDelta = new Vector2(Mathf.Max(MinWidth, label.preferredWidth + HorizontalPadding * 2f), Height);
 
         XRUISetup.MoveToUILayer(messageObject);
     }

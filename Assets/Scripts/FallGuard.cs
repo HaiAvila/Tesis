@@ -52,7 +52,7 @@ public class FallGuard : MonoBehaviour
         armCoroutine = null;
 
         XROrigin origin = FindFirstObjectByType<XROrigin>();
-        GameObject markerObject = GameObject.Find($"Shot{Bootstrap.CurrentShotNumber}_Start");
+        GameObject markerObject = GameObject.Find($"Shot{Bootstrap.StartShotNumber}_Start");
         if (origin == null || markerObject == null)
         {
             Debug.LogWarning($"[FallGuard] not armed: rig={(origin != null)}, marker={(markerObject != null)}.");
@@ -63,7 +63,7 @@ public class FallGuard : MonoBehaviour
         marker = markerObject.transform;
         floorY = SceneFloor.TryFindFloorBelow(marker.position, out Vector3 floor) ? floor.y : marker.position.y;
         armed = true;
-        Debug.Log($"[FallGuard] armed for shot {Bootstrap.CurrentShotNumber}: floor at y={floorY:F2}, resets below y={floorY - FallLimit:F2}");
+        Debug.Log($"[FallGuard] armed for shot {Bootstrap.StartShotNumber}: floor at y={floorY:F2}, resets below y={floorY - FallLimit:F2}");
     }
 
     void Update()
@@ -77,7 +77,7 @@ public class FallGuard : MonoBehaviour
         if (rig.position.y >= floorY - FallLimit)
             return;
 
-        Debug.Log($"[FallGuard] fell to y={rig.position.y:F2} (floor {floorY:F2}) - back to the start of shot {Bootstrap.CurrentShotNumber}");
+        Debug.Log($"[FallGuard] fell to y={rig.position.y:F2} (floor {floorY:F2}) - back to the start of shot {Bootstrap.StartShotNumber}");
 
         rig.SetPositionAndRotation(marker.position, marker.rotation);
         Physics.SyncTransforms();

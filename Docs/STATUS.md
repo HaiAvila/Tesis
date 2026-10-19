@@ -25,17 +25,18 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
   - **Reconnect** → only logged; no scene reload.
   - The director's home menu now shows notices too (`DirectorHomeMenuController.PendingNotice`).
   - An initial connection that never succeeds still leaves the app on the Bootstrap scene.
-- **Shot sync:** `shotNumber` property of `RehearsalSessionStateModel` (the transform hack is gone; the `RehearsalSession` object no longer has a `RealtimeTransform`, and its `RealtimeView` keeps component id 1 as deprecated).
-  - The director writes it through `RehearsalSessionSync.SelectShot` → `RehearsalSessionState.SetShot` (`RequestOwnership()` and then set). −1 = no shot.
-  - The actor reacts to the change event, but only in `Remote` mode.
-  - Whatever the room already holds when joining doesn't fire the event, so a stale shot never loads by itself. A late joiner reads it explicitly (see "Late join").
-  - The scene isn't synced: the actor looks it up from the shot in its own database.
+- **Take sync:** `sceneNumber` (property 5) + `shotNumber` (property 4) of `RehearsalSessionStateModel` (the transform hack is gone; the `RehearsalSession` object no longer has a `RealtimeTransform`, and its `RealtimeView` keeps component id 1 as deprecated).
+  - The director writes both through `RehearsalSessionSync.SelectTake` → `RehearsalSessionState.SetSelection` (`RequestOwnership()`, then the scene, then the shot). Shot −1 = no shot; shot **0 = `FullSceneShot`, the whole scene** ("Escena completa"); scene −1 (or 0, in a room whose model predates the property) = unset.
+  - The actor reacts to either change event, only in `Remote` mode, and reads the pair **one frame later**: sceneNumber can arrive after shotNumber in the same update, and going from one full scene to another changes only the scene.
+  - Whatever the room already holds when joining doesn't fire the events, so a stale take never loads by itself. A late joiner reads both explicitly (see "Late join").
+  - The actor takes the scene from the model; it only derives it from the shot in its own database when the model has no scene.
+  - Locally the take is `Bootstrap.SelectTake(scene, shot)` → `CurrentSceneNumber`, `CurrentShotNumber`, `IsFullScene` and `StartShotNumber`: the shot whose `Shot{N}_Start` the take starts on, which for the whole scene is its lowest `shot_number` (1, 6, 11). `ShotStartPositioner`, `StartMarkAligner`, `StartMarkTape` and `FallGuard` use `StartShotNumber`. `[Escena]` logs.
 - **Session state:** `RehearsalSessionStateModel` (`[RealtimeModel(createMetaModel: true)]`), with `sessionState`: 0 none, 1 active, 2 ended.
   - Written only by the director (`RequestOwnership()` and then set).
-  - `BeginRemoteRehearsal` sets 1 and resets the shot to −1. `EndRemoteRehearsal` sets 2 and is a no-op during Inspección.
+  - `BeginRemoteRehearsal` sets 1 and resets the take to scene −1 / shot −1. `EndRemoteRehearsal` sets 2 and is a no-op during Inspección.
 - **Director leaves the rehearsal:** `sessionState = 2` → `RehearsalEnded` → the actor goes home with "El director terminó el ensayo".
 - **Director disconnects:** Normcore clears the ownership the director held on the state model → `OwnerLeft` → the actor goes home with "Se perdió la conexión con el director". This only works once the director has written the state at least once.
-- **Late join:** pressing Ensayo Remoto calls `JoinRemoteRehearsal()`, which loads the current shot only if the state is active **and** the model has an owner. A stale model left by a client that's gone is ignored.
+- **Late join:** pressing Ensayo Remoto calls `JoinRemoteRehearsal()`, which loads the current take (a shot, or the whole scene with shot 0) only if the state is active **and** the model has an owner. A stale model left by a client that's gone is ignored.
 - **Mode:** one local value, `Bootstrap.Mode` (`None` / `Remote` / `Solo` / `Inspect`), not synced. It replaces the old `IsInspecting` and `ActorJoinedRemoteRehearsal` flags; Ensayar Solo used to reuse the director's "inspecting" flag. It's set at every entry (home menu buttons, Favoritos → Ver) and reset to `None` at every exit (first connect, Menú Principal, the actor sent home, a disconnect during Remote). Pause → Selección de Escenas keeps the mode. Every director tool and every director-driven event checks for its own mode, so Solo shows no director tools and ignores the director entirely.
 - **Solo session (actor):** `SoloSessionModel` (`[RealtimeModel(createMetaModel: true)]`, all properties reliable with change events) on its own `SoloSession` object (`RealtimeView` + `SoloSession` + `SoloRehearsalController`). Fields: `mode`, `sceneNumber`, `shotNumber`, `commandId`, `commandCounter`. The actor owns it only while in solo: when a take loads it writes mode=Solo + scene + shot (and writes again if the model arrives late or after a reconnect); on leaving solo it writes mode=None and clears ownership. Command channel with the same counter + baseline contract as the director's. It never touches the director's model. `[Solo]` logs. **Iniciar / Parar** on the right controller's B (A is the rig's stock Jump): each press sends the command; a world-space "Iniciando..." / "Detenido" fades out in ~1.5 s; opening the pause menu or leaving the take while running sends Parar automatically. Nothing is recorded on the Quest.
 - **Actor head pose:** `ActorPositionSync` (actor build only). It's a `RealtimeTransform` that the actor requests ownership of every frame it doesn't hold it. The recorder reads it. **The director has no live visual of it.**
@@ -49,7 +50,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 
 | # | Item | Status |
 |---|---|---|
-| 1 | SessionModel replaces the shot-in-transform hack | 🟡 The shot is now a property of `RehearsalSessionStateModel` (with session state and commands); scene, mode, actorJoined, recording and sessionId aren't synced yet |
+| 1 | SessionModel replaces the shot-in-transform hack | 🟡 The scene and the shot are now properties of `RehearsalSessionStateModel` (with session state and commands); mode, actorJoined, recording and sessionId aren't synced yet |
 | 1 | Session active/ended + actor joined inside one model | 🟡 `sessionState` is in `RehearsalSessionStateModel`; "joined" is a local flag |
 | 1 | Ensayar Solo also joins a room | 🟡 Every client joins the room at startup; Solo just ignores all sync. No mode is sent |
 | 1 | Persistent shot listener acts only when remote + joined | 🟡 Gated by the local joined flag, not a synced mode |
@@ -61,7 +62,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 | 2 | es_preferida = approved reference, sends `aprobar` | 🟡 Preferida exists (exclusive per shot); nothing is sent |
 | 2 | PoseTrack / ShotBoundaries / CueTrack tables | ⬜ Tables are Shots, Sesiones, Metricas, CamaraTrack (+ unused CameraFramings) |
 | 2 | Metricas every 0.1 s on the director | ✅ `RehearsalRecorder`, `SampleInterval = 0.1` |
-| 3 | SceneSelect "Escena completa" entry | ⬜ |
+| 3 | SceneSelect "Escena completa" entry | 🟡 Synced and placed (scene + shot 0, rig on the first shot's start mark); no entry in SceneSelect yet |
 | 3 | Approved-reference icon; Solo only allows those | 🟡 The session list has a star per session; no icon at shot level. In Solo, SceneSelect lists only shots for which `ApprovedReferences.HasApprovedReference(scene, shot)` is true, single shots only. The hook returns true for every shot until it can ask the server |
 | 4 | ShotStartPositioner uses the approved reference start | ⬜ Only `Shot{N}_Start` |
 | 5 | Grabar → Acción / Corte through the network | 🟡 The command channel exists, but B still only starts/stops a local recording and sends nothing |

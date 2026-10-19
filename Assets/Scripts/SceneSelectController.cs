@@ -245,9 +245,9 @@ public class SceneSelectController : MonoBehaviour
         // Inspecting a past recording is a solo review, not a live rehearsal - don't
         // sync/teleport the actor for it.
         if (Bootstrap.Mode == Bootstrap.AppMode.Remote && RehearsalSessionSync.Instance != null)
-            RehearsalSessionSync.Instance.SelectShot(shot.ShotNumber);
+            RehearsalSessionSync.Instance.SelectTake(shot.SceneNumber, shot.ShotNumber);
 
-        Bootstrap.CurrentShotNumber = shot.ShotNumber;
+        Bootstrap.SelectTake(shot.SceneNumber, shot.ShotNumber);
         Bootstrap.CurrentSessionId = sessionId;
         SceneManager.LoadSceneAsync(sceneName);
     }

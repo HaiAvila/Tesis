@@ -184,6 +184,20 @@ public class ShotListDatabase : MonoBehaviour
         return grouped;
     }
 
+    // The whole scene starts where its first shot (lowest shot_number) starts.
+    public int? GetFirstShotOfScene(int sceneNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            Shot shot = connection.Query<Shot>(
+                "SELECT * FROM Shots WHERE scene_number = ? ORDER BY shot_number ASC LIMIT 1;", sceneNumber).FirstOrDefault();
+
+            return shot != null ? shot.ShotNumber : (int?)null;
+        }
+    }
+
     public int? GetSceneNumberForShot(int shotNumber)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);

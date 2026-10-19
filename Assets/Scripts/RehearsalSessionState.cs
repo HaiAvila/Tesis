@@ -26,12 +26,18 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     public const int StateEnded = 2;
 
     public const int NoShotSelected = -1;
+    // shotNumber value for "the whole scene" (Escena completa): one continuous take of every
+    // shot of sceneNumber.
+    public const int FullSceneShot = 0;
+    // A room whose model predates sceneNumber reads 0 there - anything <= 0 counts as unset.
+    public const int NoSceneSelected = -1;
 
-    // Raised on every client (the writer included) when the selected shot changes after this
-    // client received the model. Whatever shot the room already held when joining doesn't
-    // raise it - a late joiner reads ShotNumber explicitly instead (see
+    // Raised on every client (the writer included) when the selected scene or shot changes
+    // after this client received the model - once per property, so a pick that changes
+    // both raises it twice. Whatever the room already held when joining doesn't raise it - a
+    // late joiner reads SceneNumber/ShotNumber explicitly instead (see
     // RehearsalSessionSync.JoinRemoteRehearsal), and only while the rehearsal is live.
-    public event Action<int> ShotChanged;
+    public event Action SelectionChanged;
 
     const int NoOwner = -1;
 
@@ -55,22 +61,25 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
 
     public int ShotNumber => model != null ? model.shotNumber : NoShotSelected;
 
-    // Director only, same ownership pattern as SetState.
-    public void SetShot(int shotNumber)
+    public int SceneNumber => model != null ? model.sceneNumber : NoSceneSelected;
+
+    // Director only, same ownership pattern as SetState. Scene first, then the shot.
+    public void SetSelection(int sceneNumber, int shotNumber)
     {
         if (model == null)
         {
-            Debug.LogWarning($"[SessionSync] SetShot({shotNumber}) ignored: not connected to a room yet.");
+            Debug.LogWarning($"[SessionSync] SetSelection(scene {sceneNumber}, shot {shotNumber}) ignored: not connected to a room yet.");
             return;
         }
 
         model.RequestOwnership();
+        model.sceneNumber = sceneNumber;
         model.shotNumber = shotNumber;
-        Debug.Log($"[SessionSync] write shotNumber={shotNumber}");
+        Debug.Log($"[SessionSync] write sceneNumber={sceneNumber}, shotNumber={shotNumber}" + (shotNumber == FullSceneShot ? " (escena completa)" : ""));
     }
 
     // Director only. Requests ownership first, same explicit pattern as every other synced
-    // write in this project (RehearsalSessionSync.SelectShot, ActorPositionSync).
+    // write in this project (RehearsalSessionSync.SelectTake, ActorPositionSync).
     public void SetState(int state)
     {
         if (model == null)
@@ -114,6 +123,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
             previousModel.ownerIDSelfDidChange -= OnOwnerIDDidChange;
             previousModel.commandCounterDidChange -= OnCommandCounterDidChange;
             previousModel.shotNumberDidChange -= OnShotNumberDidChange;
+            previousModel.sceneNumberDidChange -= OnSceneNumberDidChange;
         }
 
         if (currentModel != null)
@@ -121,24 +131,32 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
             if (currentModel.isFreshModel)
             {
                 currentModel.sessionState = StateNone;
+                currentModel.sceneNumber = NoSceneSelected;
                 currentModel.shotNumber = NoShotSelected;
             }
 
             lastKnownOwnerID = currentModel.ownerIDSelf;
             commandBaseline = currentModel.commandCounter;
-            Debug.Log($"[SessionSync] joined: sessionState={currentModel.sessionState}, shotNumber={currentModel.shotNumber}, commandCounter={currentModel.commandCounter} (baseline), owner={currentModel.ownerIDSelf}");
+            Debug.Log($"[SessionSync] joined: sessionState={currentModel.sessionState}, sceneNumber={currentModel.sceneNumber}, shotNumber={currentModel.shotNumber}, commandCounter={currentModel.commandCounter} (baseline), owner={currentModel.ownerIDSelf}");
 
             currentModel.sessionStateDidChange += OnSessionStateDidChange;
             currentModel.ownerIDSelfDidChange += OnOwnerIDDidChange;
             currentModel.commandCounterDidChange += OnCommandCounterDidChange;
             currentModel.shotNumberDidChange += OnShotNumberDidChange;
+            currentModel.sceneNumberDidChange += OnSceneNumberDidChange;
         }
     }
 
     void OnShotNumberDidChange(RehearsalSessionStateModel changedModel, int value)
     {
         Debug.Log($"[SessionSync] received shotNumber={value}");
-        ShotChanged?.Invoke(value);
+        SelectionChanged?.Invoke();
+    }
+
+    void OnSceneNumberDidChange(RehearsalSessionStateModel changedModel, int value)
+    {
+        Debug.Log($"[SessionSync] received sceneNumber={value}");
+        SelectionChanged?.Invoke();
     }
 
     void OnSessionStateDidChange(RehearsalSessionStateModel changedModel, int value)

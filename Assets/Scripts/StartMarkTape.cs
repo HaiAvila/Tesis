@@ -51,16 +51,16 @@ public class StartMarkTape : MonoBehaviour
             buildCoroutine = StartCoroutine(BuildNextFrame());
     }
 
-    // After the scene's Start(), like FallGuard - CurrentShotNumber and the marker are set.
+    // After the scene's Start(), like FallGuard - StartShotNumber and the marker are set.
     System.Collections.IEnumerator BuildNextFrame()
     {
         yield return null;
         buildCoroutine = null;
 
-        GameObject marker = GameObject.Find($"Shot{Bootstrap.CurrentShotNumber}_Start");
+        GameObject marker = GameObject.Find($"Shot{Bootstrap.StartShotNumber}_Start");
         if (marker == null)
         {
-            Debug.LogWarning($"[StartMark] no 'Shot{Bootstrap.CurrentShotNumber}_Start' marker in this scene - no tape mark shown.");
+            Debug.LogWarning($"[StartMark] no 'Shot{Bootstrap.StartShotNumber}_Start' marker in this scene - no tape mark shown.");
             yield break;
         }
 
@@ -97,7 +97,7 @@ public class StartMarkTape : MonoBehaviour
 
         XRUISetup.MoveToUILayer(root);
 
-        Debug.Log($"[StartMark] tape mark shown at {position} for shot {Bootstrap.CurrentShotNumber} ({Bootstrap.Mode})");
+        Debug.Log($"[StartMark] tape mark shown at {position} for shot {Bootstrap.StartShotNumber} ({Bootstrap.Mode})");
     }
 
     // center/size in meters, in the mark's own frame (x = right, y = facing direction).

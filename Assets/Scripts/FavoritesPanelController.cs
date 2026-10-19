@@ -355,7 +355,7 @@ public class FavoritesPanelController : MonoBehaviour
 #endif
 
         Bootstrap.SetMode(Bootstrap.AppMode.Inspect, "Favoritos → Ver");
-        Bootstrap.CurrentShotNumber = shot.ShotNumber;
+        Bootstrap.SelectTake(shot.SceneNumber, shot.ShotNumber);
         Bootstrap.CurrentSessionId = session.Id;
         SceneManager.LoadSceneAsync(sceneName);
     }

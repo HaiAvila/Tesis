@@ -101,7 +101,7 @@ public class StartMarkAligner : MonoBehaviour
 
     void Align(string reason, bool manual)
     {
-        GameObject marker = GameObject.Find($"Shot{Bootstrap.CurrentShotNumber}_Start");
+        GameObject marker = GameObject.Find($"Shot{Bootstrap.StartShotNumber}_Start");
         XROrigin origin = FindFirstObjectByType<XROrigin>();
         if (marker == null || origin == null || origin.Camera == null)
         {
@@ -127,7 +127,7 @@ public class StartMarkAligner : MonoBehaviour
         if (gravity != null)
             gravity.ResetFallForce();
 
-        Debug.Log($"[StartAlign] start mark under the actor ({reason}): turned {yawDelta:F0}°, moved {offset.magnitude:F2} m, shot {Bootstrap.CurrentShotNumber}");
+        Debug.Log($"[StartAlign] start mark under the actor ({reason}): turned {yawDelta:F0}°, moved {offset.magnitude:F2} m, shot {Bootstrap.StartShotNumber}");
 
         if (!manual)
             return;

@@ -13,7 +13,7 @@ public class ShotStartPositioner : MonoBehaviour
             return;
         }
 
-        string markerName = $"Shot{Bootstrap.CurrentShotNumber}_Start";
+        string markerName = $"Shot{Bootstrap.StartShotNumber}_Start";
         GameObject marker = GameObject.Find(markerName);
 
         if (marker == null)

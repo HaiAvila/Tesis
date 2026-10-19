@@ -13,6 +13,12 @@ using Normal.Realtime;
 // commandCounter, so a receiver reacting to the counter change reads the matching id
 // (both arrive in the same update; commandId has the lower property id). See
 // RehearsalSessionState.SendCommand.
+//
+// The selected take is sceneNumber + shotNumber: the director writes the scene first, then
+// the shot. shotNumber = RehearsalSessionState.FullSceneShot (0) means the whole scene.
+// sceneNumber came later, so it has the next free id (existing ids are never renumbered) -
+// and since it can arrive after shotNumber in the same update, receivers read the pair a
+// frame later (RehearsalSessionSync), not inside either change callback.
 [RealtimeModel(createMetaModel: true)]
 public partial class RehearsalSessionStateModel
 {
@@ -20,4 +26,5 @@ public partial class RehearsalSessionStateModel
     [RealtimeProperty(2, true, true)] private int _commandId;
     [RealtimeProperty(3, true, true)] private int _commandCounter;
     [RealtimeProperty(4, true, true)] private int _shotNumber;
+    [RealtimeProperty(5, true, true)] private int _sceneNumber;
 }

@@ -5,7 +5,39 @@ using UnityEngine.SceneManagement;
 
 public class Bootstrap : MonoBehaviour
 {
-    public static int CurrentShotNumber;
+    // The take being loaded or played: a scene, and a shot of it - or
+    // RehearsalSessionState.FullSceneShot (0) for the whole scene ("Escena completa"). Set
+    // only through SelectTake, so the three always agree.
+    public static int CurrentSceneNumber { get; private set; } = RehearsalSessionState.NoSceneSelected;
+    public static int CurrentShotNumber { get; private set; } = RehearsalSessionState.NoShotSelected;
+
+    // The shot whose Shot{N}_Start the take starts on (ShotStartPositioner, StartMarkAligner,
+    // StartMarkTape, FallGuard): the shot itself, or for the whole scene its first shot (the
+    // lowest shot_number).
+    public static int StartShotNumber { get; private set; } = RehearsalSessionState.NoShotSelected;
+
+    public static bool IsFullScene => CurrentShotNumber == RehearsalSessionState.FullSceneShot;
+
+    public static void SelectTake(int sceneNumber, int shotNumber)
+    {
+        CurrentSceneNumber = sceneNumber;
+        CurrentShotNumber = shotNumber;
+        StartShotNumber = shotNumber;
+
+        if (shotNumber != RehearsalSessionState.FullSceneShot)
+            return;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        int? firstShot = database != null ? database.GetFirstShotOfScene(sceneNumber) : null;
+        if (firstShot == null)
+        {
+            Debug.LogError($"[Escena] scene {sceneNumber} has no shots - no start mark for the full scene.");
+            return;
+        }
+
+        StartShotNumber = firstShot.Value;
+        Debug.Log($"[Escena] full scene {sceneNumber} selected: starts on shot {StartShotNumber}");
+    }
 
     // Explicit session to load when a content scene opens in Inspección de Escenas - set
     // when the director picked a specific session from the multi-session list or jumped in

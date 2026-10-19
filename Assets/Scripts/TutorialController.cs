@@ -514,6 +514,17 @@ public class TutorialController : MonoBehaviour
             SimulatorHint = "Simulador: mantén Y + N.",
             IsDone = () => recorder != null && recorder.IsRecording,
         });
+        // Escena completa only (RehearsalRecorder.NextShot). Also done once the recording
+        // stops, since Siguiente toma is optional and does nothing after that.
+        if (Bootstrap.IsFullScene)
+        {
+            list.Add(new Step
+            {
+                Text = $"Estás grabando la escena completa. Presiona {Key("Y")} (control izquierdo) para {Act("pasar a la siguiente toma")}: marca dónde termina un shot y empieza el siguiente. Es opcional.",
+                SimulatorHint = "Simulador: mantén T + N.",
+                IsDone = () => recorder != null && (recorder.PendingBoundaries.Count > 1 || !recorder.IsRecording),
+            });
+        }
         list.Add(new Step
         {
             Text = $"Presiona {Key("B")} otra vez para {Act("detener la grabación")}.",
@@ -522,7 +533,8 @@ public class TutorialController : MonoBehaviour
         });
         list.Add(new Step
         {
-            Text = $"Elige qué hacer con la toma: {Key("Ver replay")}, {Key("Guardar")} o {Key("Descartar")}. Antes de guardar puedes {Act("marcarla como preferida o favorita")}.",
+            // A scene take can't be preferida (the stop panel has no such box for it).
+            Text = $"Elige qué hacer con la toma: {Key("Ver replay")}, {Key("Guardar")} o {Key("Descartar")}. Antes de guardar puedes {Act(Bootstrap.IsFullScene ? "marcarla como favorita" : "marcarla como preferida o favorita")}.",
             SimulatorHint = "Simulador: mantén T o Y y haz clic izquierdo.",
             // "Ver replay" also closes the decision panel, but it comes back when the replay
             // is closed - so this waits for both to be gone, i.e. Guardar or Descartar.

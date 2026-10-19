@@ -30,8 +30,6 @@ public class SoloRehearsalController : MonoBehaviour
     // (measured: spaceship 0.012 vs 0.000, apartment 0.005 vs -0.006), and a 5 mm lift left
     // the tape under it there. 2.5 cm clears both and still reads as on the floor.
     const float StartMarkFloorOffset = 0.025f;
-    const float StartMarkRaycastHeight = 0.5f;   // start just above the marker
-    const float StartMarkRaycastDistance = 50f;  // and look all the way down
     static readonly Color StartMarkTapeColor = new Color(1f, 0.85f, 0.1f, 1f);
 
     public static SoloRehearsalController Instance { get; private set; }
@@ -198,7 +196,9 @@ public class SoloRehearsalController : MonoBehaviour
     // it sits on top of the visible floor, with no colliders of its own. Solo only.
     void BuildStartMark(Transform marker, Scene scene)
     {
-        Vector3 position = FindFloorBelow(marker.position) + Vector3.up * StartMarkFloorOffset;
+        if (!SceneFloor.TryFindFloorBelow(marker.position, out Vector3 floor))
+            Debug.LogWarning($"[Solo] no floor found below the start marker at {marker.position} - mark left at the marker's height.");
+        Vector3 position = floor + Vector3.up * StartMarkFloorOffset;
 
         Vector3 forward = marker.forward;
         forward.y = 0f;
@@ -223,27 +223,6 @@ public class SoloRehearsalController : MonoBehaviour
         CreateTapeStrip(rootRect, "Stem", new Vector2(0f, StartMarkToeOffset - StartMarkStemLength / 2f), new Vector2(StartMarkTapeWidth, StartMarkStemLength));
 
         Debug.Log($"[Solo] start mark shown at {position} for shot {currentShotNumber}");
-    }
-
-    // The Shot{N}_Start markers float well above the floor (1.6 m up in every scene - the rig
-    // drops onto the floor from there), so this looks all the way down, not just near the
-    // marker: the first collider below, skipping triggers and the XR rig's own colliders.
-    // Falls back to the marker's height if there's nothing below.
-    static Vector3 FindFloorBelow(Vector3 markerPosition)
-    {
-        Vector3 origin = markerPosition + Vector3.up * StartMarkRaycastHeight;
-        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, StartMarkRaycastDistance, ~0, QueryTriggerInteraction.Ignore);
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
-        foreach (RaycastHit hit in hits)
-        {
-            if (hit.collider.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>() != null)
-                continue;
-            return hit.point;
-        }
-
-        Debug.LogWarning($"[Solo] no floor found below the start marker at {markerPosition} - mark left at the marker's height.");
-        return markerPosition;
     }
 
     // center/size in meters, in the mark's own frame (x = right, y = facing direction).

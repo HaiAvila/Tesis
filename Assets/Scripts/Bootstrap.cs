@@ -97,6 +97,10 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<PlayAreaOutline>() == null)
             gameObject.AddComponent<PlayAreaOutline>();
 
+        // Both roles: back to the start mark instead of falling into the void - see FallGuard.
+        if (GetComponent<FallGuard>() == null)
+            gameObject.AddComponent<FallGuard>();
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 

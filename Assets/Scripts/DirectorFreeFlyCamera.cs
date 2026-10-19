@@ -19,6 +19,9 @@ public class DirectorFreeFlyCamera : MonoBehaviour
 
     const float FlySpeed = 2.5f;
 
+    // Read by FallGuard: flying below the floor on purpose isn't a fall.
+    public bool IsFlying => isActive;
+
     bool isActive;
     GameObject disabledMoveObject;
     GameObject disabledGravityObject;

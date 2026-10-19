@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (actor real-space docs + tutorial).
+Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders + fall guard).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -117,6 +117,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (actor real-
 
 ## Done but not in either plan
 
+- **Colliders and fall guard.** Scenes 2 and 3 have a static MeshCollider on every mesh of the set: 122 for the spaceship, which used to have only a 10 × 19 m invisible floor box, and 36 more for the apartment. Scene 1's terrain already had them; its bushes are left without. `FallGuard` (both roles, every content scene): if the rig drops more than 3 m below the floor under the shot's start (off the set's edge or the mountain's cliff), it's put back on the start mark with "Te regresamos al inicio", re-aligned under the actor. The director's free-fly is ignored. `[FallGuard]` logs. `SceneFloor.TryFindFloorBelow` is the shared floor search (also used for the solo tape mark).
 - **Real play area on the floor** (`PlayAreaOutline`, actor only, Remote + Solo): the Quest's boundary, read through OpenXR `XRInputSubsystem.TryGetBoundaryPoints` (the largest rectangle inside a Roomscale boundary), drawn as a light-blue line at the rig's feet. It moves with the rig (alignment, joystick), rebuilds on every take and on `boundaryChanged`. A Stationary boundary or the Editor reports none, so nothing is drawn. `[PlayArea]` logs the size. Not tested on a Quest yet (the drawing was checked in the Editor with a fake 4 × 5 m rectangle).
 - **Start mark under the actor** (`StartMarkAligner`, actor only, Ensayo Remoto + Solo). `ShotStartPositioner` puts the XR Origin, the center of the real play area, on `Shot{N}_Start`. Right after that, the rig is turned about the actor's head and shifted so the head is over the mark, facing the mark's direction. This happens automatically when a take loads, and again with **left X** ("Fijar inicio aquí": walk to one end of the real room, face the open space, press X). Only the rig moves, never the head or camera. The director isn't affected. `[StartAlign]` logs.
 - **Panel focus** (`PanelFocusManager`, on the Bootstrap object, both builds). Panels register as **modal** (pause menu, Favoritos, decision panel), **persistent** (replay panel, recorded-camera monitor, viewfinder) or **guide** (tutorial). Only one modal is shown: a newer one hides the older until it closes. While any modal is open, persistent panels are hidden through a CanvasGroup (no ray hits) and come back exactly as they were. The replay pauses and resumes only if it was playing. Left X, free-fly and the viewfinder's Grip and zoom are ignored. The world dims inside a 2 m dark box around the head. The tutorial is never hidden and docks beside what the manager reports; this replaced its own canvas scan. `[PanelFocus]` logs.

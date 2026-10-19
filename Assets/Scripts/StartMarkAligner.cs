@@ -85,6 +85,12 @@ public class StartMarkAligner : MonoBehaviour
         Align("take loaded", manual: false);
     }
 
+    // FallGuard, after putting a fallen actor back on the mark.
+    public void AlignToStart(string reason)
+    {
+        Align(reason, manual: false);
+    }
+
     void OnSetStartPressed(InputAction.CallbackContext context)
     {
         if (!InActorTake || PanelFocusManager.IsModalOpen)

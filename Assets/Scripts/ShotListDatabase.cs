@@ -80,6 +80,39 @@ public class ShotListDatabase : MonoBehaviour
 
         if (!existingColumns.Contains("es_favorita"))
             connection.Execute("ALTER TABLE Sesiones ADD COLUMN es_favorita INTEGER NOT NULL DEFAULT 0;");
+
+        // Escena completa: a session is a single shot ("toma") or a whole scene ("escena",
+        // shot_number = FullSceneShot), always with its scene. session_id is a GUID made at
+        // record start, to match the session across devices (the server, later) - unlike id,
+        // the local autoincrement that Metricas/CamaraTrack.sesion_id point to.
+        if (!existingColumns.Contains("scene_number"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN scene_number INTEGER;");
+
+        if (!existingColumns.Contains("tipo"))
+            connection.Execute($"ALTER TABLE Sesiones ADD COLUMN tipo TEXT NOT NULL DEFAULT '{RecordingSession.TipoToma}';");
+
+        if (!existingColumns.Contains("session_id"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN session_id TEXT;");
+
+        // Rows from before these columns: every one was a single shot (tipo already defaults
+        // to "toma"), so its scene is the shot's; and each gets a GUID of its own. Only rows
+        // still missing a value are touched, so this is a no-op on every later start.
+        int scenesFilled = connection.Execute(
+            "UPDATE Sesiones SET scene_number = (SELECT Shots.scene_number FROM Shots WHERE Shots.shot_number = Sesiones.shot_number) " +
+            "WHERE scene_number IS NULL;");
+
+        List<RecordingSession> withoutGuid = connection.Query<RecordingSession>("SELECT * FROM Sesiones WHERE session_id IS NULL;");
+        if (withoutGuid.Count > 0)
+        {
+            connection.RunInTransaction(() =>
+            {
+                foreach (RecordingSession session in withoutGuid)
+                    connection.Execute("UPDATE Sesiones SET session_id = ? WHERE id = ?;", Guid.NewGuid().ToString(), session.Id);
+            });
+        }
+
+        if (scenesFilled > 0 || withoutGuid.Count > 0)
+            Debug.Log($"[Escena] Sesiones migrated: scene_number filled on {scenesFilled} row(s), session_id on {withoutGuid.Count}");
     }
 
     // Creates the Sesiones/Metricas/CamaraTrack record for a finished rehearsal recording in
@@ -88,15 +121,25 @@ public class ShotListDatabase : MonoBehaviour
     // sample, and every buffered CamaraTrack sample. One transaction means camera rows can
     // never exist without their session. Marking the new session preferida unmarks any
     // other preferida session of the same shot first, in the same transaction.
-    public int SaveRecordingSession(int shotNumber, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, bool esPreferida = false, bool esFavorita = false)
+    //
+    // tipo is RecordingSession.TipoToma (a shot) or TipoEscena (the whole scene, shotNumber =
+    // FullSceneShot). A scene recording is never preferida - approving one needs slicing it
+    // into per-shot references first, which comes later - so esPreferida is ignored for it.
+    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, bool esPreferida = false, bool esFavorita = false)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        if (tipo == RecordingSession.TipoEscena)
+            esPreferida = false;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
             var session = new RecordingSession
             {
                 ShotNumber = shotNumber,
+                SceneNumber = sceneNumber,
+                Tipo = tipo,
+                SessionGuid = sessionGuid,
                 FechaHora = startedAt.ToString("o"),
                 Duracion = duration,
                 EsPreferida = esPreferida,
@@ -121,7 +164,7 @@ public class ShotListDatabase : MonoBehaviour
                 connection.InsertAll(cameraSamples);
             });
 
-            Debug.Log($"ShotListDatabase: saved session {session.Id} (shot {shotNumber}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
+            Debug.Log($"{(tipo == RecordingSession.TipoEscena ? "[Escena] " : "")}ShotListDatabase: saved session {session.Id} ({tipo}, scene {sceneNumber}, shot {shotNumber}, guid {sessionGuid}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
         }
     }
@@ -549,12 +592,21 @@ public class Shot
 [Table("Sesiones")]
 public class RecordingSession
 {
+    public const string TipoToma = "toma";
+    public const string TipoEscena = "escena";
+
     [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
     [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("scene_number")] public int SceneNumber { get; set; }
+    [Column("tipo")] public string Tipo { get; set; }
+    // The cross-device GUID - not Id, the local key that Metricas/CamaraTrack.sesion_id use.
+    [Column("session_id")] public string SessionGuid { get; set; }
     [Column("fecha_hora")] public string FechaHora { get; set; }
     [Column("duracion")] public float Duracion { get; set; }
     [Column("es_preferida")] public bool EsPreferida { get; set; }
     [Column("es_favorita")] public bool EsFavorita { get; set; }
+
+    [Ignore] public bool IsScene => Tipo == TipoEscena;
 }
 
 // Maps a single row of "PRAGMA table_info(Sesiones);" - only the column name is needed,

@@ -58,7 +58,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 | 1 | AvatarModel / PodStatusModel / ReportModel / CueTrackModel | ⬜ |
 | 1 | SERVER_BUILD + `Server` scene | 🟡 The define exists in the Role menu; no code uses it, and there's no `Server` scene |
 | 2 | Shots: `cues` column | ⬜ Only `notes` (free text) |
-| 2 | Sesiones: scene_number, tipo, session_id GUID | ⬜ Local autoincrement id |
+| 2 | Sesiones: scene_number, tipo, session_id GUID | ✅ Added with the PRAGMA + ALTER rule. `tipo` is "toma" (a shot) or "escena" (the whole scene, `shot_number` 0). `session_id` is a GUID made at record start for every take (`RecordingSession.SessionGuid` in C#, not to be confused with `id`, the local key that `Metricas`/`CamaraTrack.sesion_id` use). Older rows were migrated on start: tipo "toma", scene_number from Shots, a fresh GUID each. A scene take is never saved as preferida, and the stop panel hides "Marcar como preferida" for it |
 | 2 | es_preferida = approved reference, sends `aprobar` | 🟡 Preferida exists (exclusive per shot); nothing is sent |
 | 2 | PoseTrack / ShotBoundaries / CueTrack tables | ⬜ Tables are Shots, Sesiones, Metricas, CamaraTrack (+ unused CameraFramings) |
 | 2 | Metricas every 0.1 s on the director | ✅ `RehearsalRecorder`, `SampleInterval = 0.1` |

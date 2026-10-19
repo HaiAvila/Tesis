@@ -40,7 +40,14 @@ public class RehearsalRecorder : MonoBehaviour
     float recordingStartTime;
     DateTime recordingStartedAt;
     int shotNumberAtStart;
+    int sceneNumberAtStart;
+    bool fullSceneAtStart;
+    // Sesiones.session_id - made at record start for every take, shot or scene.
+    string sessionGuidAtStart;
     float pendingDuration;
+
+    // Whether the take being recorded (or waiting for Guardar/Descartar) is a whole scene.
+    public bool IsFullSceneTake => fullSceneAtStart;
 
 #if DIRECTOR_BUILD
     const float DecisionPanelDistance = 1.5f;
@@ -137,6 +144,11 @@ public class RehearsalRecorder : MonoBehaviour
         buffer.Clear();
         cameraBuffer.Clear();
         shotNumberAtStart = Bootstrap.CurrentShotNumber;
+        sceneNumberAtStart = Bootstrap.CurrentSceneNumber;
+        fullSceneAtStart = Bootstrap.IsFullScene;
+        sessionGuidAtStart = Guid.NewGuid().ToString();
+        if (fullSceneAtStart)
+            Debug.Log($"[Escena] recording the full scene {sceneNumberAtStart} (session {sessionGuidAtStart})");
         recordingStartedAt = DateTime.Now;
         recordingStartTime = Time.time;
         IsRecording = true;
@@ -244,7 +256,11 @@ public class RehearsalRecorder : MonoBehaviour
         checkboxLayout.childForceExpandWidth = true;
         checkboxLayout.childForceExpandHeight = true;
 
-        preferidaCheckboxImage = CreateCheckbox(checkboxRowObject.transform, "Marcar como preferida", markAsPreferida, OnPreferidaCheckboxClicked);
+        // A scene take can't be preferida yet (approving it needs slicing it into per-shot
+        // references first) - same as the star, which is hidden for scene recordings.
+        preferidaCheckboxImage = fullSceneAtStart
+            ? null
+            : CreateCheckbox(checkboxRowObject.transform, "Marcar como preferida", markAsPreferida, OnPreferidaCheckboxClicked);
         favoritaCheckboxImage = CreateCheckbox(checkboxRowObject.transform, "Marcar como favorita", markAsFavorita, OnFavoritaCheckboxClicked);
 
         var buttonRowObject = new GameObject("Options", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
@@ -383,7 +399,9 @@ public class RehearsalRecorder : MonoBehaviour
         if (database == null)
             Debug.LogError("RehearsalRecorder: no ShotListDatabase instance found, recording discarded.");
         else
-            database.SaveRecordingSession(shotNumberAtStart, recordingStartedAt, pendingDuration, buffer, cameraBuffer, markAsPreferida, markAsFavorita);
+            database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
+                fullSceneAtStart ? RecordingSession.TipoEscena : RecordingSession.TipoToma, sessionGuidAtStart,
+                recordingStartedAt, pendingDuration, buffer, cameraBuffer, markAsPreferida, markAsFavorita);
 
         buffer.Clear();
         cameraBuffer.Clear();

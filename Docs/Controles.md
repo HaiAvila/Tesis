@@ -66,6 +66,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 **Binding en el Simulador:** `<XRSimulatedController>{RightHand}/secondaryButton`
 **Contexto:** `#if DIRECTOR_BUILD` (solo existe en el build de director) y `Bootstrap.IsContentScene(...)`.
 **Solo Ensayo Remoto:** el gate revisa que sea una escena de contenido **y** que el modo sea `Remote` (`Bootstrap.Mode`). Antes solo revisaba lo primero, así que B también "grababa" en Inspección de Escenas, donde no hay un actor en vivo.
+**Escena completa:** B graba igual, pero la sesión se guarda como `tipo = "escena"` (shot `0`, con su escena), separada de los shots sueltos (`tipo = "toma"`). Toda sesión nueva lleva un `session_id` (GUID) creado al empezar a grabar. En el panel de fin de grabación de una escena completa **no aparece "Marcar como preferida"**: aprobar una escena necesita cortarla en referencias por shot, y eso viene después. "Marcar como favorita" sí.
 
 ### Vuelo libre del director — joystick izquierdo
 **Script:** `DirectorFreeFlyCamera.cs`, activado/desactivado por `RecordingPlaybackController.cs`

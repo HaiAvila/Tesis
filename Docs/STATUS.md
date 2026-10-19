@@ -62,7 +62,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 | 2 | es_preferida = approved reference, sends `aprobar` | 🟡 Preferida exists (exclusive per shot); nothing is sent |
 | 2 | PoseTrack / ShotBoundaries / CueTrack tables | 🟡 **ShotBoundaries** exists (`session_id` = the Sesiones GUID, `shot_number`, `t_in`, `t_out` in the recording's own seconds, `source` "manual"/"auto", indexed by `session_id`). Full-scene takes keep them in memory and write them with Guardar, in the same transaction as the session; Descartar drops them (and deletes any rows for that GUID). Automatic suggestions: `RehearsalRecorder.SuggestShotBoundariesAuto`, an empty hook for now (would return `source = "auto"` rows). PoseTrack and CueTrack ⬜ |
 | 2 | Metricas every 0.1 s on the director | ✅ `RehearsalRecorder`, `SampleInterval = 0.1` |
-| 3 | SceneSelect "Escena completa" entry | 🟡 Ensayo Remoto, director only: an "Escena completa — shots X a Y" button heads each scene group (own color); it syncs scene + shot 0 and the take starts on the first shot's start mark. Not in Solo. Not in Inspección yet |
+| 3 | SceneSelect "Escena completa" entry | ✅ Director only, Ensayo Remoto and Inspección: an "Escena completa — shots X a Y" button heads each scene group (own color). In Remote it syncs scene + shot 0 and the take starts on the first shot's start mark; in Inspección it opens the scene's full-scene recordings. Not in Solo |
 | 3 | Approved-reference icon; Solo only allows those | 🟡 The session list has a star per session; no icon at shot level. In Solo, SceneSelect lists only shots for which `ApprovedReferences.HasApprovedReference(scene, shot)` is true, single shots only. The hook returns true for every shot until it can ask the server |
 | 4 | ShotStartPositioner uses the approved reference start | ⬜ Only `Shot{N}_Start` |
 | 5 | Grabar → Acción / Corte through the network | 🟡 The command channel exists, but B still only starts/stops a local recording and sends nothing |
@@ -73,7 +73,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 | 5 | Report panel after Corte | ⬜ |
 | 5 | Quick replay with avatar / cue editor | 🟡 Replay shows a capsule ghost plus the recorded camera |
 | 6 | Takes per shot listed | ✅ Session picker, star/heart, Favoritos |
-| 6 | Scene recordings with shot boundaries | ⬜ |
+| 6 | Scene recordings with shot boundaries | ✅ "Escena completa" in Inspección lists the scene's `tipo = "escena"` recordings (`GetSceneSessions`), apart from single-shot takes: 0 or 1 loads directly, more opens a list (date, duration, shots marked). Replay is the same ghost + recorded camera; the slider shows a tick at each boundary's `t_in`, labeled "T6", "T7"… (also on "Ver replay" of an unsaved scene take, from memory). Heart works; the star is hidden for scene recordings (list, replay panel, stop panel). Favoritos opens a scene recording from its own `scene_number` + `shot_number` |
 | 6 | Avatar replay (PoseTrack) | ⬜ Capsule ghost |
 | 6 | Scrub slider as editor playhead | 🟡 Slider exists; there's no time event |
 | 6 | Editor háptico | ⬜ |

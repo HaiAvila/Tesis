@@ -249,9 +249,11 @@ public class FavoritesPanelController : MonoBehaviour
 
     void CreateFavoriteRow(RectTransform parent, ShotListDatabase database, RecordingSession session)
     {
-        Shot shot = database.GetShot(session.ShotNumber);
-        string sceneLabel = shot != null ? $"Escena {shot.SceneNumber}" : "Escena ?";
-        string shotLabel = shot != null ? $"Shot {shot.ShotNumber}: {shot.Description}" : $"Shot {session.ShotNumber}";
+        // A scene recording (shot 0) has no Shots row - its label is the scene's.
+        Shot shot = session.IsScene ? null : database.GetShot(session.ShotNumber);
+        string sceneLabel = session.SceneNumber > 0 ? $"Escena {session.SceneNumber}" : "Escena ?";
+        string shotLabel = session.IsScene ? "Escena completa"
+            : shot != null ? $"Shot {shot.ShotNumber}: {shot.Description}" : $"Shot {session.ShotNumber}";
         string when = FormatSessionDateTime(session.FechaHora);
 
         var rowObject = new GameObject($"Favorite_{session.Id}", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
@@ -315,9 +317,8 @@ public class FavoritesPanelController : MonoBehaviour
         // not a glyph - see UIIcons for why.
         UIIcons.CreateIcon(unfavoriteButtonObject.transform, UIIcons.Heart(true), FavoritaColor);
 
-        Shot capturedShot = shot;
         RecordingSession capturedSession = session;
-        jumpButtonObject.GetComponent<Button>().onClick.AddListener(() => JumpToSession(capturedShot, capturedSession));
+        jumpButtonObject.GetComponent<Button>().onClick.AddListener(() => JumpToSession(capturedSession));
         unfavoriteButtonObject.GetComponent<Button>().onClick.AddListener(() => OnUnfavoriteClicked(capturedSession));
     }
 
@@ -336,11 +337,13 @@ public class FavoritesPanelController : MonoBehaviour
         Show();
     }
 
-    void JumpToSession(Shot shot, RecordingSession session)
+    // The take comes from the session itself (scene_number + shot_number), so a scene
+    // recording opens as the whole scene.
+    void JumpToSession(RecordingSession session)
     {
-        if (shot == null || !SceneSelectController.SceneNameByNumber.TryGetValue(shot.SceneNumber, out string sceneName))
+        if (!SceneSelectController.SceneNameByNumber.TryGetValue(session.SceneNumber, out string sceneName))
         {
-            Debug.LogError($"FavoritesPanelController: could not resolve a scene for shot {session.ShotNumber}.");
+            Debug.LogError($"FavoritesPanelController: could not resolve a scene for session {session.Id} (scene {session.SceneNumber}, shot {session.ShotNumber}).");
             return;
         }
 
@@ -355,7 +358,7 @@ public class FavoritesPanelController : MonoBehaviour
 #endif
 
         Bootstrap.SetMode(Bootstrap.AppMode.Inspect, "Favoritos → Ver");
-        Bootstrap.SelectTake(shot.SceneNumber, shot.ShotNumber);
+        Bootstrap.SelectTake(session.SceneNumber, session.ShotNumber);
         Bootstrap.CurrentSessionId = session.Id;
         SceneManager.LoadSceneAsync(sceneName);
     }

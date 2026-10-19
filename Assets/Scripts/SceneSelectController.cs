@@ -161,9 +161,10 @@ public class SceneSelectController : MonoBehaviour
         bool solo = Bootstrap.Mode == Bootstrap.AppMode.Solo;
 
         // "Escena completa" - the whole scene as one continuous take - heads each scene group.
-        // Director only, Ensayo Remoto. Never Solo.
+        // Director only: Ensayo Remoto (rehearse/record it) and Inspección (its recordings).
+        // Never Solo.
 #if DIRECTOR_BUILD
-        bool showFullScene = Bootstrap.Mode == Bootstrap.AppMode.Remote;
+        bool showFullScene = Bootstrap.Mode == Bootstrap.AppMode.Remote || Bootstrap.Mode == Bootstrap.AppMode.Inspect;
 #else
         bool showFullScene = false;
 #endif
@@ -197,6 +198,15 @@ public class SceneSelectController : MonoBehaviour
     void OnFullSceneSelected(int sceneNumber, string sceneName)
     {
         Debug.Log($"[Escena] Escena completa selected: scene {sceneNumber} ({sceneName}). Loading {sceneName}...");
+
+        // Inspección: same rule as a shot - more than one full-scene recording opens a list,
+        // 0 or 1 loads directly (the most recent one, if any).
+        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect && database.GetSceneSessions(sceneNumber).Count > 1)
+        {
+            ShowSceneSessionList(sceneNumber, sceneName);
+            return;
+        }
+
         ProceedToTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName, null);
     }
 
@@ -303,7 +313,35 @@ public class SceneSelectController : MonoBehaviour
         CreateHeader(contentRect, $"Shot {shot.ShotNumber}: {shot.Description}");
 
         foreach (RecordingSession session in sessions)
-            CreateSessionRow(contentRect, shot, sceneName, session);
+        {
+            RecordingSession capturedSession = session;
+            CreateSessionRow(contentRect, session,
+                () => ProceedToSession(shot, sceneName, capturedSession.Id),
+                () => OnPreferidaToggled(shot, sceneName, capturedSession));
+        }
+    }
+
+    // Inspección: the scene's full-scene recordings, apart from its single-shot takes. Heart
+    // only, no star.
+    void ShowSceneSessionList(int sceneNumber, string sceneName)
+    {
+        List<RecordingSession> sessions = database.GetSceneSessions(sceneNumber);
+
+        ClearContent();
+        CreateBackButton(contentRect, () =>
+        {
+            ClearContent();
+            BuildShotList(contentRect, shotsByScene);
+        });
+        CreateHeader(contentRect, $"{sceneName}: escena completa");
+
+        foreach (RecordingSession session in sessions)
+        {
+            RecordingSession capturedSession = session;
+            CreateSessionRow(contentRect, session,
+                () => ProceedToTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName, capturedSession.Id),
+                null);
+        }
     }
 
     void ClearContent()
@@ -342,7 +380,10 @@ public class SceneSelectController : MonoBehaviour
     // toggles - preferida (star, exclusive per shot) and favorita (heart, a non-exclusive
     // bookmark). Neither icon click bubbles into the info button's click since each is its
     // own separate Button/Graphic under Unity's UI raycasting.
-    void CreateSessionRow(RectTransform parent, Shot shot, string sceneName, RecordingSession session)
+    //
+    // onPreferida null = no star: a full-scene recording can't be preferida yet (approving it
+    // needs slicing it into per-shot references first).
+    void CreateSessionRow(RectTransform parent, RecordingSession session, UnityEngine.Events.UnityAction onOpen, UnityEngine.Events.UnityAction onPreferida)
     {
         var rowObject = new GameObject($"Session_{session.Id}", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         rowObject.transform.SetParent(parent, false);
@@ -356,7 +397,6 @@ public class SceneSelectController : MonoBehaviour
         rowLayout.childForceExpandWidth = false;
         rowLayout.childForceExpandHeight = true;
 
-        Shot capturedShot = shot;
         RecordingSession capturedSession = session;
 
         var infoButtonObject = new GameObject("Info", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
@@ -377,18 +417,26 @@ public class SceneSelectController : MonoBehaviour
         Text infoText = infoTextObject.GetComponent<Text>();
         infoText.font = uiFont;
         infoText.text = FormatSessionLabel(session);
+        if (session.IsScene)
+        {
+            int marked = database.GetBoundariesForSession(session.SessionGuid).Count;
+            infoText.text += marked == 1 ? " — 1 shot marcado" : $" — {marked} shots marcados";
+        }
         infoText.fontSize = ButtonFontSize;
         infoText.color = Color.white;
         infoText.alignment = TextAnchor.MiddleLeft;
 
-        infoButtonObject.GetComponent<Button>().onClick.AddListener(() => ProceedToSession(capturedShot, sceneName, capturedSession.Id));
+        infoButtonObject.GetComponent<Button>().onClick.AddListener(onOpen);
 
         // Star and heart are sprites (UIIcons), not glyphs - see UIIcons for why.
-        CreateSessionIconButton(rowObject.transform, "Preferida",
-            UIIcons.Star(session.EsPreferida),
-            session.EsPreferida ? PreferidaOnColor : PreferidaOffColor,
-            out Button preferidaButton);
-        preferidaButton.onClick.AddListener(() => OnPreferidaToggled(capturedShot, sceneName, capturedSession));
+        if (onPreferida != null)
+        {
+            CreateSessionIconButton(rowObject.transform, "Preferida",
+                UIIcons.Star(session.EsPreferida),
+                session.EsPreferida ? PreferidaOnColor : PreferidaOffColor,
+                out Button preferidaButton);
+            preferidaButton.onClick.AddListener(onPreferida);
+        }
 
         Image favoritaIcon = CreateSessionIconButton(rowObject.transform, "Favorita",
             UIIcons.Heart(session.EsFavorita),

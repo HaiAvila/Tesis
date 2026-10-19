@@ -499,7 +499,7 @@ public class RehearsalRecorder : MonoBehaviour
 
         // Same panel/capsule/free-fly system as Inspección de Escenas, just fed directly
         // from the buffer instead of a DB query - nothing saved yet. Reappears when closed.
-        RecordingPlaybackController.Instance.StartPlaybackFromBuffer(buffer, ShowDecisionPanel);
+        RecordingPlaybackController.Instance.StartPlaybackFromBuffer(buffer, ShowDecisionPanel, fullSceneAtStart ? boundaryBuffer : null);
     }
 
     void OnSaveClicked()

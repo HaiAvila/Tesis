@@ -141,8 +141,10 @@ abajo).
 
 ### Escena completa (director) — ensayar y grabar toda la escena en una sola toma
 **Scripts:** `SceneSelectController.cs`, `RehearsalSessionSync.cs` / `RehearsalSessionState.cs`, `Bootstrap.SelectTake`.
-**Dónde:** en Selección de Escenas, durante **Ensayo Remoto**, cada escena empieza con un botón **"Escena completa — shots X a Y, en una sola toma"** (de otro color), arriba de sus shots sueltos. Solo lo ve el director. **No aparece en Ensayar Solo**, que sigue siendo solo de shots sueltos.
-**Qué hace:** el director manda la escena y el shot `0` (= escena completa) por el modelo sincronizado. El actor carga esa escena y empieza en la marca de inicio del **primer shot** de la escena (el de número más bajo: 1, 6 u 11). Los shots sueltos funcionan igual que antes.
+**Dónde:** en Selección de Escenas, durante **Ensayo Remoto** e **Inspección de Escenas**, cada escena empieza con un botón **"Escena completa — shots X a Y, en una sola toma"** (de otro color), arriba de sus shots sueltos. Solo lo ve el director. **No aparece en Ensayar Solo**, que sigue siendo solo de shots sueltos.
+**Qué hace en Ensayo Remoto:** el director manda la escena y el shot `0` (= escena completa) por el modelo sincronizado. El actor carga esa escena y empieza en la marca de inicio del **primer shot** de la escena (el de número más bajo: 1, 6 u 11). Se graba con B y se marcan los shots con la Y izquierda (ver "Siguiente toma"). Los shots sueltos funcionan igual que antes.
+**Qué hace en Inspección:** muestra las grabaciones de escena completa de esa escena, aparte de las de shots sueltos. Igual que con un shot: con 0 o 1 grabaciones carga directo; con más, abre una lista (fecha, duración y cuántos shots se marcaron), solo con **corazón**: la **estrella no aparece** en grabaciones de escena, ni en la lista ni en el panel de reproducción, porque aprobarlas necesita cortarlas en referencias por shot. La reproducción es la misma (fantasma + cámara grabada). El **slider** muestra una marca amarilla en el inicio de cada shot, con su número abajo ("T6", "T7"…). "Ver replay" de una escena recién grabada (sin guardar) también las muestra.
+**Favoritos:** una grabación de escena aparece como "Escena N — Escena completa" y "Ver" la abre como escena completa.
 
 ### Ensayar Solo (actor) — modo propio
 **Scripts:** `SoloRehearsalController.cs`, `SoloSession.cs` / `SoloSessionModel.cs`, `ApprovedReferences.cs`, `SoloPods.cs`.

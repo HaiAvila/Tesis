@@ -44,6 +44,13 @@ public class RecordingPlaybackController : MonoBehaviour
     const float ButtonSpacing = 10f;
     const float SliderHeight = 10f;
     const float SliderHandleSize = 18f;
+    // Shot boundaries of a full-scene recording: a tick on the slider at each t_in, its shot
+    // number ("T6") in a row under the slider. Placeholder look, not tuned.
+    const float TickWidth = 3f;
+    const float TickLabelRowHeight = 16f;
+    const int TickLabelFontSize = 13;
+    const float TickLabelWidth = 40f;
+    static readonly Color TickColor = new Color(1f, 0.82f, 0.3f, 1f);
     const float PanelPadding = 14f;
     const float RowSpacing = 8f;
     const float PanelWorldScale = 0.0022f;
@@ -103,6 +110,11 @@ public class RecordingPlaybackController : MonoBehaviour
     // buffer that hasn't been saved yet ("Ver replay" before Guardar/Descartar), in which
     // case there's no session row to mark preferida/favorita on, so those icons are hidden.
     RecordingSession currentSession;
+
+    // A full-scene recording's shot boundaries (saved, or still in the recorder's memory for
+    // "Ver replay"): a tick on the slider at each t_in, labeled with the shot number. Null
+    // for a single shot.
+    List<ShotBoundary> boundaries;
 
 #if DIRECTOR_BUILD
     InputAction playPauseAction;
@@ -239,6 +251,7 @@ public class RecordingPlaybackController : MonoBehaviour
         scrubSlider = null;
         samples = null;
         currentSession = null;
+        boundaries = null;
         totalDuration = 0f;
         playbackTime = 0f;
         isPlaying = false;
@@ -262,11 +275,18 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
+        // The whole scene ("Escena completa", shot 0) plays the scene's full-scene recordings,
+        // never a single shot's.
         RecordingSession session;
         if (Bootstrap.CurrentSessionId.HasValue)
         {
             session = database.GetSession(Bootstrap.CurrentSessionId.Value);
             Bootstrap.CurrentSessionId = null;
+        }
+        else if (Bootstrap.IsFullScene)
+        {
+            List<RecordingSession> sceneSessions = database.GetSceneSessions(Bootstrap.CurrentSceneNumber);
+            session = sceneSessions.Count > 0 ? sceneSessions[0] : null;
         }
         else
         {
@@ -275,7 +295,9 @@ public class RecordingPlaybackController : MonoBehaviour
 
         if (session == null)
         {
-            Debug.LogWarning($"RecordingPlaybackController: no recorded session found for shot {shotNumber}.");
+            Debug.LogWarning(Bootstrap.IsFullScene
+                ? $"[Escena] no full-scene recording found for scene {Bootstrap.CurrentSceneNumber}."
+                : $"RecordingPlaybackController: no recorded session found for shot {shotNumber}.");
             return;
         }
 
@@ -286,14 +308,22 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        BeginPlayback(dbSamples, null, session, database.GetCameraTrackForSession(session.Id));
+        List<ShotBoundary> sessionBoundaries = null;
+        if (session.IsScene)
+        {
+            sessionBoundaries = database.GetBoundariesForSession(session.SessionGuid);
+            Debug.Log($"[Escena] replaying full-scene session {session.Id} (scene {session.SceneNumber}) with {sessionBoundaries.Count} shot boundaries");
+        }
+
+        BeginPlayback(dbSamples, null, session, database.GetCameraTrackForSession(session.Id), sessionBoundaries);
     }
 
     // Plays back an in-memory buffer directly - e.g. "Ver replay" right after stopping a
     // recording, before it's saved (or discarded). Same playback system, no DB involved.
     // onClosed fires when the panel's close button is pressed, so the caller (e.g. the
-    // save/discard decision popup) knows to reappear.
-    public void StartPlaybackFromBuffer(List<Metric> bufferSamples, Action onClosed)
+    // save/discard decision popup) knows to reappear. bufferBoundaries: a full-scene take's
+    // shot boundaries, still in memory too (null for a single shot).
+    public void StartPlaybackFromBuffer(List<Metric> bufferSamples, Action onClosed, IReadOnlyList<ShotBoundary> bufferBoundaries = null)
     {
         if (bufferSamples == null || bufferSamples.Count == 0)
         {
@@ -303,16 +333,17 @@ public class RecordingPlaybackController : MonoBehaviour
         }
 
         CleanUp();
-        BeginPlayback(bufferSamples, onClosed);
+        BeginPlayback(bufferSamples, onClosed, null, null, bufferBoundaries != null ? new List<ShotBoundary>(bufferBoundaries) : null);
     }
 
-    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null, List<CameraTrackSample> cameraSamplesToPlay = null)
+    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null, List<CameraTrackSample> cameraSamplesToPlay = null, List<ShotBoundary> shotBoundaries = null)
     {
         samples = samplesToPlay;
         totalDuration = samples[samples.Count - 1].TiempoRelativo;
         onManualClose = onClosed;
         currentSession = session;
         cameraSamples = cameraSamplesToPlay;
+        boundaries = shotBoundaries != null && shotBoundaries.Count > 0 ? shotBoundaries : null;
         monitorEnabled = true;
 
         BuildCapsule();
@@ -450,13 +481,15 @@ public class RecordingPlaybackController : MonoBehaviour
 
         float buttonCount = 3f; // play/pause + restart + loop
         if (currentSession != null)
-            buttonCount += 2f; // preferida + favorita - only when a saved session (not an unsaved buffer) is playing
+            buttonCount += currentSession.IsScene ? 1f : 2f; // preferida (not for a scene recording) + favorita - only when a saved session (not an unsaved buffer) is playing
         if (onManualClose != null)
             buttonCount += 1f; // close
         if (HasCameraTrack)
             buttonCount += 1f; // monitor toggle
         float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
+        if (boundaries != null)
+            panelHeight += TickLabelRowHeight + RowSpacing; // the shot numbers under the slider's ticks
 
         panelObject = new GameObject("PlaybackPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
 
@@ -497,6 +530,8 @@ public class RecordingPlaybackController : MonoBehaviour
 
         BuildButtonRow(rootRect);
         BuildSlider(rootRect);
+        if (boundaries != null)
+            BuildShotTicks(rootRect);
         BuildTimeText(rootRect);
 
         XRUISetup.MoveToUILayer(panelObject);
@@ -533,10 +568,15 @@ public class RecordingPlaybackController : MonoBehaviour
         // Guardar/Descartar) has no session row to mark. Same star/heart language as the
         // session list and Favoritos; clicking preferida always (re-)assigns it - it's
         // exclusive per shot, there's no "unset" from here, same as the session list.
+        // A scene recording has no star: approving it needs slicing it into per-shot
+        // references first, which comes later. The heart works.
         if (currentSession != null)
         {
-            preferidaIcon = CreateSpriteIconButton(rowObject.transform, "Preferida", OnPreferidaClicked);
-            ApplyPreferidaVisual(currentSession.EsPreferida);
+            if (!currentSession.IsScene)
+            {
+                preferidaIcon = CreateSpriteIconButton(rowObject.transform, "Preferida", OnPreferidaClicked);
+                ApplyPreferidaVisual(currentSession.EsPreferida);
+            }
 
             favoritaIcon = CreateSpriteIconButton(rowObject.transform, "Favorita", OnFavoritaClicked);
             ApplyFavoritaVisual(currentSession.EsFavorita);
@@ -736,6 +776,69 @@ public class RecordingPlaybackController : MonoBehaviour
         var pointerUpEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerUp };
         pointerUpEntry.callback.AddListener(_ => OnScrubEnd());
         trigger.triggers.Add(pointerUpEntry);
+    }
+
+    // After BuildSlider. The ticks go on the slider itself, above the bar and the fill but
+    // under the handle; the labels go in their own row under it. Both use the handle's inset,
+    // so a tick at time t sits exactly where the handle is at t. None of it takes raycasts, so
+    // dragging the slider works the same over a tick.
+    void BuildShotTicks(RectTransform parent)
+    {
+        RectTransform sliderRect = (RectTransform)scrubSlider.transform;
+        RectTransform tickArea = CreateHandleInsetArea(sliderRect, "Shot Ticks");
+        tickArea.SetSiblingIndex(2); // after Background and Fill Area, before the handle's area
+
+        var labelRowObject = new GameObject("ShotTickLabels", typeof(RectTransform), typeof(LayoutElement));
+        labelRowObject.transform.SetParent(parent, false);
+        labelRowObject.GetComponent<LayoutElement>().preferredHeight = TickLabelRowHeight;
+        RectTransform labelArea = CreateHandleInsetArea((RectTransform)labelRowObject.transform, "Labels");
+
+        float duration = Mathf.Max(totalDuration, 0.01f);
+        foreach (ShotBoundary boundary in boundaries)
+        {
+            float x = Mathf.Clamp01(boundary.TIn / duration);
+
+            var tick = new GameObject($"Tick_{boundary.ShotNumber}", typeof(RectTransform), typeof(Image));
+            tick.transform.SetParent(tickArea, false);
+            RectTransform tickRect = (RectTransform)tick.transform;
+            tickRect.anchorMin = new Vector2(x, 0f);
+            tickRect.anchorMax = new Vector2(x, 1f);
+            tickRect.sizeDelta = new Vector2(TickWidth, 0f);
+            Image tickImage = tick.GetComponent<Image>();
+            tickImage.color = TickColor;
+            tickImage.raycastTarget = false;
+
+            var label = new GameObject($"TickLabel_{boundary.ShotNumber}", typeof(RectTransform), typeof(Text));
+            label.transform.SetParent(labelArea, false);
+            RectTransform labelRect = (RectTransform)label.transform;
+            labelRect.anchorMin = new Vector2(x, 0f);
+            labelRect.anchorMax = new Vector2(x, 1f);
+            labelRect.sizeDelta = new Vector2(TickLabelWidth, 0f);
+            Text labelText = label.GetComponent<Text>();
+            labelText.font = uiFont;
+            labelText.text = $"T{boundary.ShotNumber}";
+            labelText.fontSize = TickLabelFontSize;
+            labelText.fontStyle = FontStyle.Bold;
+            labelText.color = TickColor;
+            labelText.alignment = TextAnchor.UpperCenter;
+            // A legacy Text truncated to its rect draws nothing when the line is taller than
+            // the row - let it overflow instead.
+            labelText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            labelText.verticalOverflow = VerticalWrapMode.Overflow;
+            labelText.raycastTarget = false;
+        }
+    }
+
+    static RectTransform CreateHandleInsetArea(RectTransform parent, string name)
+    {
+        var areaObject = new GameObject(name, typeof(RectTransform));
+        areaObject.transform.SetParent(parent, false);
+        RectTransform areaRect = (RectTransform)areaObject.transform;
+        areaRect.anchorMin = Vector2.zero;
+        areaRect.anchorMax = Vector2.one;
+        areaRect.offsetMin = new Vector2(SliderHandleSize / 2f, 0f);
+        areaRect.offsetMax = new Vector2(-SliderHandleSize / 2f, 0f);
+        return areaRect;
     }
 
     void BuildTimeText(RectTransform parent)

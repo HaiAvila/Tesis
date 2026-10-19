@@ -351,6 +351,20 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // A scene's full-scene recordings (tipo "escena"), most recent first. Kept apart from the
+    // single-shot takes, which the shot queries above find by shot_number (scene recordings
+    // have shot_number 0, which is never a shot).
+    public List<RecordingSession> GetSceneSessions(int sceneNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE tipo = ? AND scene_number = ? ORDER BY id DESC;", RecordingSession.TipoEscena, sceneNumber);
+        }
+    }
+
     public RecordingSession GetSession(int sessionId)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);

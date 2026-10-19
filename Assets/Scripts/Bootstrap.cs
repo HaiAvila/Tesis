@@ -101,6 +101,10 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<FallGuard>() == null)
             gameObject.AddComponent<FallGuard>();
 
+        // Both roles, every take: the yellow tape "T" at the shot's start - see StartMarkTape.
+        if (GetComponent<StartMarkTape>() == null)
+            gameObject.AddComponent<StartMarkTape>();
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 

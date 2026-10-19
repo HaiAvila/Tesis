@@ -389,6 +389,7 @@ public class TutorialController : MonoBehaviour
                 list.Add(TurnStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
+                list.Add(TapeMarkStep());
                 list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Si termina el ensayo, {Act("regresas al menú principal")}." });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")}."));
                 break;
@@ -398,7 +399,7 @@ public class TutorialController : MonoBehaviour
                 list.Add(TurnStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
-                list.Add(new Step { Text = $"La {Key("marca de cinta")} en el piso es el {Act("inicio de la toma")}: párate sobre ella, con la punta de los pies en la barra." });
+                list.Add(TapeMarkStep());
                 list.Add(new Step
                 {
                     Text = $"Presiona {Key("B")} (control derecho) para {Act("iniciar")} el ensayo de la toma.",
@@ -454,6 +455,13 @@ public class TutorialController : MonoBehaviour
         Text = $"Ve a un extremo de tu espacio, mira hacia donde vas a caminar y presiona {Key("X")} (control izquierdo) para {Act("fijar el inicio de la toma aquí")}.",
         SimulatorHint = "Simulador: mantén T + B.",
         IsDone = () => StartMarkAligner.Instance != null && StartMarkAligner.Instance.ManualAlignCount > baselineAlignCount,
+    };
+
+    // Actor only: the tape "T" (StartMarkTape). It starts out right under the feet, below the
+    // headset's view when looking ahead - hence "mira hacia abajo".
+    Step TapeMarkStep() => new Step
+    {
+        Text = $"La {Key("marca de cinta amarilla")} en el piso es el {Act("inicio de la toma")}. Está a tus pies: {Act("mira hacia abajo")} para verla y párate con la punta de los pies en la barra.",
     };
 
     Step MenuStep(string text) => new Step

@@ -28,6 +28,10 @@ public class SceneSelectController : MonoBehaviour
     const float CanvasWorldScale = 0.0016f;
     const float CanvasDistance = 2f;
 
+    static readonly Color ShotButtonColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+    // Set apart from the single shots below it. Placeholder, not tuned.
+    static readonly Color FullSceneButtonColor = new Color(0.14f, 0.28f, 0.34f, 1f);
+
     static readonly Color PreferidaOnColor = new Color(0.85f, 0.7f, 0.15f, 1f);
     static readonly Color PreferidaOffColor = new Color(0.75f, 0.75f, 0.78f, 1f);
     static readonly Color FavoritaOnColor = new Color(1f, 0.2f, 0.25f, 1f);
@@ -156,6 +160,14 @@ public class SceneSelectController : MonoBehaviour
         // practice against (see ApprovedReferences - every shot, until the server answers).
         bool solo = Bootstrap.Mode == Bootstrap.AppMode.Solo;
 
+        // "Escena completa" - the whole scene as one continuous take - heads each scene group.
+        // Director only, Ensayo Remoto. Never Solo.
+#if DIRECTOR_BUILD
+        bool showFullScene = Bootstrap.Mode == Bootstrap.AppMode.Remote;
+#else
+        bool showFullScene = false;
+#endif
+
         foreach (var scene in shotsByScene)
         {
             string sceneName = SceneNameByNumber.TryGetValue(scene.Key, out string name) ? name : $"Scene {scene.Key}";
@@ -168,9 +180,24 @@ public class SceneSelectController : MonoBehaviour
 
             CreateHeader(content, sceneName);
 
+            if (showFullScene)
+                CreateFullSceneButton(content, scene.Key, sceneName, shots);
+
             foreach (Shot shot in shots)
                 CreateShotButton(content, shot, sceneName);
         }
+    }
+
+    void CreateFullSceneButton(RectTransform parent, int sceneNumber, string sceneName, List<Shot> shots)
+    {
+        string label = $"Escena completa — shots {shots[0].ShotNumber} a {shots[shots.Count - 1].ShotNumber}, en una sola toma";
+        CreateListButton(parent, $"FullScene_{sceneNumber}", label, FullSceneButtonColor, () => OnFullSceneSelected(sceneNumber, sceneName));
+    }
+
+    void OnFullSceneSelected(int sceneNumber, string sceneName)
+    {
+        Debug.Log($"[Escena] Escena completa selected: scene {sceneNumber} ({sceneName}). Loading {sceneName}...");
+        ProceedToTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName, null);
     }
 
     void CreateHeader(RectTransform parent, string text)
@@ -191,9 +218,16 @@ public class SceneSelectController : MonoBehaviour
 
     void CreateShotButton(RectTransform parent, Shot shot, string sceneName)
     {
-        var buttonObject = new GameObject($"Shot_{shot.ShotNumber}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+        Shot capturedShot = shot;
+        string capturedSceneName = sceneName;
+        CreateListButton(parent, $"Shot_{shot.ShotNumber}", shot.Description, ShotButtonColor, () => OnShotSelected(capturedShot, capturedSceneName));
+    }
+
+    void CreateListButton(RectTransform parent, string objectName, string text, Color color, UnityEngine.Events.UnityAction onClick)
+    {
+        var buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        buttonObject.GetComponent<Image>().color = color;
         buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
 
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
@@ -206,16 +240,14 @@ public class SceneSelectController : MonoBehaviour
 
         Text label = textObject.GetComponent<Text>();
         label.font = uiFont;
-        label.text = shot.Description;
+        label.text = text;
         label.fontSize = ButtonFontSize;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         label.horizontalOverflow = HorizontalWrapMode.Wrap;
         label.verticalOverflow = VerticalWrapMode.Overflow;
 
-        Shot capturedShot = shot;
-        string capturedSceneName = sceneName;
-        buttonObject.GetComponent<Button>().onClick.AddListener(() => OnShotSelected(capturedShot, capturedSceneName));
+        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
     }
 
     void OnShotSelected(Shot shot, string sceneName)
@@ -242,12 +274,18 @@ public class SceneSelectController : MonoBehaviour
     // the shot's most recent session, same as the original single-session behavior.
     void ProceedToSession(Shot shot, string sceneName, int? sessionId)
     {
+        ProceedToTake(shot.SceneNumber, shot.ShotNumber, sceneName, sessionId);
+    }
+
+    // shotNumber is a shot, or RehearsalSessionState.FullSceneShot for the whole scene.
+    void ProceedToTake(int sceneNumber, int shotNumber, string sceneName, int? sessionId)
+    {
         // Inspecting a past recording is a solo review, not a live rehearsal - don't
         // sync/teleport the actor for it.
         if (Bootstrap.Mode == Bootstrap.AppMode.Remote && RehearsalSessionSync.Instance != null)
-            RehearsalSessionSync.Instance.SelectTake(shot.SceneNumber, shot.ShotNumber);
+            RehearsalSessionSync.Instance.SelectTake(sceneNumber, shotNumber);
 
-        Bootstrap.SelectTake(shot.SceneNumber, shot.ShotNumber);
+        Bootstrap.SelectTake(sceneNumber, shotNumber);
         Bootstrap.CurrentSessionId = sessionId;
         SceneManager.LoadSceneAsync(sceneName);
     }

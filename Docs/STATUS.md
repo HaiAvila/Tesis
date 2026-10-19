@@ -62,7 +62,7 @@ Updated after every task (see CLAUDE.md). Last update: Oct 18, 2026 (colliders +
 | 2 | es_preferida = approved reference, sends `aprobar` | 🟡 Preferida exists (exclusive per shot); nothing is sent |
 | 2 | PoseTrack / ShotBoundaries / CueTrack tables | ⬜ Tables are Shots, Sesiones, Metricas, CamaraTrack (+ unused CameraFramings) |
 | 2 | Metricas every 0.1 s on the director | ✅ `RehearsalRecorder`, `SampleInterval = 0.1` |
-| 3 | SceneSelect "Escena completa" entry | 🟡 Synced and placed (scene + shot 0, rig on the first shot's start mark); no entry in SceneSelect yet |
+| 3 | SceneSelect "Escena completa" entry | 🟡 Ensayo Remoto, director only: an "Escena completa — shots X a Y" button heads each scene group (own color); it syncs scene + shot 0 and the take starts on the first shot's start mark. Not in Solo. Not in Inspección yet |
 | 3 | Approved-reference icon; Solo only allows those | 🟡 The session list has a star per session; no icon at shot level. In Solo, SceneSelect lists only shots for which `ApprovedReferences.HasApprovedReference(scene, shot)` is true, single shots only. The hook returns true for every shot until it can ask the server |
 | 4 | ShotStartPositioner uses the approved reference start | ⬜ Only `Shot{N}_Start` |
 | 5 | Grabar → Acción / Corte through the network | 🟡 The command channel exists, but B still only starts/stops a local recording and sends nothing |

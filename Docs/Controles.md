@@ -129,6 +129,11 @@ abajo).
 - **Capas:** el rayo solo detecta UI en las capas de su raycast mask (Default + UI en el rig). Los paneles con botones están en esas capas. Los rayos visuales están en `ControllerRayVisual`, excluida de la cámara del visor y de la que reproduce el track grabado.
 - **Íconos:** la estrella, el corazón y ▶/❚❚ son imágenes generadas en código (`UIIcons.cs`), no caracteres de la fuente: con la fuente, el ♥ relleno no aparecía y el ❚❚ se veía como un solo bloque.
 
+### Escena completa (director) — ensayar y grabar toda la escena en una sola toma
+**Scripts:** `SceneSelectController.cs`, `RehearsalSessionSync.cs` / `RehearsalSessionState.cs`, `Bootstrap.SelectTake`.
+**Dónde:** en Selección de Escenas, durante **Ensayo Remoto**, cada escena empieza con un botón **"Escena completa — shots X a Y, en una sola toma"** (de otro color), arriba de sus shots sueltos. Solo lo ve el director. **No aparece en Ensayar Solo**, que sigue siendo solo de shots sueltos.
+**Qué hace:** el director manda la escena y el shot `0` (= escena completa) por el modelo sincronizado. El actor carga esa escena y empieza en la marca de inicio del **primer shot** de la escena (el de número más bajo: 1, 6 u 11). Los shots sueltos funcionan igual que antes.
+
 ### Ensayar Solo (actor) — modo propio
 **Scripts:** `SoloRehearsalController.cs`, `SoloSession.cs` / `SoloSessionModel.cs`, `ApprovedReferences.cs`, `SoloPods.cs`.
 **Modo:** `Bootstrap.Mode == Solo`, que se activa con el botón "Ensayar Solo" y vuelve a `None` con el menú de pausa → Menú Principal. Es un modo propio: ya no comparte la bandera de Inspección. En solo el actor ve **solo el set**: no hay panel de reproducción, ni fantasma, ni cámara grabada, ni lista de sesiones con estrella o corazón. Y **el director no lo afecta**: los cambios de toma, el fin del ensayo, la desconexión del director y los comandos del director se ignoran.

@@ -49,6 +49,17 @@ public class RehearsalRecorder : MonoBehaviour
     // Whether the take being recorded (or waiting for Guardar/Descartar) is a whole scene.
     public bool IsFullSceneTake => fullSceneAtStart;
 
+    // Full-scene takes only: where each shot starts and ends (ShotBoundaries), kept in memory
+    // with the other buffers and written only by Guardar, in the same transaction. The first
+    // shot opens at 0 when recording starts; each Siguiente toma closes the current one and
+    // opens the next; stopping closes the last. Recording without any Siguiente toma leaves
+    // one boundary: the first shot, for the whole take.
+    readonly List<ShotBoundary> boundaryBuffer = new List<ShotBoundary>();
+    // The scene's shots in order, read at record start.
+    readonly List<int> sceneShotsAtStart = new List<int>();
+
+    public IReadOnlyList<ShotBoundary> PendingBoundaries => boundaryBuffer;
+
 #if DIRECTOR_BUILD
     const float DecisionPanelDistance = 1.5f;
     const float DecisionPanelWorldScale = 0.0025f;
@@ -69,6 +80,7 @@ public class RehearsalRecorder : MonoBehaviour
     static readonly Color DecisionTextColor = new Color(0.95f, 0.95f, 0.98f, 1f);
 
     InputAction recordingShortcutAction;
+    InputAction nextShotAction;
     Font uiFont;
     GameObject decisionPanelObject;
     bool markAsPreferida;
@@ -94,6 +106,15 @@ public class RehearsalRecorder : MonoBehaviour
         recordingShortcutAction.AddBinding("<XRSimulatedController>{RightHand}/secondaryButton");
         recordingShortcutAction.performed += OnRecordingShortcutPressed;
         recordingShortcutAction.Enable();
+
+        // Siguiente toma: the left controller's Y (secondary) - unbound everywhere else for
+        // the director (left X is replay play/pause, right A the rig's Jump, right B record).
+        // Simulator: T + N.
+        nextShotAction = new InputAction("SiguienteToma", InputActionType.Button);
+        nextShotAction.AddBinding("<XRController>{LeftHand}/{secondaryButton}");
+        nextShotAction.AddBinding("<XRSimulatedController>{LeftHand}/secondaryButton");
+        nextShotAction.performed += OnNextShotPressed;
+        nextShotAction.Enable();
 #endif
     }
 
@@ -106,6 +127,10 @@ public class RehearsalRecorder : MonoBehaviour
         recordingShortcutAction.performed -= OnRecordingShortcutPressed;
         recordingShortcutAction.Disable();
         recordingShortcutAction.Dispose();
+
+        nextShotAction.performed -= OnNextShotPressed;
+        nextShotAction.Disable();
+        nextShotAction.Dispose();
 #endif
     }
 
@@ -124,17 +149,81 @@ public class RehearsalRecorder : MonoBehaviour
         SendHaptic();
     }
 
-    void SendHaptic()
+    void OnNextShotPressed(InputAction.CallbackContext context)
     {
-        GameObject rightController = GameObject.Find("Right Controller");
-        if (rightController == null)
+        if (PanelFocusManager.IsModalOpen)
             return;
 
-        HapticImpulsePlayer hapticPlayer = rightController.GetComponent<HapticImpulsePlayer>();
+        NextShot();
+    }
+
+    void SendHaptic(string controllerName = "Right Controller")
+    {
+        GameObject controller = GameObject.Find(controllerName);
+        if (controller == null)
+            return;
+
+        HapticImpulsePlayer hapticPlayer = controller.GetComponent<HapticImpulsePlayer>();
         if (hapticPlayer != null)
             hapticPlayer.SendHapticImpulse(0.5f, 0.1f);
     }
 #endif
+
+    // Siguiente toma - only while recording a full scene, and optional: closes the current
+    // shot's boundary, opens the next shot's, and sends SessionCommand.SiguienteToma to
+    // everyone through the command channel. Returns whether it moved on.
+    public bool NextShot()
+    {
+        if (!IsRecording || !fullSceneAtStart)
+        {
+            Debug.Log($"[Escena] Siguiente toma ignored: {(IsRecording ? "not a full-scene take" : "not recording")}");
+            return false;
+        }
+
+        ShotBoundary current = boundaryBuffer.Count > 0 ? boundaryBuffer[boundaryBuffer.Count - 1] : null;
+        int index = current != null ? sceneShotsAtStart.IndexOf(current.ShotNumber) : -1;
+        if (current == null || index < 0 || index + 1 >= sceneShotsAtStart.Count)
+        {
+            Debug.Log($"[Escena] Siguiente toma ignored: shot {(current != null ? current.ShotNumber : -1)} is the last of scene {sceneNumberAtStart}");
+            FloatingMessage.Show("Última toma de la escena");
+            return false;
+        }
+
+        float time = Time.time - recordingStartTime;
+        current.TOut = time;
+        int nextShot = sceneShotsAtStart[index + 1];
+        OpenBoundary(nextShot, time);
+
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SendCommand(SessionCommand.SiguienteToma);
+
+        Debug.Log($"[Escena] Siguiente toma at {time:F1}s: shot {current.ShotNumber} closed, shot {nextShot} open ({boundaryBuffer.Count} boundaries)");
+        FloatingMessage.Show($"Siguiente toma: shot {nextShot}");
+#if DIRECTOR_BUILD
+        SendHaptic("Left Controller");
+#endif
+        return true;
+    }
+
+    void OpenBoundary(int shotNumber, float time)
+    {
+        boundaryBuffer.Add(new ShotBoundary
+        {
+            ShotNumber = shotNumber,
+            TIn = time,
+            TOut = null,
+            Source = ShotBoundary.SourceManual
+        });
+    }
+
+    // Automatic shot-boundary suggestions - NOT IMPLEMENTED, an empty hook on purpose. Later
+    // this is where boundaries get suggested from the actor's headset path (Metricas) or the
+    // pods, returned as ShotBoundary rows with Source = ShotBoundary.SourceAuto; they're saved
+    // next to the director's manual ones. Called when a full-scene take stops.
+    List<ShotBoundary> SuggestShotBoundariesAuto(IReadOnlyList<int> sceneShots, IReadOnlyList<Metric> headsetPath, float duration)
+    {
+        return new List<ShotBoundary>();
+    }
 
     public void StartRecording()
     {
@@ -147,8 +236,19 @@ public class RehearsalRecorder : MonoBehaviour
         sceneNumberAtStart = Bootstrap.CurrentSceneNumber;
         fullSceneAtStart = Bootstrap.IsFullScene;
         sessionGuidAtStart = Guid.NewGuid().ToString();
+
+        boundaryBuffer.Clear();
+        sceneShotsAtStart.Clear();
         if (fullSceneAtStart)
-            Debug.Log($"[Escena] recording the full scene {sceneNumberAtStart} (session {sessionGuidAtStart})");
+        {
+            ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+            if (database != null)
+                sceneShotsAtStart.AddRange(database.GetShotNumbersOfScene(sceneNumberAtStart));
+            if (sceneShotsAtStart.Count > 0)
+                OpenBoundary(sceneShotsAtStart[0], 0f);
+            Debug.Log($"[Escena] recording the full scene {sceneNumberAtStart} (session {sessionGuidAtStart}, shots {string.Join(",", sceneShotsAtStart)}), shot {(sceneShotsAtStart.Count > 0 ? sceneShotsAtStart[0] : -1)} open");
+        }
+
         recordingStartedAt = DateTime.Now;
         recordingStartTime = Time.time;
         IsRecording = true;
@@ -169,6 +269,18 @@ public class RehearsalRecorder : MonoBehaviour
         RecordingStopped?.Invoke();
 
         pendingDuration = Time.time - recordingStartTime;
+
+        if (fullSceneAtStart)
+        {
+            // Close the last open boundary at the end of the take.
+            if (boundaryBuffer.Count > 0 && boundaryBuffer[boundaryBuffer.Count - 1].TOut == null)
+                boundaryBuffer[boundaryBuffer.Count - 1].TOut = pendingDuration;
+
+            boundaryBuffer.AddRange(SuggestShotBoundariesAuto(sceneShotsAtStart, buffer, pendingDuration));
+
+            string list = string.Join(", ", boundaryBuffer.ConvertAll(b => $"shot {b.ShotNumber} {b.TIn:F1}-{b.TOut:F1}s ({b.Source})"));
+            Debug.Log($"[Escena] stopped after {pendingDuration:F1}s with {boundaryBuffer.Count} boundaries: {list}");
+        }
 
 #if DIRECTOR_BUILD
         // Fresh choice for a fresh recording - reset here (once, per real stop), not inside
@@ -401,10 +513,12 @@ public class RehearsalRecorder : MonoBehaviour
         else
             database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
                 fullSceneAtStart ? RecordingSession.TipoEscena : RecordingSession.TipoToma, sessionGuidAtStart,
-                recordingStartedAt, pendingDuration, buffer, cameraBuffer, markAsPreferida, markAsFavorita);
+                recordingStartedAt, pendingDuration, buffer, cameraBuffer,
+                fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita);
 
         buffer.Clear();
         cameraBuffer.Clear();
+        boundaryBuffer.Clear();
     }
 
     void OnDiscardClicked()
@@ -413,6 +527,16 @@ public class RehearsalRecorder : MonoBehaviour
         SendHaptic();
         buffer.Clear();
         cameraBuffer.Clear();
+
+        // The boundaries go with the session: dropped from memory and, in case anything wrote
+        // some already, from the DB too.
+        if (fullSceneAtStart)
+        {
+            boundaryBuffer.Clear();
+            ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+            if (database != null)
+                database.DeleteBoundaries(sessionGuidAtStart);
+        }
     }
 #endif
 

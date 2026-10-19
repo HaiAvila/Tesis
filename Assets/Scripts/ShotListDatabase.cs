@@ -23,8 +23,68 @@ public class ShotListDatabase : MonoBehaviour
             ImportCsv(connection);
             CreateSessionTables(connection);
             EnsureSesionesColumns(connection);
+            CreateShotBoundariesTable(connection);
             CreateCameraFramingsTable(connection);
             EnsureCameraFramingsColumns(connection);
+        }
+    }
+
+    // Where each shot starts and ends inside a full-scene recording, in the recording's own
+    // seconds (the same clock as Metricas/CamaraTrack.tiempo_relativo). Keyed by the session's
+    // GUID (Sesiones.session_id). source is "manual" (the director's Siguiente toma, or the
+    // first shot opened at record start) or "auto" (automatic suggestions - not implemented;
+    // see RehearsalRecorder.SuggestShotBoundariesAuto). A brand new table, so CREATE TABLE IF
+    // NOT EXISTS is already safe for existing databases.
+    void CreateShotBoundariesTable(SQLiteConnection connection)
+    {
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS ShotBoundaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                shot_number INTEGER,
+                t_in REAL,
+                t_out REAL,
+                source TEXT NOT NULL DEFAULT 'manual'
+            );");
+
+        connection.Execute("CREATE INDEX IF NOT EXISTS ShotBoundaries_session_id ON ShotBoundaries (session_id);");
+    }
+
+    public List<ShotBoundary> GetBoundariesForSession(string sessionGuid)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<ShotBoundary>(
+                "SELECT * FROM ShotBoundaries WHERE session_id = ? ORDER BY t_in ASC;", sessionGuid);
+        }
+    }
+
+    // Descartar. The boundaries are normally only in memory until Guardar, so this usually
+    // finds nothing - it's here so a discarded session never leaves boundaries behind,
+    // whatever wrote them.
+    public void DeleteBoundaries(string sessionGuid)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            int deleted = connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", sessionGuid);
+            Debug.Log($"[Escena] Descartar: {deleted} boundary row(s) deleted for session {sessionGuid}");
+        }
+    }
+
+    // A scene's shots in order - Siguiente toma walks through them.
+    public List<int> GetShotNumbersOfScene(int sceneNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<Shot>(
+                "SELECT * FROM Shots WHERE scene_number = ? ORDER BY shot_number ASC;", sceneNumber)
+                .Select(shot => shot.ShotNumber).ToList();
         }
     }
 
@@ -125,7 +185,9 @@ public class ShotListDatabase : MonoBehaviour
     // tipo is RecordingSession.TipoToma (a shot) or TipoEscena (the whole scene, shotNumber =
     // FullSceneShot). A scene recording is never preferida - approving one needs slicing it
     // into per-shot references first, which comes later - so esPreferida is ignored for it.
-    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, bool esPreferida = false, bool esFavorita = false)
+    // A scene recording's ShotBoundaries go in the same transaction, so they can never exist
+    // without their session either.
+    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -162,9 +224,18 @@ public class ShotListDatabase : MonoBehaviour
                     cameraSample.SesionId = session.Id;
 
                 connection.InsertAll(cameraSamples);
+
+                if (boundaries != null)
+                {
+                    foreach (ShotBoundary boundary in boundaries)
+                        boundary.SessionGuid = sessionGuid;
+
+                    connection.InsertAll(boundaries);
+                }
             });
 
-            Debug.Log($"{(tipo == RecordingSession.TipoEscena ? "[Escena] " : "")}ShotListDatabase: saved session {session.Id} ({tipo}, scene {sceneNumber}, shot {shotNumber}, guid {sessionGuid}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
+            int boundaryCount = boundaries != null ? boundaries.Count : 0;
+            Debug.Log($"{(tipo == RecordingSession.TipoEscena ? "[Escena] " : "")}ShotListDatabase: saved session {session.Id} ({tipo}, scene {sceneNumber}, shot {shotNumber}, guid {sessionGuid}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {boundaryCount} shot boundaries, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
         }
     }
@@ -614,6 +685,22 @@ public class RecordingSession
 class SqliteColumnInfo
 {
     public string name { get; set; }
+}
+
+[Table("ShotBoundaries")]
+public class ShotBoundary
+{
+    public const string SourceManual = "manual";
+    public const string SourceAuto = "auto";
+
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    // Sesiones.session_id (the GUID), not Sesiones.id.
+    [Indexed, Column("session_id")] public string SessionGuid { get; set; }
+    [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("t_in")] public float TIn { get; set; }
+    // Set when the shot closes (the next Siguiente toma, or stop).
+    [Column("t_out")] public float? TOut { get; set; }
+    [Column("source")] public string Source { get; set; }
 }
 
 [Table("Metricas")]

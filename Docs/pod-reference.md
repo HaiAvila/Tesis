@@ -86,12 +86,23 @@ programmatic stopping," it self-terminates after roughly 10 s. Verified on
 hardware. Sustained cues must either re-trigger or use real-time playback (RTP)
 mode, where you write an amplitude register directly.
 
-**Board selection: "Seeed nRF52 Boards" — the classic core.** This is Adafruit's
-Bluefruit stack, ported by Seeed. **Not** "Seeed nRF52 mbed-enabled Boards",
-which uses ArduinoBLE and holds only one central connection. Arduino IDE 2.x
-remembers the board **per window**, and both cores list a board called
-"Seeed XIAO nRF52840 Sense" — always select from the **Tools → Board** menu,
-where the core group name is visible.
+**Board selection: pods and receiver use different cores** (since 2026-11-02):
+
+| Firmware | Core (Tools → Board group) | Board | BLE stack |
+|---|---|---|---|
+| `pod_v2` (v3) | **Seeed nRF52 mbed-enabled Boards** | Seeed XIAO nRF52840 Sense | ArduinoBLE, peripheral |
+| `receiver_v2` | **Seeed nRF52 Boards** (classic) | Seeed XIAO nRF52840 | Adafruit Bluefruit, multi-central |
+
+- **Pods on mbed:** the classic core's `Wire` does not work with the BNO085.
+  Verified: a plain IMU sketch, no BLE and no DRV, prints nothing on the
+  classic core. Every pod sample used to be `0,0,0,1` because of this.
+- **Receiver on classic:** ArduinoBLE holds only one central connection, so it
+  can't take 9 pods; Bluefruit can.
+- The two stacks interoperate.
+
+Arduino IDE 2.x remembers the board **per window**, and both cores list a board
+called "Seeed XIAO nRF52840 Sense" — always select from the **Tools → Board**
+menu, where the core group name is visible, and check it before every upload.
 
 **J2 has no negative pad.** J1 is LiPo + / −. **Both J2 pads are positive** —
 pad 1 from the switch, pad 2 back to the XIAO's BAT+. Only a "+" is in
@@ -99,7 +110,7 @@ silkscreen. Wiring the battery to J2 pad 2 bypasses the switch entirely.
 
 **3.3 V only on the IMU.** No onboard regulator.
 
-**Python is required on Windows** for the classic core to compile — it builds
+**Python is required on Windows** for the classic core (the receiver) to compile — it builds
 the `.uf2` with a Python script. Install from python.org with "Add python.exe
 to PATH" checked, and disable the Microsoft Store `python.exe` app execution
 alias.
@@ -240,8 +251,10 @@ dead until a power cycle. The firmware now:
   `IMU quiet, re-enabling report`, `IMU silent 5 s, restarting it`,
   `IMU enableReport failed`.
 
-Why the bench pods had no readings is still unknown — the LED and the USB
-serial on the new firmware will tell which step fails.
+**Cause found the same day:** the classic core's `Wire` doesn't work with the
+BNO085. The pods moved to the mbed core with ArduinoBLE (firmware v3, see §3
+and §11), keeping the watchdog above; with it, both bench pods' orientation
+reached Unity.
 
 ---
 
@@ -305,18 +318,25 @@ and the tape grips only the surrounding TPU.
 9 pods ──BLE──> receiver XIAO ──USB serial──> bridge.py ──UDP──> Unity ──Normcore──> 2 Quests
 ```
 
-**Stack: Adafruit Bluefruit** (via the classic Seeed nRF52 core).
-`BLE_MAX_CONNECTION = 20`.
+**Receiver: Adafruit Bluefruit** (via the classic Seeed nRF52 core),
+`BLE_MAX_CONNECTION = 20`. **Pods: ArduinoBLE** (via the mbed core), as
+peripherals.
 
-ArduinoBLE (mbed core) was used through bench testing but **holds only one
-central connection**, so the receiver was ported to Bluefruit. The pod
-peripheral role works on either; both now use Bluefruit.
+ArduinoBLE **holds only one central connection**, so the receiver was ported to
+Bluefruit. The pods were on Bluefruit too until 2026-11-02, when they went back
+to ArduinoBLE: on the classic core the BNO085 never answered (§3, §8). Same
+service and characteristic UUIDs, same 16-byte quaternion notify and 2-byte
+cue write, so the receiver didn't change.
 
 ### Verified
 
 **9/9 pods connected simultaneously, zero disconnects, 6+ minutes.** Each pod
 streams ~11 Hz (one at 20 Hz), which is nine connections sharing one radio.
 That rate is sufficient — IMU rate is not the latency path.
+
+**Measured with Bluefruit pods.** Pods on ArduinoBLE (v3) have only been run 2 at
+a time so far: the 9/9, 6-minute test needs repeating once all 9 are flashed
+with v3.
 
 Commercial alternatives considered: SlimeVR uses Wi-Fi/UDP; Xsens and Rokoko
 use proprietary 2.4 GHz to a dongle. BLE connections are unusual for multi-node
@@ -396,8 +416,8 @@ virtual surface texture
 
 | File | Role |
 |---|---|
-| `Firmware/pod_v2/` | Pod firmware. Bluefruit. Quaternion notify + cue write. |
-| `Firmware/receiver_v2/` | Receiver. Multi-central, serial protocol. |
+| `Firmware/pod_v2/` | Pod firmware v3. mbed core, ArduinoBLE peripheral. Quaternion notify + cue write, IMU watchdog. |
+| `Firmware/receiver_v2/` | Receiver. Classic core, Bluefruit multi-central, serial protocol. |
 | `Bridge/bridge.py` | Serial ↔ UDP. Needs `pip install pyserial`. Logs CSV. |
 | `Assets/Scripts/Haptics/PodReceiver.cs` | Unity UDP listener + cue API. |
 

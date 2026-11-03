@@ -12,7 +12,10 @@ The wider point of the system is **remote rehearsal** — actor and director can
 
 - **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: waist, biceps x2, wrists x2, quads x2, calves x2.
 - **IMU**: BNO085, **UNIT Electronics module** (not the Adafruit breakout — the I²C address is **0x4B**, not 0x4A). 9DOF, SH-2 sensor fusion. ICM-20948 as fallback/backup.
-- **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. Built against the **classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), **not** the mbed-enabled core — mbed uses ArduinoBLE, which holds only one central connection and cannot run this system.
+- **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. **Pods and receiver use different Arduino cores, on purpose:**
+  - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
+  - **Receiver: the classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), because ArduinoBLE holds only one central connection and can't take 9 pods.
+  - The two stacks interoperate. Don't move either one to the other core.
 - **Haptic driver**: DRV2605L, **UNIT Electronics DevLab module (UE0065)**, drives the LRA from the microcontroller.
 - **Battery**: LiPo 3.7V 150mAh per band.
 - **Pod layout**: LRA and BNO085 at opposite ends of the pod (magnetic separation). Bench-tested: no measurable interference from the LRA at pod distance.
@@ -122,13 +125,14 @@ Docs/pod-reference.md   Full hardware reference.
 
 Each `.ino` must sit in a folder matching its own name — Arduino requires it.
 
-**Compiling the firmware** (checks it builds; it doesn't flash anything). The Arduino IDE's own CLI, the classic Seeed core and the libraries are installed on this PC:
+**Compiling the firmware** (checks it builds; it doesn't flash anything). The Arduino IDE's own CLI, both Seeed cores and the libraries are installed on this PC. Each firmware has its own core (see Hardware decisions):
 
 ```
-"$LOCALAPPDATA/Programs/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe" compile --fqbn Seeeduino:nrf52:xiaonRF52840 --build-path <scratch dir> Firmware/pod_v2
+"$LOCALAPPDATA/Programs/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe" compile --fqbn Seeeduino:mbed:xiaonRF52840Sense --build-path <scratch dir> Firmware/pod_v2
+"$LOCALAPPDATA/Programs/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe" compile --fqbn Seeeduino:nrf52:xiaonRF52840 --build-path <scratch dir> Firmware/receiver_v2
 ```
 
-Same for `Firmware/receiver_v2`. Never use the `Seeeduino:mbed:` boards (see Hardware decisions).
+`pod_v2.ino`'s `#define POD_ID` is per pod: the user edits it before flashing each one, so it shows up as a local change. Don't commit a different value by accident.
 
 ### Scenes and flow
 

@@ -1,15 +1,27 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Receives pod orientation from bridge.py over UDP and sends haptic cues back.
 /// Put this on one GameObject in the scene.
 /// </summary>
+/// <remarks>
+/// Lines are parsed on a background thread, so nothing in Parse may touch the Unity API
+/// (Time, transforms, ...): it threw on the first sample and killed the thread. Times come
+/// from a Stopwatch, which any thread can read.
+///
+/// A pod that's connected but has no IMU reading sends an all-zero quaternion
+/// ("P,id,0,0,0,0"): it counts as alive, but HasOrientation is false and its last rotation
+/// is kept.
+/// </remarks>
 public class PodReceiver : MonoBehaviour
 {
     public enum Cue { Stop = 0, Click = 1, Pulse = 2, Triple = 3, Long = 4, Double = 5 }
@@ -20,21 +32,27 @@ public class PodReceiver : MonoBehaviour
     public string bridgeHost = "127.0.0.1";
 
     [Header("Orientation")]
-    [Tooltip("If pods rotate the wrong way, try the other conversions.")]
+    [Tooltip("If pods rotate the wrong way, try the other conversions. Applied when read, so a change shows at once.")]
     public int conversion = 0;
 
     [Header("Status (read only)")]
     public int connectedPods;
     public int targetPods;
 
-    readonly Dictionary<int, Quaternion> rotations = new Dictionary<int, Quaternion>();
-    readonly Dictionary<int, float> lastSeen = new Dictionary<int, float>();
+    // Raw BNO085 quaternion (i, j, k, real) per pod, as received - converted on read.
+    readonly Dictionary<int, Vector4> rawRotations = new Dictionary<int, Vector4>();
+    readonly Dictionary<int, double> lastSeen = new Dictionary<int, double>();
+    readonly Dictionary<int, bool> hasOrientation = new Dictionary<int, bool>();
     readonly object gate = new object();
+
+    static readonly Stopwatch clock = Stopwatch.StartNew();
+    static double Now => clock.Elapsed.TotalSeconds;
 
     UdpClient listener;
     UdpClient sender;
     Thread rxThread;
     volatile bool running;
+    int badLines;
 
     void Start()
     {
@@ -59,15 +77,29 @@ public class PodReceiver : MonoBehaviour
         IPEndPoint any = new IPEndPoint(IPAddress.Any, 0);
         while (running)
         {
+            string line;
             try
             {
-                string line = Encoding.UTF8.GetString(listener.Receive(ref any));
-                Parse(line);
+                line = Encoding.UTF8.GetString(listener.Receive(ref any));
             }
-            catch (SocketException) { if (running) continue; }
+            catch (SocketException) { if (running) continue; break; }
             catch (ObjectDisposedException) { break; }
+
+            // One bad line must never stop the thread.
+            try
+            {
+                Parse(line.Trim());
+            }
+            catch (Exception e)
+            {
+                if (badLines++ < 5)
+                    Debug.LogWarning($"PodReceiver: couldn't parse \"{line}\": {e.Message}");
+            }
         }
     }
+
+    static bool TryParseFloat(string s, out float value) =>
+        float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
     void Parse(string line)
     {
@@ -76,22 +108,27 @@ public class PodReceiver : MonoBehaviour
 
         if (f[0] == "P" && f.Length == 6)
         {
-            if (!int.TryParse(f[1], out int id)) return;
-            if (!float.TryParse(f[2], out float qi)) return;
-            if (!float.TryParse(f[3], out float qj)) return;
-            if (!float.TryParse(f[4], out float qk)) return;
-            if (!float.TryParse(f[5], out float qr)) return;
+            if (!int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)) return;
+            if (!TryParseFloat(f[2], out float qi)) return;
+            if (!TryParseFloat(f[3], out float qj)) return;
+            if (!TryParseFloat(f[4], out float qk)) return;
+            if (!TryParseFloat(f[5], out float qr)) return;
+
+            // All zeros = the pod has no IMU reading (yet). A real one is unit length.
+            bool valid = qi * qi + qj * qj + qk * qk + qr * qr > 0.25f;
 
             lock (gate)
             {
-                rotations[id] = ToUnity(qi, qj, qk, qr);
-                lastSeen[id] = Time.realtimeSinceStartup;
+                lastSeen[id] = Now;
+                hasOrientation[id] = valid;
+                if (valid)
+                    rawRotations[id] = new Vector4(qi, qj, qk, qr);
             }
         }
         else if (f[0] == "S" && f.Length >= 3)
         {
-            int.TryParse(f[1], out connectedPods);
-            int.TryParse(f[2], out targetPods);
+            int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out connectedPods);
+            int.TryParse(f[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out targetPods);
         }
     }
 
@@ -114,28 +151,42 @@ public class PodReceiver : MonoBehaviour
 
     // ---- public API -------------------------------------------------------
 
-    /// <summary>Latest orientation for a pod. Identity if never seen.</summary>
+    /// <summary>Latest orientation for a pod, with the current conversion. Identity if never seen.</summary>
     public Quaternion GetRotation(int podId)
     {
+        Vector4 q;
         lock (gate)
-            return rotations.TryGetValue(podId, out var q) ? q : Quaternion.identity;
+        {
+            if (!rawRotations.TryGetValue(podId, out q))
+                return Quaternion.identity;
+        }
+        return ToUnity(q.x, q.y, q.z, q.w);
     }
 
     /// <summary>True if that pod sent data in the last `timeout` seconds.</summary>
     public bool IsAlive(int podId, float timeout = 1f)
     {
         lock (gate)
-            return lastSeen.TryGetValue(podId, out float t)
-                   && Time.realtimeSinceStartup - t < timeout;
+            return lastSeen.TryGetValue(podId, out double t) && Now - t < timeout;
+    }
+
+    /// <summary>True if that pod is alive and its latest sample was a real IMU reading
+    /// (not the all-zero "no IMU" quaternion).</summary>
+    public bool HasOrientation(int podId, float timeout = 1f)
+    {
+        lock (gate)
+            return lastSeen.TryGetValue(podId, out double t) && Now - t < timeout
+                   && hasOrientation.TryGetValue(podId, out bool ok) && ok;
     }
 
     public int[] ActivePods()
     {
         lock (gate)
         {
+            double now = Now;
             var list = new List<int>();
             foreach (var kv in lastSeen)
-                if (Time.realtimeSinceStartup - kv.Value < 1f) list.Add(kv.Key);
+                if (now - kv.Value < 1.0) list.Add(kv.Key);
             return list.ToArray();
         }
     }

@@ -6,15 +6,15 @@ using UnityEngine.InputSystem;
 // no Normcore). Its job is to settle which of PodReceiver.ToUnity()'s four conversions is
 // right: hold a pod, rotate it, and watch its cube.
 //
-// - One cube per pod with data, in a row by pod ID (1..9, the receiver's POD_01..POD_09), so
-//   all 9 fit on screen. Each cube follows PodReceiver.GetRotation(id). A pod with no recent
-//   data hides its cube and keeps its label, so the row never shifts. Any ID outside 1..9 gets
-//   a slot of its own at the right end.
+// - One cube per pod sending IMU readings, in a row by pod ID (1..9, the receiver's
+//   POD_01..POD_09), so all 9 fit on screen. Each cube follows PodReceiver.GetRotation(id).
+//   The label "Pod N" always stays, so the row never shifts: white = readings, orange =
+//   connected but no IMU reading (the pod sends an all-zero quaternion), grey = no data.
+//   Any ID outside 1..9 gets a slot of its own at the right end.
 // - The cubes carry three axis sticks - red +X, green +Y, blue +Z - since a plain cube looks
 //   the same from too many sides to tell a mirrored or swapped axis.
-// - C cycles PodReceiver.conversion 0-3 in Play mode, also from the on-screen button. The
-//   conversion is applied as samples arrive (~11 Hz per pod), so a change shows within a
-//   fraction of a second.
+// - C cycles PodReceiver.conversion 0-3 in Play mode, also from the on-screen button.
+//   PodReceiver converts on read, so every cube changes at once.
 // - Buttons fire PodReceiver.CueCameraStart() and CueCut() - both broadcast to every pod.
 //
 // On-screen text is IMGUI: this is a desktop tool, not part of the app's world-space XR UI.
@@ -78,11 +78,13 @@ public class PodDiagnostics : MonoBehaviour
                 CreateCube(id, nextExtraSlot++);
         }
 
+        // A cube only for a pod sending real IMU readings; a connected pod without one
+        // (all-zero quaternion) keeps just its label, in orange.
         foreach (var pod in cubes)
         {
-            bool alive = receiver.IsAlive(pod.Key);
-            pod.Value.gameObject.SetActive(alive);
-            if (alive)
+            bool showing = receiver.HasOrientation(pod.Key);
+            pod.Value.gameObject.SetActive(showing);
+            if (showing)
                 pod.Value.localRotation = receiver.GetRotation(pod.Key);
         }
     }
@@ -171,11 +173,17 @@ public class PodDiagnostics : MonoBehaviour
         int[] active = receiver.ActivePods();
         System.Array.Sort(active);
         string alive = active.Length > 0 ? string.Join(", ", active) : "ninguno";
+        var noImu = new List<int>();
+        foreach (int id in active)
+            if (!receiver.HasOrientation(id))
+                noImu.Add(id);
 
         // As wide as the window allows, so nothing runs off a small Game view.
         GUILayout.BeginArea(new Rect(20, 20, Mathf.Min(Screen.width - 40, 720), Screen.height / 2f));
         GUILayout.Label($"Conectados (según el receptor): <b>{receiver.connectedPods}</b> de <b>{receiver.targetPods}</b>", textStyle);
         GUILayout.Label($"Con datos ahora: <b>{alive}</b>", textStyle);
+        if (noImu.Count > 0)
+            GUILayout.Label($"<color=#ffaa33>Conectados pero sin lectura del IMU: <b>{string.Join(", ", noImu)}</b></color>", textStyle);
         GUILayout.Label($"Conversión: <b>{receiver.conversion}</b>", bigStyle);
         GUILayout.Label("Presiona <b>C</b> para cambiar (0-3).", textStyle);
         GUILayout.Space(6);
@@ -203,7 +211,8 @@ public class PodDiagnostics : MonoBehaviour
             return;
 
         // Sized to the gap between two slots on screen, so the labels never run into each
-        // other however small the window is. White = data coming in, grey = none.
+        // other however small the window is. White = IMU readings, orange = connected without
+        // an IMU reading, grey = no data.
         float slotPixels = Mathf.Abs(cam.WorldToScreenPoint(transform.TransformPoint(Vector3.right * spacing)).x
                                      - cam.WorldToScreenPoint(transform.position).x);
         labelStyle.fontSize = Mathf.Clamp(Mathf.RoundToInt(slotPixels * 0.28f), 10, 24);
@@ -215,9 +224,10 @@ public class PodDiagnostics : MonoBehaviour
             if (screen.z <= 0f)
                 continue;
 
-            bool isAlive = receiver.IsAlive(pod.Key);
-            string text = isAlive ? $"<b>Pod {pod.Key}</b>" : $"<color=#777777>Pod {pod.Key}</color>";
-            GUI.Label(new Rect(screen.x - slotPixels / 2f, Screen.height - screen.y, slotPixels, labelStyle.fontSize * 1.6f), text, labelStyle);
+            string text = receiver.HasOrientation(pod.Key) ? $"<b>Pod {pod.Key}</b>"
+                : receiver.IsAlive(pod.Key) ? $"<color=#ffaa33><b>Pod {pod.Key}</b>\nsin IMU</color>"
+                : $"<color=#777777>Pod {pod.Key}</color>";
+            GUI.Label(new Rect(screen.x - slotPixels / 2f, Screen.height - screen.y, slotPixels, labelStyle.fontSize * 3f), text, labelStyle);
         }
     }
 }

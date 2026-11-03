@@ -32,8 +32,19 @@ public class PodReceiver : MonoBehaviour
     public string bridgeHost = "127.0.0.1";
 
     [Header("Orientation")]
-    [Tooltip("If pods rotate the wrong way, try the other conversions. Applied when read, so a change shows at once.")]
+    [Tooltip("If pods rotate the wrong way, try the other conversions. Applied when read, so a change shows at once. 1 and 2 are the same rotation (q and -q).")]
     public int conversion = 0;
+
+    // Mirror a Unity axis after the conversion, to fix a direction without code. Mirroring
+    // X makes turns about Y and Z go the other way (turns about X don't change); likewise for
+    // Y and Z. That's the only consistent way to flip an axis: if exactly one kind of turn is
+    // backwards, the conversion itself is wrong - try another one first.
+    [Tooltip("Mirror Unity's X axis: turns about Y and Z reverse, turns about X stay.")]
+    public bool flipX;
+    [Tooltip("Mirror Unity's Y axis: turns about X and Z reverse, turns about Y stay.")]
+    public bool flipY;
+    [Tooltip("Mirror Unity's Z axis: turns about X and Y reverse, turns about Z stay.")]
+    public bool flipZ;
 
     [Header("Status (read only)")]
     public int connectedPods;
@@ -43,6 +54,7 @@ public class PodReceiver : MonoBehaviour
     readonly Dictionary<int, Vector4> rawRotations = new Dictionary<int, Vector4>();
     readonly Dictionary<int, double> lastSeen = new Dictionary<int, double>();
     readonly Dictionary<int, bool> hasOrientation = new Dictionary<int, bool>();
+    readonly Dictionary<int, long> packetCounts = new Dictionary<int, long>();
     readonly object gate = new object();
 
     static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -121,6 +133,7 @@ public class PodReceiver : MonoBehaviour
             {
                 lastSeen[id] = Now;
                 hasOrientation[id] = valid;
+                packetCounts[id] = (packetCounts.TryGetValue(id, out long n) ? n : 0) + 1;
                 if (valid)
                     rawRotations[id] = new Vector4(qi, qj, qk, qr);
             }
@@ -140,13 +153,28 @@ public class PodReceiver : MonoBehaviour
     /// </summary>
     Quaternion ToUnity(float i, float j, float k, float r)
     {
+        Quaternion q;
         switch (conversion)
         {
-            case 1:  return new Quaternion(-i, -k, -j, r);
-            case 2:  return new Quaternion(i, k, j, -r);
-            case 3:  return new Quaternion(j, k, i, -r);
-            default: return new Quaternion(-i, -k, -j, -r);
+            case 1:  q = new Quaternion(-i, -k, -j, r); break;
+            case 2:  q = new Quaternion(i, k, j, -r); break;
+            case 3:  q = new Quaternion(j, k, i, -r); break;
+            default: q = new Quaternion(-i, -k, -j, -r); break;
         }
+        return ApplyFlips(q);
+    }
+
+    // Mirroring Unity axes is a change of frame by S = diag(±1, ±1, ±1): the rotation's
+    // vector part becomes det(S) · S · v, the real part stays. So flipping X alone gives
+    // (x, -y, -z, w). Flipping all three changes nothing; that's expected (it's -I).
+    Quaternion ApplyFlips(Quaternion q)
+    {
+        if (!flipX && !flipY && !flipZ)
+            return q;
+
+        float sx = flipX ? -1f : 1f, sy = flipY ? -1f : 1f, sz = flipZ ? -1f : 1f;
+        float det = sx * sy * sz;
+        return new Quaternion(det * sx * q.x, det * sy * q.y, det * sz * q.z, q.w);
     }
 
     // ---- public API -------------------------------------------------------
@@ -161,6 +189,26 @@ public class PodReceiver : MonoBehaviour
                 return Quaternion.identity;
         }
         return ToUnity(q.x, q.y, q.z, q.w);
+    }
+
+    /// <summary>A raw BNO085 quaternion (i, j, k, real) in Unity, with the current conversion
+    /// and flips - the same as GetRotation applies.</summary>
+    public Quaternion ToUnityRotation(Vector4 raw) => ToUnity(raw.x, raw.y, raw.z, raw.w);
+
+    /// <summary>The pod's latest real sample as the BNO085 sent it (i, j, k, real), before
+    /// any conversion. False if it never sent a real one.</summary>
+    public bool TryGetRawRotation(int podId, out Vector4 raw)
+    {
+        lock (gate)
+            return rawRotations.TryGetValue(podId, out raw);
+    }
+
+    /// <summary>How many P lines that pod has sent since this receiver started, the
+    /// all-zero "no IMU" ones included. Sample twice to get packets per second.</summary>
+    public long GetPacketCount(int podId)
+    {
+        lock (gate)
+            return packetCounts.TryGetValue(podId, out long n) ? n : 0;
     }
 
     /// <summary>True if that pod sent data in the last `timeout` seconds.</summary>

@@ -77,3 +77,4 @@ crashlytics-build.properties
 # PolySpatial / visionOS build artifacts
 /PolySpatialGeneratedAssets/
 /[Bb]uilds_visionOS/
+Bridge/*.csv 

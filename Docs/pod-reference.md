@@ -219,8 +219,29 @@ the outcome on battery with no serial cable:
 
 | Blink | Meaning |
 |---|---|
-| Slow, 1 s | Healthy |
-| Fast, 150 ms | BLE up, IMU dead |
+| Slow, 1 s | Healthy: IMU readings arriving |
+| Fast, 150 ms | BLE up, no IMU reading |
+
+**Update 2026-11-02 — IMU watchdog.** A bench run sent `0,0,0,1` from both
+pods for every one of ~6,900 samples: the pod started its quaternion at
+`0,0,0,1` and kept sending it whenever the IMU had nothing, so "no reading"
+looked like a pod lying perfectly still, and an IMU that failed at boot stayed
+dead until a power cycle. The firmware now:
+
+- sends **`0,0,0,0`** while there's no reading (Unity: "sin IMU");
+- retries the IMU every 2 s if it failed at boot (one attempt each, so the cue
+  engine isn't blocked for long);
+- re-enables the rotation report after 1 s without a reading, and restarts the
+  IMU after 5 s (back to `0,0,0,0` meanwhile);
+- blinks slowly only while readings actually arrive (before, slow meant "the
+  IMU started", even if it never sent anything);
+- prints each step on the pod's own USB serial (115200): `IMU OK`,
+  `IMU FAILED (will retry every 2 s)`, `IMU retry failed`, `IMU OK (retry)`,
+  `IMU quiet, re-enabling report`, `IMU silent 5 s, restarting it`,
+  `IMU enableReport failed`.
+
+Why the bench pods had no readings is still unknown — the LED and the USB
+serial on the new firmware will tell which step fails.
 
 ---
 
@@ -305,6 +326,9 @@ body tracking, which is why this needed proving.
 
 **Serial, 115200** — `P,<id>,<qi>,<qj>,<qk>,<qr>` per sample;
 `S,<connected>,<target>,<ids...>` per second; `R,...` for events.
+`P,<id>,0,0,0,0` = connected, no IMU reading (see §8). The quaternion is the
+**game rotation vector** (no magnetometer): heading is relative to the pod's
+power-up orientation.
 
 **Commands** — `C,<id>,<cue>,<param>`, **id 0 = broadcast**.
 

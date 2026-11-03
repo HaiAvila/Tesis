@@ -16,7 +16,16 @@
 //   4 LONG      param = ms/10   one long buzz   (cut; 0 = 500 ms)
 //   5 DOUBLE    -               2 quick pulses  (confirmation)
 //
-// LED: slow blink = healthy, fast blink = BLE up but IMU dead.
+// Quaternion notify = 4 floats (i, j, k, real), every 50 ms. All zeros = no IMU
+// reading (the IMU didn't start, or its readings stopped): Unity shows "sin IMU"
+// instead of mistaking it for a real orientation. It used to start at 0,0,0,1
+// and stay there, which looked like a pod lying perfectly still.
+//
+// The IMU heals itself: if it fails at boot it's retried every 2 s; if it starts
+// but goes quiet, the report is re-enabled after 1 s and the IMU restarted after
+// 5 s. Each step prints on the pod's own USB serial (115200).
+//
+// LED: slow blink = IMU readings arriving, fast blink = BLE up but no IMU reading.
 
 #define POD_ID  2
 
@@ -51,9 +60,15 @@ Adafruit_BNO08x   bno(BNO_RST);
 Adafruit_DRV2605  drv;
 sh2_SensorValue_t v;
 
-float quat[4] = {0, 0, 0, 1};
+float quat[4] = {0, 0, 0, 0};   // all zeros = no IMU reading yet
 unsigned long lastNotify = 0, lastBlink = 0;
 bool ledState = false, imuOK = false, drvOK = false;
+
+// IMU watchdog (see the header).
+#define IMU_RETRY_MS     2000   // IMU not started: try again this often
+#define IMU_QUIET_MS     1000   // started, no reading this long: re-enable the report
+#define IMU_DEAD_MS      5000   // still nothing: restart the IMU
+unsigned long lastImuEvent = 0, lastImuRetry = 0, lastReportEnable = 0;
 char podName[8];
 
 // --- cue engine -----------------------------------------------------------
@@ -129,18 +144,68 @@ void cue_write_cb(uint16_t conn_hdl, BLECharacteristic* chr,
 }
 
 // --- setup ----------------------------------------------------------------
-void setReports() { bno.enableReport(SH2_GAME_ROTATION_VECTOR, 20000); }
+void setReports() {
+  lastReportEnable = millis();
+  if (!bno.enableReport(SH2_GAME_ROTATION_VECTOR, 20000))
+    Serial.println("IMU enableReport failed");
+}
 
-bool startIMU() {
+// attempts = 10 at boot (the cold-boot race, see pod-reference.md section 8);
+// 1 for the retries in loop(), which mustn't block the cue engine for long.
+bool startIMU(int attempts) {
   pinMode(BNO_RST, OUTPUT);
   digitalWrite(BNO_RST, LOW);  delay(10);
   digitalWrite(BNO_RST, HIGH); delay(300);
-  for (int t = 0; t < 10; t++) {
-    if (bno.begin_I2C(0x4B)) { setReports(); return true; }
-    delay(200);
+  for (int t = 0; t < attempts; t++) {
+    if (bno.begin_I2C(0x4B)) {
+      setReports();
+      lastImuEvent = millis();   // the quiet/dead clocks start now
+      return true;
+    }
+    if (t + 1 < attempts) delay(200);
   }
   return false;
 }
+
+// Called every loop: reads the IMU and keeps it alive.
+void serviceIMU() {
+  unsigned long now = millis();
+
+  if (!imuOK) {
+    if (now - lastImuRetry >= IMU_RETRY_MS) {
+      lastImuRetry = now;
+      imuOK = startIMU(1);
+      Serial.println(imuOK ? "IMU OK (retry)" : "IMU retry failed");
+    }
+    return;
+  }
+
+  if (bno.wasReset()) {
+    Serial.println("IMU reset, re-enabling report");
+    setReports();
+  }
+
+  if (bno.getSensorEvent(&v) && v.sensorId == SH2_GAME_ROTATION_VECTOR) {
+    quat[0] = v.un.gameRotationVector.i;
+    quat[1] = v.un.gameRotationVector.j;
+    quat[2] = v.un.gameRotationVector.k;
+    quat[3] = v.un.gameRotationVector.real;
+    lastImuEvent = now;
+    return;
+  }
+
+  if (now - lastImuEvent >= IMU_DEAD_MS) {
+    Serial.println("IMU silent 5 s, restarting it");
+    quat[0] = quat[1] = quat[2] = quat[3] = 0;   // "no IMU reading" until it's back
+    imuOK = false;
+    lastImuRetry = 0;                            // retry on the next loop
+  } else if (now - lastImuEvent >= IMU_QUIET_MS && now - lastReportEnable >= IMU_QUIET_MS) {
+    Serial.println("IMU quiet, re-enabling report");
+    setReports();
+  }
+}
+
+bool imuHealthy() { return imuOK && millis() - lastImuEvent < IMU_QUIET_MS; }
 
 void setup() {
   Serial.begin(115200);
@@ -151,8 +216,9 @@ void setup() {
   Wire.begin();
   sprintf(podName, "POD_%02d", POD_ID);
 
-  imuOK = startIMU();
-  Serial.println(imuOK ? "IMU OK" : "IMU FAILED");
+  imuOK = startIMU(10);
+  lastImuRetry = millis();
+  Serial.println(imuOK ? "IMU OK" : "IMU FAILED (will retry every 2 s)");
 
   drvOK = drv.begin();
   if (drvOK) {
@@ -194,7 +260,7 @@ void setup() {
 }
 
 void loop() {
-  unsigned long period = imuOK ? 1000 : 150;
+  unsigned long period = imuHealthy() ? 1000 : 150;
   if (millis() - lastBlink >= period) {
     lastBlink = millis();
     ledState = !ledState;
@@ -207,16 +273,7 @@ void loop() {
     startCue(c, p);
   }
   serviceCue();
-
-  if (imuOK) {
-    if (bno.wasReset()) setReports();
-    if (bno.getSensorEvent(&v) && v.sensorId == SH2_GAME_ROTATION_VECTOR) {
-      quat[0] = v.un.gameRotationVector.i;
-      quat[1] = v.un.gameRotationVector.j;
-      quat[2] = v.un.gameRotationVector.k;
-      quat[3] = v.un.gameRotationVector.real;
-    }
-  }
+  serviceIMU();
 
   if (millis() - lastNotify >= 50) {
     lastNotify = millis();

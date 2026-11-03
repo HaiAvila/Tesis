@@ -22,7 +22,10 @@ Full hardware detail — wiring, assembly, RF measurements, power, gotchas — i
 
 ### Pod transport and protocol
 
-**This layer is finished and verified on real devices. Do not change the firmware, the serial format, the UDP format, or the cue IDs.** Nine pods have held simultaneous BLE connections for six minutes with zero drops, and the round trip from Unity to a vibration on skin is proven. Changing any of it breaks nine physical devices that are tedious to re-flash. If a Unity change seems to need a protocol change, stop and say so.
+**The BLE layer is verified on real devices:** nine pods have held simultaneous BLE connections for six minutes with zero drops, and the round trip from Unity to a vibration on skin is proven. **Claude may change the firmware, the bridge and `PodReceiver` when something needs fixing** (the user's call, 2026-11-02), as long as:
+- all 9 pods still connect and send their data at the same time — never trade that away;
+- the serial/UDP line formats and the cue IDs only change together across pod, receiver, `bridge.py` and `PodReceiver`, and this file and [`Docs/pod-reference.md`](Docs/pod-reference.md) are updated with them;
+- every firmware change compiles before it's committed (see "Compiling the firmware" below), and the user is told it needs flashing — Claude can't flash or test pods. Each pod is flashed separately with its own `POD_ID`, which is tedious, so batch firmware changes.
 
 ```
 9 pods ──BLE──> receiver XIAO ──USB serial──> bridge.py ──UDP──> Unity ──Normcore──> 2 Quests
@@ -30,7 +33,7 @@ Full hardware detail — wiring, assembly, RF measurements, power, gotchas — i
 
 - **Receiver**: a 10th XIAO on USB acting as BLE central for all 9 pods. Lives on a USB extension cable near the rehearsal area, at head height.
 - **`Bridge/bridge.py`**: forwards serial lines to Unity verbatim and relays cue commands back. Deliberately dumb — no translation. Needs `pip install pyserial`. Logs raw samples to CSV.
-- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `ActivePods()`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`.
+- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `HasOrientation(podId)`, `ActivePods()`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`. Lines are parsed on a background thread: **nothing in `Parse` may touch the Unity API** (`Time.realtimeSinceStartup` there killed the thread on the first sample — it uses a `Stopwatch`), and numbers are parsed with `InvariantCulture`.
 
 Orientation arrives at roughly **11 Hz per pod** (nine connections sharing one radio). That is intentional and sufficient — IMU rate is not the latency path. What has to be fast is a cue command going *out* to a pod.
 
@@ -42,7 +45,7 @@ R,connected,<id>,<cue|nocue>,<n>
 R,lost,<id>,<reason>
 ```
 
-**Pods → Unity (UDP 5005):** the serial lines above, forwarded unchanged.
+**Pods → Unity (UDP 5005):** the serial lines above, forwarded unchanged. **`P,<id>,0,0,0,0` (all zeros) = the pod is connected but has no IMU reading** — the IMU didn't start or went quiet; `IsAlive` is true, `HasOrientation` false. The quaternion is the BNO085's **game rotation vector** (no magnetometer), so heading is relative to where the pod faced at power-up and drifts slowly.
 
 **Unity → pods (UDP 5006):** `C,<id>,<cue>,<param>` — **id 0 broadcasts to every pod**.
 
@@ -111,13 +114,21 @@ The repo is pushed to `origin` at `https://github.com/HaiAvila/Tesis` (private).
 C# must live inside `Assets/`. Everything else must live outside it, or Unity imports it as junk.
 
 ```
-Firmware/pod_v2/        Pod firmware (Arduino). Do not edit.
-Firmware/receiver_v2/   Receiver firmware (Arduino). Do not edit.
+Firmware/pod_v2/        Pod firmware (Arduino). Editable under the rules above.
+Firmware/receiver_v2/   Receiver firmware (Arduino). Editable under the rules above.
 Bridge/bridge.py        Serial <-> UDP bridge. Python + pyserial.
 Docs/pod-reference.md   Full hardware reference.
 ```
 
 Each `.ino` must sit in a folder matching its own name — Arduino requires it.
+
+**Compiling the firmware** (checks it builds; it doesn't flash anything). The Arduino IDE's own CLI, the classic Seeed core and the libraries are installed on this PC:
+
+```
+"$LOCALAPPDATA/Programs/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe" compile --fqbn Seeeduino:nrf52:xiaonRF52840 --build-path <scratch dir> Firmware/pod_v2
+```
+
+Same for `Firmware/receiver_v2`. Never use the `Seeeduino:mbed:` boards (see Hardware decisions).
 
 ### Scenes and flow
 
@@ -152,7 +163,7 @@ Use the `unity-package-management` skill for adding/removing UPM packages, rathe
 
 Three things are genuinely unresolved and must not be guessed at:
 
-1. **The quaternion coordinate conversion.** The BNO085 is right-handed; Unity is left-handed and Y-up. The correct axis swap depends on how a pod physically sits in its housing and **cannot be determined by reasoning** — it has to be checked by holding a pod and watching an object follow it. `PodReceiver.ToUnity()` has four candidate conversions selectable from the inspector. Build the diagnostics scene and settle this before building anything that depends on orientation.
+1. **The quaternion coordinate conversion.** The BNO085 is right-handed; Unity is left-handed and Y-up. The correct axis swap depends on how a pod physically sits in its housing and **cannot be determined by reasoning** — it has to be checked by holding a pod and watching an object follow it. `PodReceiver.ToUnity()` has four candidate conversions selectable from the inspector. The **`PodDiagnostics`** scene (`Assets/Scenes/PodDiagnostics.unity`, played on its own) shows one cube per pod and cycles the conversion with **C** at runtime — settle this there before building anything that depends on orientation.
 2. **Pod-to-limb mapping.** Which physical pod ID sits on which body location is not fixed. It must be a serializable mapping editable in the inspector, so it can be reassigned without recompiling.
 3. **End-to-end latency.** Unity cue → vibration on skin has never been measured. Target is under ~100 ms. Measure it before building all five cues on top of it.
 

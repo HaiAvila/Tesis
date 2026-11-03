@@ -6,14 +6,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a thesis project (Tesis) building a **haptic feedback system for actors in virtual production**: wearable bands with IMUs and LRA motors that cue/guide an actor during rehearsal and live takes. The Unity project is the software side of this hardware+software system — it hosts the XR views, the networked sync between actor and director, and the logic that will drive haptic cues from scene/timing events.
 
+The wider point of the system is **remote rehearsal** — actor and director can be in different places, so a set doesn't have to be rented to block a scene.
+
 ### Hardware decisions (already fixed — don't second-guess or suggest alternatives)
 
 - **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: waist, biceps x2, wrists x2, quads x2, calves x2.
-- **IMU**: Adafruit BNO085 primary (9DOF, SH-2 sensor fusion), ICM-20948 as fallback/backup.
-- **Microcontroller**: Seeed XIAO nRF52840 (Sense variant, mbed-enabled core), per pod, presumably BLE-connected to the Unity host — confirm before assuming a specific transport.
-- **Haptic driver**: DRV2605L (SparkFun/DevLab Qwiic module), drives the LRA from the microcontroller.
+- **IMU**: BNO085, **UNIT Electronics module** (not the Adafruit breakout — the I²C address is **0x4B**, not 0x4A). 9DOF, SH-2 sensor fusion. ICM-20948 as fallback/backup.
+- **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. Built against the **classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), **not** the mbed-enabled core — mbed uses ArduinoBLE, which holds only one central connection and cannot run this system.
+- **Haptic driver**: DRV2605L, **UNIT Electronics DevLab module (UE0065)**, drives the LRA from the microcontroller.
 - **Battery**: LiPo 3.7V 150mAh per band.
-- **Pod layout**: LRA and BNO085 are placed at opposite ends of the pod (magnetic separation, to avoid the IMU picking up motor vibration/interference).
+- **Pod layout**: LRA and BNO085 at opposite ends of the pod (magnetic separation). Bench-tested: no measurable interference from the LRA at pod distance.
+- **PCB**: custom 2-layer flex, 40 × 26.5 mm, JLCPCB. Pods are assembled, tested and mounted in TPU housings; attached to skin with Walker Tape, no straps.
+
+Full hardware detail — wiring, assembly, RF measurements, power, gotchas — is in [`Docs/pod-reference.md`](Docs/pod-reference.md).
+
+### Pod transport and protocol
+
+**This layer is finished and verified on real devices. Do not change the firmware, the serial format, the UDP format, or the cue IDs.** Nine pods have held simultaneous BLE connections for six minutes with zero drops, and the round trip from Unity to a vibration on skin is proven. Changing any of it breaks nine physical devices that are tedious to re-flash. If a Unity change seems to need a protocol change, stop and say so.
+
+```
+9 pods ──BLE──> receiver XIAO ──USB serial──> bridge.py ──UDP──> Unity ──Normcore──> 2 Quests
+```
+
+- **Receiver**: a 10th XIAO on USB acting as BLE central for all 9 pods. Lives on a USB extension cable near the rehearsal area, at head height.
+- **`Bridge/bridge.py`**: forwards serial lines to Unity verbatim and relays cue commands back. Deliberately dumb — no translation. Needs `pip install pyserial`. Logs raw samples to CSV.
+- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `ActivePods()`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`.
+
+Orientation arrives at roughly **11 Hz per pod** (nine connections sharing one radio). That is intentional and sufficient — IMU rate is not the latency path. What has to be fast is a cue command going *out* to a pod.
+
+**Receiver → PC (serial, 115200):**
+```
+P,<id>,<qi>,<qj>,<qk>,<qr>        one per sample
+S,<connected>,<target>,<id>,...   once a second
+R,connected,<id>,<cue|nocue>,<n>
+R,lost,<id>,<reason>
+```
+
+**Pods → Unity (UDP 5005):** the serial lines above, forwarded unchanged.
+
+**Unity → pods (UDP 5006):** `C,<id>,<cue>,<param>` — **id 0 broadcasts to every pod**.
+
+| Cue | Name | Param | Used for |
+|----|--------|---------|----------------------------------|
+| 0 | STOP | — | ends a PULSE |
+| 1 | CLICK | — | orientation, footstep metronome |
+| 2 | PULSE | ms ÷ 10 | proximity (lower = faster) |
+| 3 | TRIPLE | — | camera start |
+| 4 | LONG | ms ÷ 10 | cut (0 = 500 ms) |
+| 5 | DOUBLE | — | confirmations |
+
+Patterns run **on the pod**, not on the server: one BLE write plays a whole pattern, so timing survives radio contention and costs one packet instead of three.
 
 ### Haptic cue vocabulary
 
@@ -34,7 +76,7 @@ This is a thesis project (Tesis) building a **haptic feedback system for actors 
 10. Segment speed deviation — too fast/slow vs. expected pace for the segment — Band: pending
 11. Hold position — sustain posture for the duration of an event — Band: pending
 12. Exclusion zone / physical hazard — warns of the set's physical boundary — Band: pending
-13. Proximity to another actor — excluded from the demo (needs a 2nd actor with pods + a 2nd Vision Pro) — Band: pending
+13. Proximity to another actor — excluded from the demo (needs a 2nd actor with pods + a 2nd headset) — Band: pending
 
 Cues 6-13 are meant to be used across the 3 demo scenes (Scene1_mountain/giant, Scene2_spaceship/spore, Scene3_apartment/robot); band assignment is pending, per how each cue fits its scene.
 
@@ -44,6 +86,8 @@ Cues 6-13 are meant to be used across the 3 demo scenes (Scene1_mountain/giant, 
 16. Multi-actor synchrony — coordinates simultaneous group movement across several actors — needs a shared network time architecture that doesn't exist yet
 17. Real-time director's note — director marks a performance note → abstract haptic pattern — jump from objective to subjective feedback, hard to defend to a jury
 18. Virtual surface texture — pattern suggests what the actor is "touching" (rough/liquid/hot) — would need its own pattern-to-perception correspondence study
+
+**Note on sustained cues (8, 11, 12):** DRV effect 118 is named "long buzz for programmatic stopping" but **self-terminates after about 10 s** — verified on hardware. Anything that must vibrate continuously has to re-trigger, or use the DRV's real-time playback (RTP) mode. Don't build a sustained cue assuming 118 holds.
 
 ### XR / networking architecture
 
@@ -61,6 +105,19 @@ One codebase, role chosen at compile time: `DIRECTOR_BUILD` = director, no defin
 This is a Unity **6000.3.24f1** project (see `ProjectSettings/ProjectVersion.txt`). There is still no README, no CI workflow, and no build/test tooling configured — all iteration happens inside the Unity Editor. Controls (every button, per role and context) are documented in Spanish in [`Docs/Controles.md`](Docs/Controles.md) — keep it updated when controls change.
 
 The repo is pushed to `origin` at `https://github.com/HaiAvila/Tesis` (private).
+
+### Non-Unity folders
+
+C# must live inside `Assets/`. Everything else must live outside it, or Unity imports it as junk.
+
+```
+Firmware/pod_v2/        Pod firmware (Arduino). Do not edit.
+Firmware/receiver_v2/   Receiver firmware (Arduino). Do not edit.
+Bridge/bridge.py        Serial <-> UDP bridge. Python + pyserial.
+Docs/pod-reference.md   Full hardware reference.
+```
+
+Each `.ino` must sit in a folder matching its own name — Arduino requires it.
 
 ### Scenes and flow
 
@@ -91,6 +148,16 @@ All on-screen text and `Docs/Controles.md` are in **Mexican Spanish** (tú: "pre
 
 Use the `unity-package-management` skill for adding/removing UPM packages, rather than editing `Packages/manifest.json` by hand.
 
+### Haptics work in particular
+
+Three things are genuinely unresolved and must not be guessed at:
+
+1. **The quaternion coordinate conversion.** The BNO085 is right-handed; Unity is left-handed and Y-up. The correct axis swap depends on how a pod physically sits in its housing and **cannot be determined by reasoning** — it has to be checked by holding a pod and watching an object follow it. `PodReceiver.ToUnity()` has four candidate conversions selectable from the inspector. Build the diagnostics scene and settle this before building anything that depends on orientation.
+2. **Pod-to-limb mapping.** Which physical pod ID sits on which body location is not fixed. It must be a serializable mapping editable in the inspector, so it can be reassigned without recompiling.
+3. **End-to-end latency.** Unity cue → vibration on skin has never been measured. Target is under ~100 ms. Measure it before building all five cues on top of it.
+
+Testing haptics needs the hardware running: pods powered, receiver plugged in, `python bridge.py` going from the `Bridge/` folder. Close the Arduino Serial Monitor first — it holds the COM port. Without the bridge, `PodReceiver` simply receives nothing; it won't error.
+
 ## Packages
 
 `Packages/manifest.json` includes, beyond Unity's default/standard packages:
@@ -104,6 +171,10 @@ Outside UPM, `Assets/Plugins/SQLite4Unity3d/` (`SQLite.cs`) is the SQLite bindin
 
 Normcore-related assets: `Assets/Normal/`, `Assets/Settings/NormcoreAppSettings.asset`, `Assets/NormcoreProjectSettingsBuildProcessor/`, `Assets/EasySyncBuildProcessor/`.
 
+**Ask before adding any package or dependency.**
+
 ## Git / gitignore
 
 The `.gitignore` is the standard Unity template: `Library/`, `Temp/`, `Obj/`, `Build*/`, `Logs/`, `UserSettings/` are all ignored, so only source-controlled project files (Assets, Packages, ProjectSettings, .vscode/.claude config) are tracked. Never commit the `Library/` folder — it's large, regeneratable, and already excluded.
+
+Also ignored: `Bridge/*.csv` (bridge session logs — commit individual runs by hand if they're wanted as thesis evidence) and `.utmp/` (Unity's Android build cache; it was committed once by accident and untracked with `git rm -r --cached .utmp`).

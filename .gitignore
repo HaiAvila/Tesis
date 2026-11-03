@@ -78,3 +78,5 @@ crashlytics-build.properties
 /PolySpatialGeneratedAssets/
 /[Bb]uilds_visionOS/
 Bridge/*.csv 
+.utmp/ 
+.utmp/ 

@@ -10,7 +10,7 @@ The wider point of the system is **remote rehearsal** — actor and director can
 
 ### Hardware decisions (already fixed — don't second-guess or suggest alternatives)
 
-- **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: waist, biceps x2, wrists x2, quads x2, calves x2.
+- **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: sternum (pod 9, replaces the waist), biceps x2, wrists x2, quads x2, shins x2. **No hip pod**: the hips follow pod 9's yaw plus the headset's position. Which pod ID sits where, its humanoid bone and which way its USB end points: [`Docs/pod-map.md`](Docs/pod-map.md).
 - **IMU**: BNO085, **UNIT Electronics module** (not the Adafruit breakout — the I²C address is **0x4B**, not 0x4A). 9DOF, SH-2 sensor fusion. ICM-20948 as fallback/backup.
 - **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. **Pods and receiver use different Arduino cores, on purpose:**
   - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
@@ -36,7 +36,7 @@ Full hardware detail — wiring, assembly, RF measurements, power, gotchas — i
 
 - **Receiver**: a 10th XIAO on USB acting as BLE central for all 9 pods. Lives on a USB extension cable near the rehearsal area, at head height.
 - **`Bridge/bridge.py`**: forwards serial lines to Unity verbatim and relays cue commands back. Deliberately dumb — no translation. Needs `pip install pyserial`. Logs raw samples to CSV.
-- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `HasOrientation(podId)`, `ActivePods()`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`. Lines are parsed on a background thread: **nothing in `Parse` may touch the Unity API** (`Time.realtimeSinceStartup` there killed the thread on the first sample — it uses a `Stopwatch`), and numbers are parsed with `InvariantCulture`.
+- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `HasOrientation(podId)`, `ActivePods()`, `TryGetRawRotation(podId, out raw)` (the BNO085's i, j, k, real before conversion), `ToUnityRotation(raw)`, `GetPacketCount(podId)`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`. Lines are parsed on a background thread: **nothing in `Parse` may touch the Unity API** (`Time.realtimeSinceStartup` there killed the thread on the first sample — it uses a `Stopwatch`), and numbers are parsed with `InvariantCulture`.
 
 Orientation arrives at roughly **11 Hz per pod** (nine connections sharing one radio). That is intentional and sufficient — IMU rate is not the latency path. What has to be fast is a cue command going *out* to a pod.
 
@@ -68,9 +68,9 @@ Patterns run **on the pod**, not on the server: one BLE write plays a whole patt
 18 cues across 3 tiers. Bands marked "pendiente" have not been assigned to a specific pod yet.
 
 **MVP (5) — actively implemented**
-1. Proximity — pulse frequency ∝ 1/distance (PS5-style) — Band: waist
+1. Proximity — pulse frequency ∝ 1/distance (PS5-style) — Band: sternum (pod 9; was waist)
 2. Orientation — directional pulse, indicates which side to turn toward — Band: 1 wrist (L or R)
-3. Timing — silent metronome, alternating — Band: calves, alternating L-R
+3. Timing — silent metronome, alternating — Band: shins (pods 7 and 8), alternating L-R
 4. Camera start — 3 short spaced pulses — Band: all 9
 5. Cut — 1 long, low-intensity pulse — Band: all 9
 
@@ -78,7 +78,7 @@ Patterns run **on the pod**, not on the server: one BLE write plays a whole patt
 6. Initial mark confirmation — single "ready" pulse — Band: pending
 7. Checkpoint confirmation — "coin collected"-style, resets accumulated error — Band: pending
 8. Contact with virtual object — sustained pulse, distinct from proximity — Band: pending
-9. Anticipatory alert — ascending/stepped pulse — Band: waist only
+9. Anticipatory alert — ascending/stepped pulse — Band: sternum only (pod 9; was waist)
 10. Segment speed deviation — too fast/slow vs. expected pace for the segment — Band: pending
 11. Hold position — sustain posture for the duration of an event — Band: pending
 12. Exclusion zone / physical hazard — warns of the set's physical boundary — Band: pending
@@ -167,8 +167,8 @@ Use the `unity-package-management` skill for adding/removing UPM packages, rathe
 
 Three things are genuinely unresolved and must not be guessed at:
 
-1. **The quaternion coordinate conversion.** The BNO085 is right-handed; Unity is left-handed and Y-up. The correct axis swap depends on how a pod physically sits in its housing and **cannot be determined by reasoning** — it has to be checked by holding a pod and watching an object follow it. `PodReceiver.ToUnity()` has four candidate conversions selectable from the inspector. The **`PodDiagnostics`** scene (`Assets/Scenes/PodDiagnostics.unity`, played on its own) shows one cube per pod and cycles the conversion with **C** at runtime — settle this there before building anything that depends on orientation.
-2. **Pod-to-limb mapping.** Which physical pod ID sits on which body location is not fixed. It must be a serializable mapping editable in the inspector, so it can be reassigned without recompiling.
+1. **The quaternion coordinate conversion.** The BNO085 is right-handed; Unity is left-handed and Y-up. The correct axis swap depends on how a pod physically sits in its housing and **cannot be determined by reasoning** — it has to be checked by holding a pod and watching an object follow it. `PodReceiver.ToUnity()` has four candidate conversions selectable from the inspector (1 and 2 are the same rotation, `q` vs `−q`), plus **`flipX` / `flipY` / `flipZ`** to mirror a Unity axis after the conversion (mirroring X reverses turns about Y and Z; if only one kind of turn is backwards, the conversion is wrong, not the flips). They live on `PodReceiver`, so the whole app uses the same setting. Two scenes, each played on its own: **`PodDiagnostics`** (one cube per pod, **C** cycles the conversion) and **`PodAxisTest`** (one pod-shaped box for one chosen pod: **Z** zeroes it, **C** conversion, **1/2/3** flips, raw/converted quaternions, euler, packets per second) — settle this there before building anything that depends on orientation.
+2. **Pod-to-limb mapping.** The default assignment is in [`Docs/pod-map.md`](Docs/pod-map.md) (pods 1–9 → wrists, biceps, quads, shins, sternum, with each USB direction). In Unity it must still be a serializable mapping editable in the inspector, so a pod can be reassigned without recompiling.
 3. **End-to-end latency.** Unity cue → vibration on skin has never been measured. Target is under ~100 ms. Measure it before building all five cues on top of it.
 
 Testing haptics needs the hardware running: pods powered, receiver plugged in, `python bridge.py` going from the `Bridge/` folder. Close the Arduino Serial Monitor first — it holds the COM port. Without the bridge, `PodReceiver` simply receives nothing; it won't error.

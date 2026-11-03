@@ -378,16 +378,16 @@ body between pod and receiver costs ~10 dB; from above it obstructs far less.
 
 | # | Cue | Where | Pattern |
 |---|---|---|---|
-| 1 | Proximity | waist only | pulse frequency ∝ 1/distance |
+| 1 | Proximity | sternum only (pod 9; was waist) | pulse frequency ∝ 1/distance |
 | 2 | Orientation | one wrist | directional pulse, no vertical |
-| 3 | Timing | calves | alternating L-R metronome |
+| 3 | Timing | shins (pods 7, 8) | alternating L-R metronome |
 | 4 | Camera start | all 9 | 3 short spaced pulses |
 | 5 | Cut | all 9 | 1 long low pulse |
 
 ### Backup-8 (implemented, not demoed)
 
 Initial mark confirmation · checkpoint confirmation · virtual object contact ·
-anticipatory alert (waist) · segment speed deviation · hold position · danger
+anticipatory alert (sternum, pod 9; was waist) · segment speed deviation · hold position · danger
 zone · multi-actor proximity (excluded)
 
 ### Experimental-5 (future work, NOT built)

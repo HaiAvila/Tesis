@@ -1,5 +1,0 @@
-C:/Users/haili/Unity/Tesis/.utmp/RelWithDebInfo/52191513/arm64-v8a/CMakeFiles/edit_cache.dir
-C:/Users/haili/Unity/Tesis/.utmp/RelWithDebInfo/52191513/arm64-v8a/CMakeFiles/rebuild_cache.dir
-C:/Users/haili/Unity/Tesis/.utmp/RelWithDebInfo/52191513/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
-C:/Users/haili/Unity/Tesis/.utmp/RelWithDebInfo/52191513/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
-C:/Users/haili/Unity/Tesis/.utmp/RelWithDebInfo/52191513/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

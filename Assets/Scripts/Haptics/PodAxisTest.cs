@@ -59,6 +59,11 @@ public class PodAxisTest : MonoBehaviour
     InputAction zeroAction, conversionAction, flipXAction, flipYAction, flipZAction;
     GUIStyle textStyle, smallStyle, axisLabelStyle;
 
+    // Read at the IMGUI layout pass and reused by the draw pass - see OnGUI.
+    int guiState;
+    bool guiHasRaw, guiFocused = true;
+    Vector4 guiRaw;
+
     void Awake()
     {
         if (receiver == null)
@@ -272,7 +277,19 @@ public class PodAxisTest : MonoBehaviour
             return;
         }
 
-        int state = PodState();
+        // IMGUI runs OnGUI once to lay out and again to draw, and both passes must make the
+        // same controls - the pod's state (from the receive thread) or the focus can change in
+        // between, which aborted the frame ("Getting control N's position in a group with only
+        // N controls") and threw away clicks. So whatever decides which lines exist is read
+        // once, at the layout pass, and reused by the others.
+        if (Event.current.type == EventType.Layout)
+        {
+            guiState = PodState();
+            guiHasRaw = receiver.TryGetRawRotation(podId, out guiRaw);
+            guiFocused = Application.isFocused;
+        }
+
+        int state = guiState;
         string stateText = state == 2 ? "<color=#7fe07f>con lecturas del IMU</color>"
             : state == 1 ? "<color=#ffaa33>conectado, sin lectura del IMU</color>"
             : "<color=#999999>sin datos</color>";
@@ -281,8 +298,9 @@ public class PodAxisTest : MonoBehaviour
         GUILayout.Label($"<b><size=22>Pod {podId}</size></b>  {stateText}   ·   conectados según el receptor: {receiver.connectedPods} de {receiver.targetPods}", textStyle);
         GUILayout.Label($"Paquetes por segundo: <b>{packetsPerSecond:F1}</b>", textStyle);
 
-        if (receiver.TryGetRawRotation(podId, out Vector4 raw))
+        if (guiHasRaw)
         {
+            Vector4 raw = guiRaw;
             Quaternion converted = receiver.ToUnityRotation(raw);
             GUILayout.Label($"Crudo (BNO085 i, j, k, real): <b>{Format(raw)}</b>", textStyle);
             GUILayout.Label($"Convertido a Unity (x, y, z, w): <b>{Format(converted)}</b>   euler <b>{FormatEuler(converted)}</b>", textStyle);
@@ -302,7 +320,7 @@ public class PodAxisTest : MonoBehaviour
         GUILayout.Label("<b>Z</b> poner en cero   ·   <b>C</b> cambiar conversión   ·   <b>1 / 2 / 3</b> espejo X / Y / Z   (o los botones en el Inspector de PodAxisTest)", textStyle);
         // The Input System drops the keyboard while the Game view doesn't have focus
         // (editorInputBehaviorInPlayMode = PointersAndKeyboardsRespectGameViewFocus).
-        if (!Application.isFocused)
+        if (!guiFocused)
             GUILayout.Label("<color=#ffaa33><b>La vista Game no tiene el foco: las teclas no llegan.</b> Haz clic dentro de la vista Game, o usa los botones del Inspector.</color>", textStyle);
         GUILayout.Label("Pon el pod como la caja (plano, cara de arriba hacia arriba, USB a la derecha) y presiona Z. Luego gíralo: la caja debe girar igual.", smallStyle);
         if (state == 0)

@@ -45,6 +45,11 @@ public class PodDiagnostics : MonoBehaviour
     GUIStyle bigStyle;
     GUIStyle labelStyle;
 
+    // Read at the IMGUI layout pass and reused by the other passes - see OnGUI.
+    int[] guiActive = new int[0];
+    readonly List<int> guiNoImu = new List<int>();
+    bool guiShowSent;
+
     void Awake()
     {
         if (receiver == null)
@@ -170,13 +175,26 @@ public class PodDiagnostics : MonoBehaviour
             return;
         }
 
-        int[] active = receiver.ActivePods();
-        System.Array.Sort(active);
+        // IMGUI runs OnGUI once to lay out and again for each event (mouse, repaint), and every
+        // pass must make the same controls. The pods' state comes from the receive thread and
+        // a button click sets lastSent mid-frame, so the optional lines used to differ between
+        // passes: the frame aborted ("Getting control N's position in a group with only N
+        // controls") and the click was lost. So what decides which lines exist is read once,
+        // at the layout pass, and reused by the others.
+        if (Event.current.type == EventType.Layout)
+        {
+            guiActive = receiver.ActivePods();
+            System.Array.Sort(guiActive);
+            guiNoImu.Clear();
+            foreach (int id in guiActive)
+                if (!receiver.HasOrientation(id))
+                    guiNoImu.Add(id);
+            guiShowSent = lastSent.Length > 0;
+        }
+
+        int[] active = guiActive;
         string alive = active.Length > 0 ? string.Join(", ", active) : "ninguno";
-        var noImu = new List<int>();
-        foreach (int id in active)
-            if (!receiver.HasOrientation(id))
-                noImu.Add(id);
+        List<int> noImu = guiNoImu;
 
         // As wide as the window allows, so nothing runs off a small Game view.
         GUILayout.BeginArea(new Rect(20, 20, Mathf.Min(Screen.width - 40, 720), Screen.height / 2f));
@@ -197,7 +215,7 @@ public class PodDiagnostics : MonoBehaviour
             SendCut();
         GUILayout.EndHorizontal();
 
-        if (lastSent.Length > 0)
+        if (guiShowSent)
             GUILayout.Label($"Enviado: {lastSent}", textStyle);
         GUILayout.Space(8);
         GUILayout.Label("Ejes del cubo: <color=#e63333>rojo +X</color>, <color=#33cc40>verde +Y</color>, <color=#4073ff>azul +Z</color>", textStyle);

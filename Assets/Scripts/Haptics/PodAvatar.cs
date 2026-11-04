@@ -14,17 +14,28 @@ using UnityEngine;
 // One pose can't separate R from M, so the calibration takes two:
 //   1. T-pose (arms out, palms down, facing the screen): B = T, the avatar's own rest pose.
 //      Q1 = R · T · M.
-//   2. Arms down at the sides + a slight squat (a bit of forward lean): each bone turns by a
-//      known delta D about a horizontal axis, B = D · T. The pod sees Q2 · Q1⁻¹ = R · D · R⁻¹,
-//      a turn about R · axis(D), so R is the yaw that takes axis(D) to the observed axis. Only
-//      the axis direction matters, not how far the actor bends.
-//   Then M = (R · T)⁻¹ · Q1, and every frame B = R⁻¹ · Q · M⁻¹.
+//   2. Arms swung down sideways to the body (palms to the thighs) + a slight squat with a
+//      little forward lean: each bone turns about a known horizontal axis, B = N = D · T. The
+//      pod sees Q2 · Q1⁻¹ = R · D · R⁻¹, a turn about R · axis(D), so R is the yaw that takes
+//      axis(D) to the observed axis. Only the axis direction matters for R.
+//   Then M = (R · T)⁻¹ · Q1. For the arms the second pose is exact too (upper arm against the
+//   torso), so their M is the average of that and (R · N)⁻¹ · Q2 - an arm held a bit low or
+//   forward in the T-pose no longer leaves the arms short of the body. The legs and chest
+//   keep the T-pose's M, since nobody squats to an exact depth.
+//   Every frame: B = R⁻¹ · Q · M⁻¹.
 // The avatar faces the way the actor faced during the T-pose.
 //
-// The hips have no pod: they take the yaw of the chest pod (pod 9), and stay in place (the
-// headset will move them later). Bones without a pod (spine, shoulders, hands, feet, head)
-// keep their rest pose relative to their parent. Pods arrive at ~19 Hz, so each bone eases
-// toward its target instead of snapping.
+// Also:
+// - Body measurements (height, upper arm, forearm, thigh, shin, optional joint spans) resize
+//   the avatar at start: a uniform scale for the height, then each segment's joint moved
+//   along the bone. Only rotations come from the pods, so lengths are what decide whether
+//   two hands meet.
+// - The shoulders (no pod) follow their upper arm by a share of its swing relative to the
+//   chest, capped - real shoulders move forward and in when you clap or reach, and a fixed
+//   shoulder left the avatar's hands centimeters apart.
+// - The hips (no pod) take the chest pod's yaw and stay in place (the headset will move
+//   them later). Other bones without a pod keep their rest pose relative to their parent.
+// - Pods arrive at ~19 Hz, so each bone eases toward its target instead of snapping.
 public class PodAvatar : MonoBehaviour
 {
     [Serializable]
@@ -35,6 +46,26 @@ public class PodAvatar : MonoBehaviour
         public HumanBodyBones bone;
     }
 
+    // Joint-to-joint lengths in meters; 0 keeps the avatar's own.
+    [Serializable]
+    public class BodyMeasurements
+    {
+        [Tooltip("Standing height (m). Scales the whole avatar first.")]
+        public float height;
+        [Tooltip("Shoulder joint to elbow (m).")]
+        public float upperArm;
+        [Tooltip("Elbow to wrist (m).")]
+        public float forearm;
+        [Tooltip("Hip joint to knee (m).")]
+        public float thigh;
+        [Tooltip("Knee to ankle (m).")]
+        public float shin;
+        [Tooltip("Between the two shoulder JOINTS (m) - not the outer shoulder width. 0 = the avatar's, after the height scale.")]
+        public float shoulderJointSpan;
+        [Tooltip("Between the two hip JOINTS (m) - not the outer hip width. 0 = the avatar's, after the height scale.")]
+        public float hipJointSpan;
+    }
+
     public PodReceiver receiver;
     [Tooltip("The Humanoid avatar (Y Bot) - its Animator.")]
     public Animator avatar;
@@ -42,6 +73,18 @@ public class PodAvatar : MonoBehaviour
     [Tooltip("Which pod drives which bone. Defaults from Docs/pod-map.md; change it here, no recompiling.")]
     public List<PodBone> mapping = DefaultMapping();
 
+    [Tooltip("The actor's body. Applied when Play starts.")]
+    public BodyMeasurements body = new BodyMeasurements();
+
+    [Header("Shoulders")]
+    [Tooltip("Share of the upper arm's swing (relative to the chest) the shoulder takes.")]
+    [Range(0f, 0.6f)] public float shoulderShare = 0.25f;
+    [Tooltip("Most a shoulder turns away from its rest pose (degrees).")]
+    public float maxShoulderAngle = 30f;
+
+    [Header("Calibration")]
+    [Tooltip("Average each arm pod's mounting over both poses (the arms-down pose is exact: arm against the torso).")]
+    public bool useBothPosesForArms = true;
     [Tooltip("How fast each bone follows its pod (higher = snappier, lower = smoother).")]
     public float smoothing = 18f;
     [Tooltip("Seconds to get into each calibration pose.")]
@@ -52,6 +95,9 @@ public class PodAvatar : MonoBehaviour
     // A usable second pose turns a bone at least this much, about a mostly horizontal axis.
     const float MinSecondPoseAngle = 10f;
     const float MaxVerticalAxis = 0.6f;
+    // If the two arm mounting estimates disagree more than this, one pose went wrong: keep
+    // the T-pose's.
+    const float MaxArmMountDisagreement = 35f;
 
     public static List<PodBone> DefaultMapping() => new List<PodBone>
     {
@@ -66,10 +112,19 @@ public class PodAvatar : MonoBehaviour
         new PodBone { podId = 9, bone = HumanBodyBones.Chest },
     };
 
+    static bool IsArm(HumanBodyBones b) =>
+        b == HumanBodyBones.LeftUpperArm || b == HumanBodyBones.LeftLowerArm ||
+        b == HumanBodyBones.RightUpperArm || b == HumanBodyBones.RightLowerArm;
+
+    static bool IsLeft(HumanBodyBones b) =>
+        b == HumanBodyBones.LeftUpperArm || b == HumanBodyBones.LeftLowerArm ||
+        b == HumanBodyBones.LeftUpperLeg || b == HumanBodyBones.LeftLowerLeg;
+
     // How each bone turns from the T-pose into the second pose, in the avatar's frame (it
-    // faces +Z, its left is -X). Arms: from out to the side to straight down. Thighs: knees
-    // forward. Shins: knees forward over the feet, so they lean back. Chest: a slight lean
-    // forward. In Unity, Euler(0, 0, 90) * right = up and Euler(90, 0, 0) * up = forward.
+    // faces +Z, its left is -X), used for the heading: only the axis counts. Arms: out to the
+    // side -> down. Thighs: knees forward. Shins: knees forward over the feet, so they lean
+    // back. Chest: a slight lean forward. In Unity, Euler(0, 0, 90) * right = up and
+    // Euler(90, 0, 0) * up = forward.
     public static Quaternion SecondPoseDelta(HumanBodyBones bone)
     {
         switch (bone)
@@ -95,6 +150,11 @@ public class PodAvatar : MonoBehaviour
         }
     }
 
+    // The exact arms-down rotation for the arm mounting: past straight down by armsInward, so
+    // the upper arm rests against this avatar's torso.
+    Quaternion ArmsDownDelta(HumanBodyBones bone) =>
+        Quaternion.AngleAxis((IsLeft(bone) ? 1f : -1f) * (90f + armsInward), Vector3.forward);
+
     // --- per pod -------------------------------------------------------------------
 
     public class PodCalibration
@@ -104,6 +164,7 @@ public class PodAvatar : MonoBehaviour
         public Quaternion heading = Quaternion.identity;
         public Quaternion mount = Quaternion.identity;
         public float secondPoseAngle;
+        public float armMountDisagreement = -1f;  // degrees, arms only
     }
 
     class BoneState
@@ -116,14 +177,28 @@ public class PodAvatar : MonoBehaviour
         public int depth;
     }
 
+    // A shoulder (clavicle) following its upper arm.
+    class ShoulderState
+    {
+        public Transform transform;
+        public Quaternion rest;          // relative to the avatar
+        public BoneState upperArm;
+        public Vector3 restArmDirection; // shoulder joint -> elbow in the T-pose, avatar frame
+        public int depth;
+    }
+
     readonly List<BoneState> bones = new List<BoneState>();
+    readonly List<ShoulderState> shoulders = new List<ShoulderState>();
     readonly Dictionary<int, PodCalibration> calibrations = new Dictionary<int, PodCalibration>();
     Transform hips;
     Quaternion hipsRest;
     BoneState chest;
+    float armsInward;
 
     public IReadOnlyDictionary<int, PodCalibration> Calibrations => calibrations;
     public bool IsCalibrated => calibrations.Count > 0;
+    // How far past straight down the arms go in the arms-down pose (degrees), from the mesh.
+    public float ArmsInwardAngle => armsInward;
 
     // --- calibration state machine ----------------------------------------------------
 
@@ -149,6 +224,8 @@ public class PodAvatar : MonoBehaviour
         // Nothing animates it but us.
         avatar.runtimeAnimatorController = null;
 
+        ApplyBody();
+
         Quaternion root = Quaternion.Inverse(avatar.transform.rotation);
         hips = avatar.GetBoneTransform(HumanBodyBones.Hips);
         hipsRest = root * hips.rotation;
@@ -168,9 +245,33 @@ public class PodAvatar : MonoBehaviour
                 chest = state;
         }
 
+        AddShoulder(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm);
+        AddShoulder(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm);
+
+        armsInward = MeasureArmsInward();
+
         // Parents first, so a child's world rotation is set after its parent moved.
         bones.Sort((a, b) => a.depth.CompareTo(b.depth));
-        Debug.Log($"[PodAvatar] ready: {bones.Count} bones mapped ({string.Join(", ", bones.ConvertAll(b => $"pod {b.entry.podId} -> {b.entry.bone}"))}). Press Calibrar.");
+        Debug.Log($"[PodAvatar] ready: {bones.Count} bones mapped ({string.Join(", ", bones.ConvertAll(b => $"pod {b.entry.podId} -> {b.entry.bone}"))}), {shoulders.Count} shoulders following their arms, arms-down pose {90f + armsInward:F0}° from the T-pose. Press Calibrar.");
+    }
+
+    void AddShoulder(HumanBodyBones shoulder, HumanBodyBones upperArm, HumanBodyBones lowerArm)
+    {
+        Transform s = avatar.GetBoneTransform(shoulder);
+        BoneState arm = bones.Find(b => b.entry.bone == upperArm);
+        Transform elbow = avatar.GetBoneTransform(lowerArm);
+        if (s == null || arm == null || elbow == null)
+            return;
+
+        Quaternion root = Quaternion.Inverse(avatar.transform.rotation);
+        shoulders.Add(new ShoulderState
+        {
+            transform = s,
+            rest = root * s.rotation,
+            upperArm = arm,
+            restArmDirection = (root * (elbow.position - arm.transform.position)).normalized,
+            depth = Depth(s),
+        });
     }
 
     static int Depth(Transform t)
@@ -179,6 +280,134 @@ public class PodAvatar : MonoBehaviour
         for (Transform p = t.parent; p != null; p = p.parent) d++;
         return d;
     }
+
+    // --- body measurements ------------------------------------------------------------------
+
+    void ApplyBody()
+    {
+        Transform root = avatar.transform;
+        Bounds before = MeshBounds();
+        float avatarHeight = before.size.y;
+
+        Transform lFoot = avatar.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rFoot = avatar.GetBoneTransform(HumanBodyBones.RightFoot);
+        float soleBelowAnkle = Mathf.Min(lFoot.position.y, rFoot.position.y) - before.min.y;
+
+        if (body.height > 0f && avatarHeight > 0.1f)
+        {
+            float k = body.height / avatarHeight;
+            root.localScale *= k;
+            soleBelowAnkle *= k;
+            Debug.Log($"[PodAvatar] height {avatarHeight:F2} m -> {body.height:F2} m (scale {k:F3})");
+        }
+
+        SetSpan(HumanBodyBones.LeftUpperArm, HumanBodyBones.RightUpperArm, body.shoulderJointSpan, "shoulder joints");
+        SetSpan(HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg, body.hipJointSpan, "hip joints");
+
+        SetLength(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, body.upperArm, "left upper arm");
+        SetLength(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, body.upperArm, "right upper arm");
+        SetLength(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, body.forearm, "left forearm");
+        SetLength(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, body.forearm, "right forearm");
+        SetLength(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, body.thigh, "left thigh");
+        SetLength(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, body.thigh, "right thigh");
+        SetLength(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, body.shin, "left shin");
+        SetLength(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, body.shin, "right shin");
+
+        // Back on the floor: the soles where they were.
+        float drop = Mathf.Min(lFoot.position.y, rFoot.position.y) - soleBelowAnkle - before.min.y;
+        root.position -= Vector3.up * drop;
+    }
+
+    // Moves the child joint along the bone so the joint-to-joint length is `length`.
+    void SetLength(HumanBodyBones from, HumanBodyBones to, float length, string label)
+    {
+        if (length <= 0f)
+            return;
+        Transform a = avatar.GetBoneTransform(from), b = avatar.GetBoneTransform(to);
+        if (a == null || b == null)
+            return;
+
+        Vector3 d = b.position - a.position;
+        Debug.Log($"[PodAvatar] {label} {d.magnitude * 100f:F1} cm -> {length * 100f:F1} cm");
+        b.position = a.position + d.normalized * length;
+    }
+
+    // Moves both joints sideways, symmetrically, so they're `span` apart.
+    void SetSpan(HumanBodyBones left, HumanBodyBones right, float span, string label)
+    {
+        if (span <= 0f)
+            return;
+        Transform l = avatar.GetBoneTransform(left), r = avatar.GetBoneTransform(right);
+        if (l == null || r == null)
+            return;
+
+        Vector3 across = r.position - l.position;
+        Vector3 shift = across.normalized * ((span - across.magnitude) / 2f);
+        Debug.Log($"[PodAvatar] {label} {across.magnitude * 100f:F1} cm apart -> {span * 100f:F1} cm");
+        l.position -= shift;
+        r.position += shift;
+    }
+
+    Bounds MeshBounds()
+    {
+        var all = new Bounds();
+        bool any = false;
+        foreach (Renderer r in avatar.GetComponentsInChildren<Renderer>())
+        {
+            if (!any) { all = r.bounds; any = true; }
+            else all.Encapsulate(r.bounds);
+        }
+        return all;
+    }
+
+    // How far past straight down the upper arm must go to rest against this avatar's torso:
+    // the torso's half width at the height the elbow hangs, plus the upper arm's radius, from
+    // the mesh in its T-pose (the arms are up at shoulder height then, so that height slice is
+    // torso only). Avatar frame, so the scale and position don't matter.
+    float MeasureArmsInward()
+    {
+        Transform lArm = avatar.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        Transform lElbow = avatar.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+        if (lArm == null || lElbow == null)
+            return 0f;
+
+        Matrix4x4 toAvatar = avatar.transform.worldToLocalMatrix;
+        float avatarScale = avatar.transform.lossyScale.y;
+        Vector3 shoulder = toAvatar.MultiplyPoint3x4(lArm.position) * avatarScale;
+        float upperArm = Vector3.Distance(lArm.position, lElbow.position);
+        float shoulderX = Mathf.Abs(shoulder.x);
+        float elbowY = shoulder.y - upperArm;
+
+        float torsoHalf = 0f, armTop = float.MinValue, armBottom = float.MaxValue;
+        var mesh = new Mesh();
+        foreach (SkinnedMeshRenderer smr in avatar.GetComponentsInChildren<SkinnedMeshRenderer>())
+        {
+            smr.BakeMesh(mesh, true);
+            Matrix4x4 m = toAvatar * smr.transform.localToWorldMatrix;
+            foreach (Vector3 v in mesh.vertices)
+            {
+                Vector3 p = m.MultiplyPoint3x4(v) * avatarScale;
+                if (Mathf.Abs(p.y - elbowY) < 0.03f && Mathf.Abs(p.x) < shoulderX - 0.03f)
+                    torsoHalf = Mathf.Max(torsoHalf, Mathf.Abs(p.x));
+                // A slice through the upper arm, a third of the way to the elbow.
+                float along = Mathf.Abs(p.x) - shoulderX;
+                if (along > upperArm * 0.3f && along < upperArm * 0.4f && Mathf.Abs(p.z - shoulder.z) < 0.1f)
+                {
+                    armTop = Mathf.Max(armTop, p.y);
+                    armBottom = Mathf.Min(armBottom, p.y);
+                }
+            }
+        }
+        Destroy(mesh);
+
+        float armRadius = armTop > armBottom ? (armTop - armBottom) / 2f : 0.04f;
+        float elbowX = torsoHalf + armRadius;
+        float inward = Mathf.Asin(Mathf.Clamp((shoulderX - elbowX) / upperArm, -0.4f, 0.4f)) * Mathf.Rad2Deg;
+        Debug.Log($"[PodAvatar] arms-down pose: shoulder joint {shoulderX * 100f:F1} cm from the middle, torso half width at the elbow {torsoHalf * 100f:F1} cm, arm radius {armRadius * 100f:F1} cm -> {inward:F1}° past straight down");
+        return inward;
+    }
+
+    // --- calibration -------------------------------------------------------------------------
 
     public void StartCalibration()
     {
@@ -208,7 +437,7 @@ public class PodAvatar : MonoBehaviour
                 Sample(tPose);
                 if (Time.time >= phaseEnd)
                 {
-                    Debug.Log($"[PodAvatar] T-pose captured for pods {string.Join(", ", tPose.Keys)}. Now: arms down, slight squat.");
+                    Debug.Log($"[PodAvatar] T-pose captured for pods {string.Join(", ", tPose.Keys)}. Now: arms down to the sides, slight squat.");
                     SetPhase(Phase.CountdownSecond, countdownSeconds);
                 }
                 break;
@@ -282,10 +511,33 @@ public class PodAvatar : MonoBehaviour
             Vector3 flatObserved = new Vector3(axis.x, 0f, axis.z);
             cal.heading = Quaternion.AngleAxis(Vector3.SignedAngle(flatExpected, flatObserved, Vector3.up), Vector3.up);
             cal.mount = Quaternion.Inverse(cal.heading * b.rest) * q1;
+
+            // Arms: the arms-down pose is exact (the arm against the torso), so average the
+            // mounting over both poses - unless they disagree so much that one pose was off.
+            if (useBothPosesForArms && IsArm(b.entry.bone))
+            {
+                Quaternion armsDown = ArmsDownDelta(b.entry.bone) * b.rest;
+                Quaternion mount2 = Quaternion.Inverse(cal.heading * armsDown) * q2;
+                cal.armMountDisagreement = Quaternion.Angle(cal.mount, mount2);
+                if (cal.armMountDisagreement <= MaxArmMountDisagreement)
+                {
+                    var avg = new QuaternionAverage();
+                    avg.Add(cal.mount);
+                    avg.Add(mount2);
+                    cal.mount = avg.Result;
+                }
+                else
+                {
+                    Debug.LogWarning($"[PodAvatar] pod {id} ({b.entry.bone}): the two poses disagree by {cal.armMountDisagreement:F0}° on how it's taped on - keeping the T-pose's. Were the arms twisted, or not against the body?");
+                }
+            }
+
             cal.ok = true;
             b.hasSmoothed = false;
             good++;
-            Debug.Log($"[PodAvatar] pod {id} ({b.entry.bone}): calibrated. Heading {Signed(cal.heading.eulerAngles.y):F0}°, second-pose turn {angle:F0}° (expected ~{expectedAngle:F0}°), mount euler {cal.mount.eulerAngles.ToString("F0")}.");
+            Debug.Log($"[PodAvatar] pod {id} ({b.entry.bone}): calibrated. Heading {Signed(cal.heading.eulerAngles.y):F0}°, second-pose turn {angle:F0}° (expected ~{expectedAngle:F0}°)" +
+                      (cal.armMountDisagreement >= 0f ? $", T-pose vs arms-down mounting {cal.armMountDisagreement:F0}° apart" : "") +
+                      $", mount euler {cal.mount.eulerAngles.ToString("F0")}.");
         }
 
         Debug.Log($"[PodAvatar] calibration done: {good} of {bones.Count} pods.");
@@ -316,6 +568,8 @@ public class PodAvatar : MonoBehaviour
         return true;
     }
 
+    readonly List<(int depth, Transform transform, Quaternion rotation)> writes = new List<(int, Transform, Quaternion)>();
+
     void LateUpdate()
     {
         if (!IsCalibrated)
@@ -333,19 +587,47 @@ public class PodAvatar : MonoBehaviour
             b.hasSmoothed = true;
         }
 
-        // Hips: the chest's yaw since the T-pose, so turning the body turns the whole avatar.
+        // The chest's turn since the T-pose (identity if pod 9 isn't calibrated).
+        Quaternion chestDelta = chest != null && chest.hasSmoothed ? chest.smoothed * Quaternion.Inverse(chest.rest) : Quaternion.identity;
+
+        // Hips: the chest's yaw, so turning the body turns the whole avatar.
         if (chest != null && chest.hasSmoothed)
         {
-            Vector3 f = chest.smoothed * Quaternion.Inverse(chest.rest) * Vector3.forward;
+            Vector3 f = chestDelta * Vector3.forward;
             float yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
             hips.rotation = root * Quaternion.AngleAxis(yaw, Vector3.up) * hipsRest;
         }
 
+        // Everything else in one list, parents first: chest, then shoulders, then the arms -
+        // a world rotation set on a parent after its child would move the child again.
+        writes.Clear();
         foreach (BoneState b in bones)
         {
             if (b.hasSmoothed)
-                b.transform.rotation = root * b.smoothed;
+                writes.Add((b.depth, b.transform, root * b.smoothed));
         }
+
+        foreach (ShoulderState s in shoulders)
+        {
+            if (!s.upperArm.hasSmoothed)
+                continue;
+
+            // The arm's direction now, relative to the chest, against its T-pose direction:
+            // the shoulder takes a share of that swing (no twist), capped.
+            Vector3 armNow = s.upperArm.smoothed * Quaternion.Inverse(s.upperArm.rest) * s.restArmDirection;
+            Vector3 relative = Quaternion.Inverse(chestDelta) * armNow;
+            Quaternion swing = Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(s.restArmDirection, relative), shoulderShare);
+            swing.ToAngleAxis(out float a, out Vector3 ax);
+            if (a > 180f) { a = 360f - a; ax = -ax; }
+            if (a > maxShoulderAngle)
+                swing = Quaternion.AngleAxis(maxShoulderAngle, ax);
+
+            writes.Add((s.depth, s.transform, root * chestDelta * swing * s.rest));
+        }
+
+        writes.Sort((x, y) => x.depth.CompareTo(y.depth));
+        foreach (var w in writes)
+            w.transform.rotation = w.rotation;
     }
 
     // Average of a few rotations: align signs to the first (q and -q are the same rotation),

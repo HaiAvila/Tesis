@@ -32,7 +32,7 @@ public class PodAvatarTest : MonoBehaviour
         calibrateAction = new InputAction("Calibrate", InputActionType.Button, "<Keyboard>/k");
         calibrateAction.performed += _ => StartCalibration();
         calibrateAction.Enable();
-        Debug.Log("[PodAvatarTest] started. K or Calibrar: T-pose, then arms down + slight squat.");
+        Debug.Log("[PodAvatarTest] started. K or Calibrar: T-pose, arms down + slight squat, then palms together in front (if PodAvatar uses the third pose).");
     }
 
     void OnDestroy()
@@ -124,10 +124,20 @@ public class PodAvatarTest : MonoBehaviour
                 instruction = "<b>Quieto</b> en la sentadilla…";
                 countdown = "●";
                 break;
+            case PodAvatar.Phase.CountdownThird:
+                instruction = "Ahora: párate derecho, <b>brazos estirados al frente</b> a la altura de los hombros, codos rectos, y <b>junta las palmas</b> (como aplaudiendo con los brazos rectos).";
+                countdown = $"{Mathf.CeilToInt(podAvatar.PhaseTimeLeft)}";
+                break;
+            case PodAvatar.Phase.CaptureThird:
+                instruction = "<b>Quieto</b> con las palmas juntas…";
+                countdown = "●";
+                break;
             default:
                 instruction = podAvatar.IsCalibrated
                     ? "Listo: muévete y el avatar te sigue. Si algo se ve mal, vuelve a calibrar."
-                    : "Ponte frente a la pantalla y presiona <b>Calibrar</b>: primero la T, luego brazos abajo con sentadilla ligera.";
+                    : podAvatar.UsesThirdPose
+                        ? "Ponte frente a la pantalla y presiona <b>Calibrar</b>: la T, luego brazos abajo con sentadilla ligera, luego brazos al frente con las palmas juntas."
+                        : "Ponte frente a la pantalla y presiona <b>Calibrar</b>: primero la T, luego brazos abajo con sentadilla ligera.";
                 break;
         }
 

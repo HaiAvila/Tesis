@@ -22,6 +22,11 @@ using UnityEngine;
 //   torso), so their M is the average of that and (R · N)⁻¹ · Q2 - an arm held a bit low or
 //   forward in the T-pose no longer leaves the arms short of the body. The legs and chest
 //   keep the T-pose's M, since nobody squats to an exact depth.
+//   3. (Arms only, useThirdPoseForArms) Arms straight out in front, palms pressed together:
+//      each arm points from its shoulder joint to where the wrists meet. Each arm pod's heading
+//      and mounting are then fitted to all three poses at once (pattern search; the third pose
+//      as a direction only, so the forearm's twist doesn't count, weighted thirdPoseWeight) -
+//      a few degrees off per arm leaves the hands centimeters apart in a clap.
 //   Every frame: B = R⁻¹ · Q · M⁻¹.
 // The avatar faces the way the actor faced during the T-pose.
 //
@@ -85,6 +90,12 @@ public class PodAvatar : MonoBehaviour
     [Header("Calibration")]
     [Tooltip("Average each arm pod's mounting over both poses (the arms-down pose is exact: arm against the torso).")]
     public bool useBothPosesForArms = true;
+    [Tooltip("Third pose for the arms: arms straight out in front at shoulder height, palms pressed together. Each arm pod's heading and mounting are then fitted to all three poses, so the hands meet when the actor's do.")]
+    public bool useThirdPoseForArms = true;
+    [Tooltip("How much more the third pose counts than the other two in that fit.")]
+    public float thirdPoseWeight = 2f;
+    [Tooltip("Half the distance between the two wrist joints with the palms pressed together (m).")]
+    public float palmsTogetherHalfGap = 0.025f;
     [Tooltip("How fast each bone follows its pod (higher = snappier, lower = smoother).")]
     public float smoothing = 18f;
     [Tooltip("Seconds to get into each calibration pose.")]
@@ -165,6 +176,9 @@ public class PodAvatar : MonoBehaviour
         public Quaternion mount = Quaternion.identity;
         public float secondPoseAngle;
         public float armMountDisagreement = -1f;  // degrees, arms only
+        public bool usedThirdPose;
+        public float thirdPoseErrorBefore = -1f;  // degrees off the palms-together direction, before / after the fit
+        public float thirdPoseErrorAfter = -1f;
     }
 
     class BoneState
@@ -175,6 +189,10 @@ public class PodAvatar : MonoBehaviour
         public Quaternion smoothed;  // what's shown, relative to the avatar
         public bool hasSmoothed;
         public int depth;
+        // Arms: the bone's long axis in its own frame, and where it points with the palms
+        // pressed together in front (avatar frame).
+        public Vector3 longAxisLocal;
+        public Vector3 palmsTogetherDirection;
     }
 
     // A shoulder (clavicle) following its upper arm.
@@ -202,13 +220,17 @@ public class PodAvatar : MonoBehaviour
 
     // --- calibration state machine ----------------------------------------------------
 
-    public enum Phase { Idle, CountdownTPose, CaptureTPose, CountdownSecond, CaptureSecond }
+    public enum Phase { Idle, CountdownTPose, CaptureTPose, CountdownSecond, CaptureSecond, CountdownThird, CaptureThird }
     public Phase CurrentPhase { get; private set; } = Phase.Idle;
     public float PhaseTimeLeft => Mathf.Max(0f, phaseEnd - Time.time);
 
     float phaseEnd;
     readonly Dictionary<int, QuaternionAverage> tPose = new Dictionary<int, QuaternionAverage>();
     readonly Dictionary<int, QuaternionAverage> secondPose = new Dictionary<int, QuaternionAverage>();
+    readonly Dictionary<int, QuaternionAverage> thirdPose = new Dictionary<int, QuaternionAverage>();
+
+    // Whether the calibration asks for the third pose (any arm mapped, and it's switched on).
+    public bool UsesThirdPose => useThirdPoseForArms && bones.Exists(b => IsArm(b.entry.bone));
 
     void Start()
     {
@@ -249,6 +271,7 @@ public class PodAvatar : MonoBehaviour
         AddShoulder(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm);
 
         armsInward = MeasureArmsInward();
+        SetUpPalmsTogether();
 
         // Parents first, so a child's world rotation is set after its parent moved.
         bones.Sort((a, b) => a.depth.CompareTo(b.depth));
@@ -272,6 +295,40 @@ public class PodAvatar : MonoBehaviour
             restArmDirection = (root * (elbow.position - arm.transform.position)).normalized,
             depth = Depth(s),
         });
+    }
+
+    // The third pose: arms straight out in front at shoulder height, palms pressed together.
+    // Each arm (upper arm and forearm alike, the elbow is straight) points from its shoulder
+    // joint to where the wrists meet: palmsTogetherHalfGap from the middle, an arm's length
+    // away. Only that direction is used, not the forearm's twist, which varies from person to
+    // person.
+    void SetUpPalmsTogether()
+    {
+        Matrix4x4 toAvatar = avatar.transform.worldToLocalMatrix;
+        Quaternion root = Quaternion.Inverse(avatar.transform.rotation);
+        float scale = avatar.transform.lossyScale.y;
+
+        foreach (BoneState b in bones)
+        {
+            if (!IsArm(b.entry.bone))
+                continue;
+
+            bool left = IsLeft(b.entry.bone);
+            Transform shoulder = avatar.GetBoneTransform(left ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm);
+            Transform elbow = avatar.GetBoneTransform(left ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm);
+            Transform wrist = avatar.GetBoneTransform(left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            if (shoulder == null || elbow == null || wrist == null)
+                continue;
+
+            bool upper = b.entry.bone == HumanBodyBones.LeftUpperArm || b.entry.bone == HumanBodyBones.RightUpperArm;
+            Vector3 axis = upper ? elbow.position - shoulder.position : wrist.position - elbow.position;
+            b.longAxisLocal = Quaternion.Inverse(b.rest) * (root * axis).normalized;
+
+            float armLength = Vector3.Distance(shoulder.position, elbow.position) + Vector3.Distance(elbow.position, wrist.position);
+            float shoulderX = Mathf.Abs(toAvatar.MultiplyPoint3x4(shoulder.position).x * scale);
+            float across = Mathf.Clamp((shoulderX - palmsTogetherHalfGap) / armLength, 0f, 0.9f);
+            b.palmsTogetherDirection = new Vector3((left ? 1f : -1f) * across, 0f, Mathf.Sqrt(1f - across * across));
+        }
     }
 
     static int Depth(Transform t)
@@ -416,6 +473,7 @@ public class PodAvatar : MonoBehaviour
 
         tPose.Clear();
         secondPose.Clear();
+        thirdPose.Clear();
         SetPhase(Phase.CountdownTPose, countdownSeconds);
         Debug.Log("[PodAvatar] calibration started: T-pose (arms out, palms down, facing the screen).");
     }
@@ -446,6 +504,25 @@ public class PodAvatar : MonoBehaviour
                 break;
             case Phase.CaptureSecond:
                 Sample(secondPose);
+                if (Time.time >= phaseEnd)
+                {
+                    if (UsesThirdPose)
+                    {
+                        Debug.Log($"[PodAvatar] second pose captured for pods {string.Join(", ", secondPose.Keys)}. Now: arms straight out in front, palms pressed together.");
+                        SetPhase(Phase.CountdownThird, countdownSeconds);
+                    }
+                    else
+                    {
+                        Solve();
+                        CurrentPhase = Phase.Idle;
+                    }
+                }
+                break;
+            case Phase.CountdownThird:
+                if (Time.time >= phaseEnd) SetPhase(Phase.CaptureThird, captureSeconds);
+                break;
+            case Phase.CaptureThird:
+                Sample(thirdPose);
                 if (Time.time >= phaseEnd)
                 {
                     Solve();
@@ -532,15 +609,79 @@ public class PodAvatar : MonoBehaviour
                 }
             }
 
+            // Arms, third pose (palms pressed together in front): fit the heading and mounting to
+            // all three poses at once, so the hands meet when the actor's do.
+            if (useThirdPoseForArms && IsArm(b.entry.bone) && thirdPose.TryGetValue(id, out QuaternionAverage q3Avg))
+            {
+                Quaternion q3 = q3Avg.Result;
+                Quaternion armsDown = ArmsDownDelta(b.entry.bone) * b.rest;
+                cal.thirdPoseErrorBefore = ThirdPoseError(b, cal.heading, cal.mount, q3);
+                FitArm(b, q1, q2, q3, armsDown, ref cal.heading, ref cal.mount);
+                cal.thirdPoseErrorAfter = ThirdPoseError(b, cal.heading, cal.mount, q3);
+                cal.usedThirdPose = true;
+            }
+
             cal.ok = true;
             b.hasSmoothed = false;
             good++;
             Debug.Log($"[PodAvatar] pod {id} ({b.entry.bone}): calibrated. Heading {Signed(cal.heading.eulerAngles.y):F0}°, second-pose turn {angle:F0}° (expected ~{expectedAngle:F0}°)" +
                       (cal.armMountDisagreement >= 0f ? $", T-pose vs arms-down mounting {cal.armMountDisagreement:F0}° apart" : "") +
+                      (cal.usedThirdPose ? $", palms-together direction off by {cal.thirdPoseErrorBefore:F1}° before the 3-pose fit, {cal.thirdPoseErrorAfter:F1}° after" : "") +
                       $", mount euler {cal.mount.eulerAngles.ToString("F0")}.");
         }
 
         Debug.Log($"[PodAvatar] calibration done: {good} of {bones.Count} pods.");
+    }
+
+    // How far the arm points from the palms-together direction in the third pose, with this
+    // heading and mounting (degrees). Direction only: the forearm's twist isn't counted.
+    static float ThirdPoseError(BoneState b, Quaternion heading, Quaternion mount, Quaternion q3)
+    {
+        Quaternion bone = Quaternion.Inverse(heading) * q3 * Quaternion.Inverse(mount);
+        return Vector3.Angle(bone * b.longAxisLocal, b.palmsTogetherDirection);
+    }
+
+    // Fits an arm pod's heading (yaw) and mounting to all three poses: the T-pose and the
+    // arms-down pose as whole rotations, the third as a direction only (counted
+    // thirdPoseWeight times). A plain pattern search from the two-pose answer - four numbers
+    // (yaw + a small turn of the mounting), steps from 8° down to 0.05°.
+    void FitArm(BoneState b, Quaternion q1, Quaternion q2, Quaternion q3, Quaternion armsDown, ref Quaternion heading, ref Quaternion mount)
+    {
+        Quaternion mount0 = mount;
+        float w2 = useBothPosesForArms ? 1f : 0f;
+
+        float Cost(float[] v)
+        {
+            Quaternion r = Quaternion.AngleAxis(v[0], Vector3.up);
+            Quaternion m = mount0 * Quaternion.Euler(v[1], v[2], v[3]);
+            float e1 = Quaternion.Angle(r * b.rest * m, q1);
+            float e2 = Quaternion.Angle(r * armsDown * m, q2);
+            float e3 = ThirdPoseError(b, r, m, q3);
+            return e1 * e1 + w2 * e2 * e2 + thirdPoseWeight * e3 * e3;
+        }
+
+        float[] p = { Signed(heading.eulerAngles.y), 0f, 0f, 0f };
+        float best = Cost(p);
+        float step = 8f;
+        for (int iteration = 0; step > 0.05f && iteration < 3000; iteration++)
+        {
+            bool improved = false;
+            for (int i = 0; i < p.Length; i++)
+            {
+                foreach (float s in new[] { step, -step })
+                {
+                    p[i] += s;
+                    float c = Cost(p);
+                    if (c < best) { best = c; improved = true; }
+                    else p[i] -= s;
+                }
+            }
+            if (!improved)
+                step *= 0.5f;
+        }
+
+        heading = Quaternion.AngleAxis(p[0], Vector3.up);
+        mount = mount0 * Quaternion.Euler(p[1], p[2], p[3]);
     }
 
     static void ToAxisAngle(Quaternion q, out float angle, out Vector3 axis)

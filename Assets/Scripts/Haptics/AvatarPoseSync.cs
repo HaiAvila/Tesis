@@ -12,7 +12,7 @@ using UnityEngine.SceneManagement;
 // Y Bot. PodAvatar runs everywhere but only ever moves bones on the machine that calibrated.
 //
 // What's synced is the final pose: the local rotation of every bone PodAvatar moves (the
-// pod bones, the shoulders, the hips), so viewers don't need the calibration, plus the
+// pod bones, the shoulders, the hips, the flat feet), so viewers don't need the calibration, plus the
 // avatar's size once (scale and the joints the body measurements moved).
 //
 // Placed the same way on every machine, after the pose:
@@ -44,6 +44,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         HumanBodyBones.LeftLowerArm, HumanBodyBones.RightLowerArm,
         HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg,
         HumanBodyBones.LeftLowerLeg, HumanBodyBones.RightLowerLeg,
+        HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot,
     };
 
     // The joints PodAvatar's body measurements move, in AvatarPoseModel.layout order.
@@ -125,6 +126,13 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         }
 
         root = avatar.transform;
+        // This places the avatar itself (from the headset): PodAvatar's own floor and planted
+        // foot would only fight it. The flat feet stay, and are synced.
+        if (podAvatar != null)
+        {
+            podAvatar.keepFeetOnFloor = false;
+            podAvatar.plantFeet = false;
+        }
         for (int i = 0; i < SyncedBones.Length; i++)
         {
             synced[i] = avatar.GetBoneTransform(SyncedBones[i]);

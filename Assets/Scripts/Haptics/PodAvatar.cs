@@ -38,8 +38,13 @@ using UnityEngine;
 // - The shoulders (no pod) follow their upper arm by a share of its swing relative to the
 //   chest, capped - real shoulders move forward and in when you clap or reach, and a fixed
 //   shoulder left the avatar's hands centimeters apart.
-// - The hips (no pod) take the chest pod's yaw and stay in place (the headset will move
-//   them later). Other bones without a pod keep their rest pose relative to their parent.
+// - The hips (no pod) take the chest pod's yaw. Other bones without a pod keep their rest
+//   pose relative to their parent - except the feet (no pod either), which stay flat and
+//   turn only with their shin's heading, like feet on the floor.
+// - Grounding: the lowest sole stays on the floor, so a squat lowers the hips instead of
+//   lifting the feet, and (plantFeet) the foot carrying the weight stays where it is, so the
+//   hips go back in a squat instead of the feet sliding forward. In the app AvatarPoseSync
+//   turns both off and places the avatar from the headset instead.
 // - Pods arrive at ~19 Hz, so each bone eases toward its target instead of snapping.
 public class PodAvatar : MonoBehaviour
 {
@@ -108,6 +113,19 @@ public class PodAvatar : MonoBehaviour
     public bool preventInterpenetration = true;
     [Tooltip("Draw the collision capsules in the Scene view (orange = body, blue = limbs).")]
     public bool showCollisionGizmos;
+
+    [Header("Feet and floor")]
+    [Tooltip("Keep the feet flat (no pod on them): they turn only with their shin's heading.")]
+    public bool flatFeet = true;
+    [Tooltip("Keep the lowest sole on the floor (FloorHeight): a squat lowers the hips.")]
+    public bool keepFeetOnFloor = true;
+    [Tooltip("Keep the foot carrying the weight where it is, so the hips move over it (a squat sends them back). Off when something else places the avatar (the headset, in the app).")]
+    public bool plantFeet = true;
+    [Tooltip("How much lower a foot must be than the other to take over as the planted one (m).")]
+    public float plantSwitchHeight = 0.02f;
+
+    // World height of the floor the soles stand on: where they were at Start.
+    public float FloorHeight { get; set; }
 
     // A usable second pose turns a bone at least this much, about a mostly horizontal axis.
     const float MinSecondPoseAngle = 10f;
@@ -216,6 +234,11 @@ public class PodAvatar : MonoBehaviour
     readonly Dictionary<int, PodCalibration> calibrations = new Dictionary<int, PodCalibration>();
     Transform hips;
     Quaternion hipsRest;
+    Transform leftFoot, rightFoot, leftShin, rightShin;
+    Quaternion leftFootRest, rightFootRest, leftShinRest, rightShinRest; // relative to the avatar
+    float soleBelowAnkle;   // in the avatar's local units (the root's scale applies)
+    int plantedFoot = -1;   // 0 left, 1 right
+    Vector3 plantedAt;
     BoneState chest;
     float armsInward;
 
@@ -260,6 +283,15 @@ public class PodAvatar : MonoBehaviour
         Quaternion root = Quaternion.Inverse(avatar.transform.rotation);
         hips = avatar.GetBoneTransform(HumanBodyBones.Hips);
         hipsRest = root * hips.rotation;
+
+        leftFoot = avatar.GetBoneTransform(HumanBodyBones.LeftFoot);
+        rightFoot = avatar.GetBoneTransform(HumanBodyBones.RightFoot);
+        leftShin = avatar.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+        rightShin = avatar.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+        leftFootRest = root * leftFoot.rotation;
+        rightFootRest = root * rightFoot.rotation;
+        leftShinRest = root * leftShin.rotation;
+        rightShinRest = root * rightShin.rotation;
 
         foreach (PodBone entry in mapping)
         {
@@ -361,13 +393,13 @@ public class PodAvatar : MonoBehaviour
 
         Transform lFoot = avatar.GetBoneTransform(HumanBodyBones.LeftFoot);
         Transform rFoot = avatar.GetBoneTransform(HumanBodyBones.RightFoot);
-        float soleBelowAnkle = Mathf.Min(lFoot.position.y, rFoot.position.y) - before.min.y;
+        soleBelowAnkle = Mathf.Min(lFoot.position.y, rFoot.position.y) - before.min.y;
 
         if (body.height > 0f && avatarHeight > 0.1f)
         {
             float k = body.height / avatarHeight;
             root.localScale *= k;
-            soleBelowAnkle *= k;
+            soleBelowAnkle *= k;   // world, for the drop below
             Debug.Log($"[PodAvatar] height {avatarHeight:F2} m -> {body.height:F2} m (scale {k:F3})");
         }
 
@@ -386,6 +418,8 @@ public class PodAvatar : MonoBehaviour
         // Back on the floor: the soles where they were.
         float drop = Mathf.Min(lFoot.position.y, rFoot.position.y) - soleBelowAnkle - before.min.y;
         root.position -= Vector3.up * drop;
+        FloorHeight = before.min.y;
+        soleBelowAnkle /= root.lossyScale.y;
     }
 
     // Moves the child joint along the bone so the joint-to-joint length is `length`.
@@ -574,6 +608,7 @@ public class PodAvatar : MonoBehaviour
     void Solve()
     {
         calibrations.Clear();
+        plantedFoot = -1;
         int good = 0;
         foreach (BoneState b in bones)
         {
@@ -798,7 +833,63 @@ public class PodAvatar : MonoBehaviour
 
         if (preventInterpenetration && collision != null)
             collision.Resolve();
+
+        if (flatFeet)
+        {
+            SetFootFlat(leftFoot, leftShin, leftFootRest, leftShinRest);
+            SetFootFlat(rightFoot, rightShin, rightFootRest, rightShinRest);
+        }
+        if (keepFeetOnFloor || plantFeet)
+            Ground();
     }
+
+    // A foot without a pod: flat, turned only by its shin's turn about the vertical (toes out,
+    // the body turning), so a bent knee doesn't tip the toes into the floor.
+    void SetFootFlat(Transform foot, Transform shin, Quaternion footRest, Quaternion shinRest)
+    {
+        if (foot == null || shin == null)
+            return;
+        Quaternion root = avatar.transform.rotation;
+        Quaternion delta = Quaternion.Inverse(root) * shin.rotation * Quaternion.Inverse(shinRest);
+        var twist = new Quaternion(0f, delta.y, 0f, delta.w);
+        float m = Mathf.Sqrt(twist.y * twist.y + twist.w * twist.w);
+        twist = m > 1e-4f ? new Quaternion(0f, twist.y / m, 0f, twist.w / m) : Quaternion.identity;
+        foot.rotation = root * twist * footRest;
+    }
+
+    // Lowest sole on the floor; the planted foot kept where it was.
+    void Ground()
+    {
+        Transform root = avatar.transform;
+        float below = soleBelowAnkle * root.lossyScale.y;
+        float leftSole = leftFoot.position.y - below, rightSole = rightFoot.position.y - below;
+
+        if (keepFeetOnFloor)
+        {
+            root.position += Vector3.up * (FloorHeight - Mathf.Min(leftSole, rightSole));
+        }
+
+        if (!plantFeet)
+        {
+            plantedFoot = -1;
+            return;
+        }
+
+        // The weight is on the lower foot; the other takes over only once clearly lower.
+        int lower = leftSole <= rightSole ? 0 : 1;
+        if (plantedFoot < 0 || (lower != plantedFoot && Mathf.Abs(leftSole - rightSole) > plantSwitchHeight))
+        {
+            plantedFoot = lower;
+            plantedAt = (lower == 0 ? leftFoot : rightFoot).position;
+            return;
+        }
+
+        Vector3 now = (plantedFoot == 0 ? leftFoot : rightFoot).position;
+        root.position += new Vector3(plantedAt.x - now.x, 0f, plantedAt.z - now.z);
+    }
+
+    // Forget where the planted foot was (after the avatar is moved or recalibrated).
+    public void ResetPlantedFoot() => plantedFoot = -1;
 
     void OnDrawGizmos()
     {

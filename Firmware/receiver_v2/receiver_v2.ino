@@ -93,7 +93,12 @@ void setup() {
 
   for (int i = 0; i < MAX_PODS; i++) {
     podSvc[i].begin();
-    quatChr[i].setNotifyCallback(notify_cb);
+    // false = run notify_cb straight from the BLE task, not through the shared callback
+    // queue. connect_cb runs on that queue and blocks in discover() for ~1-2 s while a pod
+    // (re)connects; with notifications on the same queue, every other pod's samples waited
+    // behind it - all 9 froze together (seen twice in a 10-min run, each time a low-battery
+    // pod reconnected). notify_cb only copies 16 bytes, so it's safe to run directly.
+    quatChr[i].setNotifyCallback(notify_cb, false);
     quatChr[i].begin();
     cueChr[i].begin();
   }
@@ -169,8 +174,11 @@ void notify_cb(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
   if (len != 16) return;
   for (int i = 0; i < MAX_PODS; i++) {
     if (&quatChr[i] == chr) {
+      // Runs in the BLE task while loop() may be reading quat[i]: copy as one piece.
+      taskENTER_CRITICAL();
       memcpy(quat[i], data, 16);
       dirty[i] = true;
+      taskEXIT_CRITICAL();
       return;
     }
   }
@@ -209,11 +217,20 @@ void loop() {
   pollSerial();
 
   char out[64];
+  float q[4];
   for (int i = 0; i < MAX_PODS; i++) {
-    if (!dirty[i]) continue;
-    dirty[i] = false;
+    // notify_cb writes quat[i] from the BLE task: take a whole copy, never half old / half new.
+    taskENTER_CRITICAL();
+    bool fresh = dirty[i];
+    if (fresh) {
+      memcpy(q, quat[i], 16);
+      dirty[i] = false;
+    }
+    taskEXIT_CRITICAL();
+    if (!fresh) continue;
+
     snprintf(out, sizeof(out), "P,%u,%.4f,%.4f,%.4f,%.4f",
-             podIdOf[i], quat[i][0], quat[i][1], quat[i][2], quat[i][3]);
+             podIdOf[i], q[0], q[1], q[2], q[3]);
     Serial.println(out);
   }
 

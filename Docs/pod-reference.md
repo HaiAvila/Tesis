@@ -338,9 +338,23 @@ That rate is sufficient — IMU rate is not the latency path.
 2026-11-03:** ~10 minutes, every pod at **17–19 samples/s** (faster than the
 ~11 Hz with Bluefruit pods), zero `0,0,0,0` (no-IMU) samples. Pods 3 and 4 had
 dropouts of 7–19 s (low battery, per the user). Twice in those 10 minutes
-**every pod paused at the same instant** (1.4 s and ~2.2 s): a shared cause —
-the receiver, the USB serial link or the PC/bridge — not batteries. Not
-diagnosed yet; worth watching, since a 2 s freeze would show during a take.
+**every pod paused at the same instant** (1.4 s and ~2.2 s).
+
+**Diagnosed 2026-11-04 — the receiver, while a pod reconnects.** In the log, all
+8 working pods stopped within 0.1 s and resumed at the very same instant, and
+the low-battery pod 3 came back 0.2 s after them; no backlog burst followed
+(so it wasn't the PC holding buffered lines — the samples were never sent). In
+Bluefruit, `connect_cb` runs on the shared callback queue (`ada_callback`,
+`bluefruit.cpp`), and so did every pod's notify callback (the default of
+`setNotifyCallback`). `connect_cb` blocks ~1–2 s in `discover()` /
+`enableNotify()` for the reconnecting pod, and every other pod's samples
+waited behind it. It only happens when a pod (re)connects mid-session — which
+is why it showed up only with low batteries. **Fix (receiver_v2, needs
+re-flashing the receiver only):** `setNotifyCallback(notify_cb, false)` runs the
+notify callback directly from the BLE task; the 16-byte copy is guarded with
+`taskENTER_CRITICAL` on both sides so the main loop never prints a half-updated
+sample. `bridge.py` now also writes the receiver's `R`/`S`/`E` lines to a
+`*_events.csv` next to the samples, on the same clock, to check it.
 
 Commercial alternatives considered: SlimeVR uses Wi-Fi/UDP; Xsens and Rokoko
 use proprietary 2.4 GHz to a dongle. BLE connections are unusual for multi-node

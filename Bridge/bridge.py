@@ -93,12 +93,19 @@ def main():
 
     logging = "--nolog" not in sys.argv
     writer = logf = None
+    events = eventf = None
     if logging:
         name = datetime.now().strftime("pods_%Y%m%d_%H%M%S.csv")
         logf = open(name, "w", newline="")
         writer = csv.writer(logf)
         writer.writerow(["t_ms", "pod", "qi", "qj", "qk", "qr"])
-        print(f"[bridge] logging to {name}")
+        # The receiver's R (connected / lost), S (status) and E (error) lines, on the same
+        # clock as the samples - so a gap in the samples can be matched to what the receiver
+        # was doing (e.g. a pod reconnecting).
+        eventf = open(name.replace(".csv", "_events.csv"), "w", newline="")
+        events = csv.writer(eventf)
+        events.writerow(["t_ms", "line"])
+        print(f"[bridge] logging to {name} (+ receiver events to {name.replace('.csv', '_events.csv')})")
 
     ser = open_serial(port)
     if not ser:
@@ -118,6 +125,8 @@ def main():
                 raw = ser.readline()
             except serial.SerialException:
                 print("[bridge] serial dropped, reopening")
+                if events:
+                    events.writerow([int((time.time() - t0) * 1000), "bridge: serial dropped, reopening"])
                 ser = open_serial(port)
                 continue
             if not raw:
@@ -137,6 +146,8 @@ def main():
                         writer.writerow([int((time.time() - t0) * 1000)] + f[1:])
             elif line[0] in "RSE":
                 print(f"[rx] {line}")
+                if events:
+                    events.writerow([int((time.time() - t0) * 1000), line])
 
             now = time.time()
             if now - last_report >= 5:
@@ -152,6 +163,8 @@ def main():
             ser.close()
         if logf:
             logf.close()
+        if eventf:
+            eventf.close()
 
 
 if __name__ == "__main__":

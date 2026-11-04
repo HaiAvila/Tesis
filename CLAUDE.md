@@ -8,6 +8,14 @@ This is a thesis project (Tesis) building a **haptic feedback system for actors 
 
 The wider point of the system is **remote rehearsal** — actor and director can be in different places, so a set doesn't have to be rented to block a scene.
 
+### Pipeline (full version: [`Docs/pipeline.md`](Docs/pipeline.md) — keep both in sync)
+
+- **Previz team** makes every build and is the only one who opens Unity. **Actor**: Quest 3 + 9 pods + a PC with the receiver running the server `.exe` (`SERVER_BUILD`) — no configuration. **Director**: Quest 3 (optionally a desktop build for editing the cue timeline), possibly somewhere else.
+- **The server runs where the pods are**: pods → receiver → bridge → pose solver (calibration + body measurements) → AvatarModel over Normcore. It also takes the headset pose (avatar root), runs Calibrar, records takes with pose data, generates and plays cues, makes the take report. **The director's app never talks to the pods**: its commands go through Normcore to the server.
+- **Setups**: remote rehearsal · Ensayar solo (no director) · Inspeccionar escenas (director only, no pods) · shoot day (pods only, no Quest; the previz PC runs the server) · **testing now**: the Editor on the user's PC plays the server role with the pods on USB.
+- **Whichever machine has the pods sends the avatar** — not tied to a build role.
+- Body measurements are entered by hand for now; an iPhone scan (MediaPipe) is future work. A DigitalOcean API + database is planned, **not now**.
+
 ### Hardware decisions (already fixed — don't second-guess or suggest alternatives)
 
 - **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: sternum (pod 9, replaces the waist), biceps x2, wrists x2, quads x2, shins x2. **No hip pod**: the hips follow pod 9's yaw plus the headset's position. Which pod ID sits where, its humanoid bone and which way its USB end points: [`Docs/pod-map.md`](Docs/pod-map.md).
@@ -17,7 +25,7 @@ The wider point of the system is **remote rehearsal** — actor and director can
   - **Receiver: the classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), because ArduinoBLE holds only one central connection and can't take 9 pods.
   - The two stacks interoperate. Don't move either one to the other core.
 - **Haptic driver**: DRV2605L, **UNIT Electronics DevLab module (UE0065)**, drives the LRA from the microcontroller.
-- **Battery**: LiPo 3.7V 150mAh per band.
+- **Battery**: LiPo 3.7V **140 mAh** per band. Charged at the XIAO's 50 mA default (P0.13 never touched; 100 mA deliberately not used). Battery-reading pins verified against Seeed's schematic: see `Docs/pod-reference.md` §7 before touching P0.13, P0.14, P0.17 or P0.31.
 - **Pod layout**: LRA and BNO085 at opposite ends of the pod (magnetic separation). Bench-tested: no measurable interference from the LRA at pod distance.
 - **PCB**: custom 2-layer flex, 40 × 26.5 mm, JLCPCB. Pods are assembled, tested and mounted in TPU housings; attached to skin with Walker Tape, no straps.
 

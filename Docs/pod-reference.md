@@ -1,7 +1,7 @@
 # Haptic Pod — Build & Connection Reference
 
 VR rehearsal system, thesis project.
-Last updated: 2026-11-02
+Last updated: 2026-11-04
 
 ---
 
@@ -13,7 +13,7 @@ Last updated: 2026-11-02
 | Haptic driver | DRV2605L — UNIT Electronics DevLab (UE0065) | 5 pads, power LED on VDD only |
 | IMU | GY-BNO085 — UNIT Electronics | 10 pads |
 | Actuator | Vybronics VG0832013D LRA | Same on all 9 bands |
-| Battery | LiPo 3.7 V / 150 mAh | Bare +/− wires, no JST |
+| Battery | LiPo 3.7 V / **140 mAh** | Bare +/− wires, no JST |
 | Switch | **SS-12D00** SPDT slide, 30 V / 0.3 A | Off-board, through the TPU wall |
 | PCB | Custom 2-layer flex, 40 × 26.5 mm | JLCPCB, 25 µm polyimide |
 
@@ -203,7 +203,7 @@ compartment sits at the opposite end from the IMU, which is sufficient.
 | Clicks, 1/sec | ~50 mA peak |
 | Continuous buzz | ~90 mA |
 
-On 120 mAh usable: ~6 h idle, ~2.4 h clicks, ~1.3 h continuous, **~4.3 h
+On ~120 mAh usable (of 140 mAh): ~6 h idle, ~2.4 h clicks, ~1.3 h continuous, **~4.3 h
 mixed**.
 
 **No decoupling capacitors — confirmed unnecessary.** The earlier reset during
@@ -260,8 +260,13 @@ charging (the red LED is on), HIGH = full or not charging. Read it as
 **INPUT** (or INPUT_PULLUP); **never as an output** — driving it LOW would light
 the LED, driving it HIGH would fight the charger while it pulls low.
 
-Charge time at the 50 mA default, 140–150 mAh: ~2–2½ h to ~90 %, ~3 h to full;
+Charge time at the 50 mA default (140 mAh): ~2–2½ h to ~90 %, ~3 h to full;
 the pod's switch must be ON (it sits between the battery and the XIAO).
+**100 mA charging deliberately not used** (no spare pods; 50 mA ≈ 0.35C is gentler).
+Re-flash procedure for the battery firmware: flash and soak-test **one pod**
+(~30 min, charge/unplug, readings ~4.2 V full, never > 4.3 V) before the other 8;
+keep `pod_v2.ino` to roll back; double-tap reset enters the bootloader.
+Charge on a non-flammable surface; never charge a swollen or hot pod.
 
 ---
 
@@ -353,6 +358,23 @@ flying probe fully test · remove mark · **confirm production file = yes**
 **Walker Tape, direct to skin — no straps.** Chosen for IMU fidelity: adhesive
 removes the strap slop and soft-tissue movement that degrade orientation data.
 Tested on a wrist.
+
+### Body placement (final, 2026-11-03)
+
+| ID | Placement | Bone | USB faces |
+|---|---|---|---|
+| 1 | Left wrist | LeftLowerArm | hand |
+| 2 | Right wrist | RightLowerArm | hand |
+| 3 | Left bicep | LeftUpperArm | hand |
+| 4 | Right bicep | RightUpperArm | hand |
+| 5 | Left quad | LeftUpperLeg | knee |
+| 6 | Right quad | RightUpperLeg | knee |
+| 7 | Left shin | LeftLowerLeg | foot |
+| 8 | Right shin | RightLowerLeg | foot |
+| 9 | Sternum | Chest | neck |
+
+The sternum pod replaces the waist pod; no hip pod (hips follow pod 9 yaw +
+headset position). Source of truth: `Docs/pod-map.md`.
 
 Open consideration: the adhesive sits in the vibration path. If transmission
 feels weak, cut the tape with a hole so the rigid LRA cap touches skin directly
@@ -484,16 +506,20 @@ virtual surface texture
 
 ## 13. Open Items
 
-- [ ] **Quaternion coordinate conversion** — BNO085 right-handed vs Unity
-      left-handed Y-up. Must be determined empirically by watching an object
-      follow a pod. Four candidates selectable in `PodReceiver`.
-- [ ] **Pod-to-limb mapping** — serializable, inspector-editable
+- [x] **Quaternion coordinate conversion** — settled 2026-11-03: conversion 1,
+      no flips (see STATUS.md)
+- [x] **Pod-to-limb mapping** — final, §10 / `Docs/pod-map.md`
+- [x] Calibration + avatar on the desktop test scene (PodAvatarTest)
+- [ ] **Firmware batch, one re-flash:** battery voltage + charge status on pods,
+      RSSI on the receiver, optional 30 Hz notify
+- [ ] Avatar over Normcore (AvatarModel)
 - [ ] **End-to-end latency** — Unity cue → vibration on skin, never measured,
       target under ~100 ms
 - [ ] Walker Tape under sustained vibration + sweat, full session
 - [ ] The five MVP cues driven by scene state
 - [ ] Rehearsal workflow: scene selection, take approval
 - [ ] Battery runtime on an assembled pod
+- Future work: body proportions from iPhone video (MediaPipe); tape-measured for now
 
 ---
 

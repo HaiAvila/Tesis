@@ -334,9 +334,13 @@ cue write, so the receiver didn't change.
 streams ~11 Hz (one at 20 Hz), which is nine connections sharing one radio.
 That rate is sufficient — IMU rate is not the latency path.
 
-**Measured with Bluefruit pods.** Pods on ArduinoBLE (v3) have only been run 2 at
-a time so far: the 9/9, 6-minute test needs repeating once all 9 are flashed
-with v3.
+**Measured with Bluefruit pods.** **Repeated with 9 v3 pods (ArduinoBLE),
+2026-11-03:** ~10 minutes, every pod at **17–19 samples/s** (faster than the
+~11 Hz with Bluefruit pods), zero `0,0,0,0` (no-IMU) samples. Pods 3 and 4 had
+dropouts of 7–19 s (low battery, per the user). Twice in those 10 minutes
+**every pod paused at the same instant** (1.4 s and ~2.2 s): a shared cause —
+the receiver, the USB serial link or the PC/bridge — not batteries. Not
+diagnosed yet; worth watching, since a 2 s freeze would show during a take.
 
 Commercial alternatives considered: SlimeVR uses Wi-Fi/UDP; Xsens and Rokoko
 use proprietary 2.4 GHz to a dongle. BLE connections are unusual for multi-node

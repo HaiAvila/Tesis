@@ -51,6 +51,11 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // Raised on receivers (not the sender) for each new command above the baseline.
     public event Action<SessionCommand> OnCommand;
 
+    // Raised on the sender itself, for each command it sends - for things on the director's
+    // own machine that must react too (in testing, the Editor is both the director and the
+    // machine with the pods, and OnCommand never fires for its own commands).
+    public static event Action<SessionCommand> CommandSentLocally;
+
     int lastKnownOwnerID = NoOwner;
     int commandBaseline;
     int lastSentCounter = -1;
@@ -106,6 +111,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
         commandBaseline = counter;
         model.commandCounter = counter;
         Debug.Log($"[SessionSync] write command {command} (commandId={(int)command}, commandCounter={counter})");
+        CommandSentLocally?.Invoke(command);
     }
 
     // Called when entering Ensayo Remoto: nothing sent before this moment will fire.

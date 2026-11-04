@@ -48,7 +48,10 @@ Acción, Corte, Aprobar, edited cues — go through Normcore to the server.
    pods on USB. Both roles get tested by swapping builds.
 
 **Whichever machine has the pods sends the avatar** — the server `.exe` in setups 1, 2 and 4,
-the Editor in setup 5 — so the avatar code doesn't depend on the build role.
+the Editor in setup 5 — so the avatar code doesn't depend on the build role. Built as
+`AvatarPoseSync` (Bootstrap → `ActorAvatar`): the machine that hears pods and has calibrated
+owns `AvatarPoseModel` and sends the pose; the director's app shows it, rooted at the actor's
+headset. Calibrar (`SessionCommand.Calibrate`) runs on the machine with the pods.
 
 ## Body measurements
 

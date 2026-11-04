@@ -405,15 +405,28 @@ public class PodAvatar : MonoBehaviour
         r.position += shift;
     }
 
-    Bounds MeshBounds()
+    Bounds MeshBounds() => BakedBounds(avatar);
+
+    // The avatar's mesh as posed right now, world space. Not Renderer.bounds: a skinned
+    // mesh's bounds are a loose box (~6 cm too low under the feet on the Y Bot), which made the
+    // height scale ~4% short and left the soles above the floor.
+    public static Bounds BakedBounds(Animator avatar)
     {
         var all = new Bounds();
         bool any = false;
-        foreach (Renderer r in avatar.GetComponentsInChildren<Renderer>())
+        var mesh = new Mesh();
+        foreach (SkinnedMeshRenderer smr in avatar.GetComponentsInChildren<SkinnedMeshRenderer>())
         {
-            if (!any) { all = r.bounds; any = true; }
-            else all.Encapsulate(r.bounds);
+            smr.BakeMesh(mesh, true);
+            Matrix4x4 m = smr.transform.localToWorldMatrix;
+            foreach (Vector3 v in mesh.vertices)
+            {
+                Vector3 p = m.MultiplyPoint3x4(v);
+                if (!any) { all = new Bounds(p, Vector3.zero); any = true; }
+                else all.Encapsulate(p);
+            }
         }
+        Destroy(mesh);
         return all;
     }
 

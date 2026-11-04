@@ -31,6 +31,24 @@ public class ActorPositionSync : MonoBehaviour
 
     RealtimeTransform realtimeTransform;
 
+    // True while an actor build writes the actor's head: owned by another client, or by this
+    // one if it's the actor. Normcore clears the ownership when that client leaves. A director
+    // can end up owning it too (seen in the Editor: owner = itself, parked at the origin) -
+    // that's not a head.
+    public bool IsLive
+    {
+        get
+        {
+            if (realtimeTransform == null || realtimeTransform.realtime == null || !realtimeTransform.realtime.connected)
+                return false;
+#if DIRECTOR_BUILD
+            return realtimeTransform.isOwnedRemotelySelf;
+#else
+            return realtimeTransform.isOwnedRemotelySelf || realtimeTransform.isOwnedLocallySelf;
+#endif
+        }
+    }
+
     void Awake()
     {
         Instance = this;

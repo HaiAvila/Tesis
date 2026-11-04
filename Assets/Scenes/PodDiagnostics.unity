@@ -290,7 +290,10 @@ MonoBehaviour:
   listenPort: 5005
   commandPort: 5006
   bridgeHost: 127.0.0.1
-  conversion: 0
+  conversion: 1
+  flipX: 0
+  flipY: 0
+  flipZ: 0
   connectedPods: 0
   targetPods: 0
 --- !u!4 &1842971449

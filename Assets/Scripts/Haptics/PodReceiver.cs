@@ -32,8 +32,11 @@ public class PodReceiver : MonoBehaviour
     public string bridgeHost = "127.0.0.1";
 
     [Header("Orientation")]
-    [Tooltip("If pods rotate the wrong way, try the other conversions. Applied when read, so a change shows at once. 1 and 2 are the same rotation (q and -q).")]
-    public int conversion = 0;
+    // Settled on hardware (PodAxisTest, 2026-11-03): conversion 1, no flips. It's the only one
+    // that maps the BNO's right-handed, Z-up frame to Unity's left-handed, Y-up frame; the
+    // others are inverted or mirrored. 2 is the same rotation (q and -q).
+    [Tooltip("1 = verified on hardware (BNO085 right-handed Z-up -> Unity left-handed Y-up), with no flips. Applied when read, so a change shows at once. 1 and 2 are the same rotation (q and -q).")]
+    public int conversion = 1;
 
     // Mirror a Unity axis after the conversion, to fix a direction without code. Mirroring
     // X makes turns about Y and Z go the other way (turns about X don't change); likewise for

@@ -103,6 +103,12 @@ public class PodAvatar : MonoBehaviour
     [Tooltip("Seconds each pose is held and averaged.")]
     public float captureSeconds = 1f;
 
+    [Header("Body collision")]
+    [Tooltip("Keep the limbs out of the body and out of each other (AvatarCollision): an overlap is pushed out until the two just touch, turning the arm at the shoulder or the leg at the hip.")]
+    public bool preventInterpenetration = true;
+    [Tooltip("Draw the collision capsules in the Scene view (orange = body, blue = limbs).")]
+    public bool showCollisionGizmos;
+
     // A usable second pose turns a bone at least this much, about a mostly horizontal axis.
     const float MinSecondPoseAngle = 10f;
     const float MaxVerticalAxis = 0.6f;
@@ -217,6 +223,9 @@ public class PodAvatar : MonoBehaviour
     public bool IsCalibrated => calibrations.Count > 0;
     // How far past straight down the arms go in the arms-down pose (degrees), from the mesh.
     public float ArmsInwardAngle => armsInward;
+    // The body's collision capsules (null before Start).
+    public AvatarCollision Collision => collision;
+    AvatarCollision collision;
 
     // --- calibration state machine ----------------------------------------------------
 
@@ -272,6 +281,10 @@ public class PodAvatar : MonoBehaviour
 
         armsInward = MeasureArmsInward();
         SetUpPalmsTogether();
+
+        // Sized from the mesh in the rest pose, after the body measurements.
+        collision = new AvatarCollision(avatar);
+        Debug.Log($"[PodAvatar] body collision: {collision.Summary}");
 
         // Parents first, so a child's world rotation is set after its parent moved.
         bones.Sort((a, b) => a.depth.CompareTo(b.depth));
@@ -782,6 +795,15 @@ public class PodAvatar : MonoBehaviour
         writes.Sort((x, y) => x.depth.CompareTo(y.depth));
         foreach (var w in writes)
             w.transform.rotation = w.rotation;
+
+        if (preventInterpenetration && collision != null)
+            collision.Resolve();
+    }
+
+    void OnDrawGizmos()
+    {
+        if (showCollisionGizmos && collision != null)
+            collision.DrawGizmos();
     }
 
     // Average of a few rotations: align signs to the first (q and -q are the same rotation),

@@ -23,6 +23,7 @@ public class PodAvatarTest : MonoBehaviour
     PodAvatar.Phase guiPhase;
     bool guiFocused = true;
     readonly List<string> guiPodLines = new List<string>();
+    string guiCollision = "";
 
     void Awake()
     {
@@ -84,6 +85,10 @@ public class PodAvatarTest : MonoBehaviour
             guiPodLines.Clear();
             foreach (PodAvatar.PodBone entry in podAvatar.mapping)
                 guiPodLines.Add(PodLine(entry));
+            AvatarCollision c = podAvatar.Collision;
+            guiCollision = c == null || !podAvatar.preventInterpenetration || !podAvatar.IsCalibrated ? " "
+                : c.LastContacts == 0 ? "<color=#999999>sin contactos</color>"
+                : $"{c.LastContacts} contacto(s): hundido {c.LastMaxPenetrationBefore * 100f:F1} cm → {c.LastMaxPenetrationAfter * 100f:F1} cm";
         }
 
         GUILayout.BeginArea(new Rect(16, 12, Mathf.Min(Screen.width * 0.45f, 460f), Screen.height - 24));
@@ -97,6 +102,9 @@ public class PodAvatarTest : MonoBehaviour
         if (GUILayout.Button(podAvatar.IsCalibrated ? "Calibrar otra vez (K)" : "Calibrar (K)", GUILayout.Height(34)))
             StartCalibration();
         GUI.enabled = true;
+
+        podAvatar.preventInterpenetration = GUILayout.Toggle(podAvatar.preventInterpenetration, " Evitar que las extremidades atraviesen el cuerpo");
+        GUILayout.Label(guiCollision, smallStyle);
 
         GUILayout.Label(guiFocused ? " " : "<color=#ffaa33>La vista Game no tiene el foco: K no llega. Haz clic en ella o usa el botón.</color>", smallStyle);
         GUILayout.EndArea();

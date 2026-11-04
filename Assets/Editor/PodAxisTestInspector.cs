@@ -1,7 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 
-// Buttons for PodAxisTest in the Inspector: the same actions as its keys (Z, C, 1/2/3), but
+// Buttons for PodAxisTest in the Inspector: the same actions as its keys (Z, X, C, 1/2/3), but
 // they work whether or not the Game view has focus - the Input System drops the keyboard
 // while it doesn't (Play Mode Input Behavior: "respect Game view focus").
 [CustomEditor(typeof(PodAxisTest))]
@@ -24,8 +24,10 @@ public class PodAxisTestInspector : Editor
         if (receiver != null)
             EditorGUILayout.LabelField($"Conversión {receiver.conversion}   ·   espejo X {receiver.flipX}, Y {receiver.flipY}, Z {receiver.flipZ}");
 
-        if (GUILayout.Button("Poner en cero (Z)", GUILayout.Height(28)))
+        if (GUILayout.Button("Paso 1: poner en cero — plano, USB a la derecha (Z)", GUILayout.Height(28)))
             test.Zero();
+        if (GUILayout.Button("Paso 2: USB apuntando hacia arriba (X)", GUILayout.Height(28)))
+            test.Step2();
         if (GUILayout.Button("Cambiar conversión (C)", GUILayout.Height(28)))
             test.CycleConversion();
 

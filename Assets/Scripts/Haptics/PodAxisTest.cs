@@ -9,9 +9,18 @@ using UnityEngine.InputSystem;
 //   USB end (orange) at +X, thickness along Y with a blue patch on the top face, width
 //   along Z. Fixed red/green/blue bars at the left show Unity's +X (right), +Y (up) and +Z
 //   (into the screen).
-// - Z puts it in zero: the box shows the rotation since that moment, box = q * Inverse(q0),
-//   so it turns about the same world axes as the pod. The zero is kept as the raw sample and
-//   converted again each frame, so it survives changing the conversion or the flips.
+// - Zero in two steps, because the BNO's game rotation vector has no compass: its "forward"
+//   is wherever the pod faced at power-up, so a single zero leaves the axes the pod turns
+//   about rotated by that unknown heading - with ~90° the two tilts look swapped.
+//     1. Z: the pod flat, top up, USB end to the right - the box's own pose. The box then
+//        shows box = q · q0⁻¹ (right pose, but the tilt axes still carry the BNO's heading).
+//     2. X: the USB end tipped straight up (+90° about the axis into the screen). That turn,
+//        seen by the BNO, is about R·forward, where R is the BNO's heading relative to the
+//        screen; R is read off it, and from then on box = R⁻¹ · (q · q0⁻¹) · R, which turns
+//        about the same axes as the pod. Same math the body calibration will need (one pose
+//        can't separate heading from how the pod is mounted).
+//   Both steps are kept as raw samples and recomputed each frame, so they survive changing
+//   the conversion or the flips.
 // - C cycles PodReceiver.conversion, 1/2/3 toggle PodReceiver.flipX/Y/Z. Those live on the
 //   PodReceiver object (its Inspector), since the whole app uses the same conversion.
 // - On screen: pod state, packets per second, raw quaternion, converted quaternion + euler,
@@ -45,6 +54,14 @@ public class PodAxisTest : MonoBehaviour
     Vector4 zeroRaw;
     float zeroedAt;
 
+    // Step 2 of the zero (X): the USB end tipped straight up.
+    bool headingSet;
+    Vector4 step2Raw;
+
+    // A good step 2 is ~90° about a horizontal axis.
+    const float Step2AngleTolerance = 30f;
+    const float Step2MaxVerticalAxis = 0.5f;
+
     long rateCount;
     float rateStart;
     float packetsPerSecond;
@@ -56,7 +73,7 @@ public class PodAxisTest : MonoBehaviour
     int loggedConversion = -1;
     bool loggedFlipX, loggedFlipY, loggedFlipZ;
 
-    InputAction zeroAction, conversionAction, flipXAction, flipYAction, flipZAction;
+    InputAction zeroAction, step2Action, conversionAction, flipXAction, flipYAction, flipZAction;
     GUIStyle textStyle, smallStyle, axisLabelStyle;
 
     // Read at the IMGUI layout pass and reused by the draw pass - see OnGUI.
@@ -72,6 +89,7 @@ public class PodAxisTest : MonoBehaviour
             Debug.LogError("[PodAxisTest] no PodReceiver in the scene.");
 
         zeroAction = Bind("ZeroPod", "<Keyboard>/z", Zero);
+        step2Action = Bind("ZeroStep2", "<Keyboard>/x", Step2);
         conversionAction = Bind("CycleConversion", "<Keyboard>/c", CycleConversion);
         flipXAction = Bind("FlipX", "<Keyboard>/1", () => ToggleFlip(0));
         flipYAction = Bind("FlipY", "<Keyboard>/2", () => ToggleFlip(1));
@@ -79,7 +97,7 @@ public class PodAxisTest : MonoBehaviour
 
         BuildBox();
         BuildWorldAxes();
-        Debug.Log($"[PodAxisTest] started: following pod {podId}. Z zero, C conversion, 1/2/3 flip X/Y/Z.");
+        Debug.Log($"[PodAxisTest] started: following pod {podId}. Z zero (flat, USB right), X step 2 (USB up), C conversion, 1/2/3 flip X/Y/Z.");
     }
 
     static InputAction Bind(string name, string path, System.Action onPress)
@@ -92,7 +110,7 @@ public class PodAxisTest : MonoBehaviour
 
     void OnDestroy()
     {
-        foreach (InputAction action in new[] { zeroAction, conversionAction, flipXAction, flipYAction, flipZAction })
+        foreach (InputAction action in new[] { zeroAction, step2Action, conversionAction, flipXAction, flipYAction, flipZAction })
         {
             action.Disable();
             action.Dispose();
@@ -151,7 +169,61 @@ public class PodAxisTest : MonoBehaviour
         zeroed = true;
         zeroRaw = raw;
         zeroedAt = Time.time;
-        Debug.Log($"[PodAxisTest] pod {podId} zeroed at raw {Format(raw)} (converted {Format(receiver.ToUnityRotation(raw))})");
+        headingSet = false;
+        Debug.Log($"[PodAxisTest] pod {podId} zeroed (step 1, flat, USB right) at raw {Format(raw)} (converted {Format(receiver.ToUnityRotation(raw))}). Now tip the USB end straight up and press X.");
+    }
+
+    // Step 2 of the zero: the USB end tipped straight up from the step-1 pose.
+    public void Step2()
+    {
+        if (receiver == null || !zeroed)
+        {
+            Debug.Log("[PodAxisTest] X ignored: do step 1 (Z, pod flat with the USB end to the right) first.");
+            return;
+        }
+        if (!receiver.TryGetRawRotation(podId, out Vector4 raw))
+        {
+            Debug.Log($"[PodAxisTest] X ignored: pod {podId} has no IMU reading.");
+            return;
+        }
+
+        if (!TryReadHeading(raw, out Quaternion heading, out float angle, out Vector3 axis, out string problem))
+        {
+            Debug.LogWarning($"[PodAxisTest] step 2 rejected: {problem} (turn of {angle:F0}° about {axis.ToString("F2")}). Tip the USB end straight up, about 90°, and press X again.");
+            return;
+        }
+
+        step2Raw = raw;
+        headingSet = true;
+        Quaternion mount = Quaternion.Inverse(heading) * receiver.ToUnityRotation(zeroRaw);
+        Debug.Log($"[PodAxisTest] step 2 done: turn of {angle:F0}° about {axis.ToString("F2")}; BNO heading vs. the screen {Signed(heading.eulerAngles.y):F0}°; chip in the pod (euler) {FormatEuler(mount)}.");
+    }
+
+    // From the turn between step 1 and step 2: in Unity, USB right -> USB up is +90° about
+    // forward (Quaternion.Euler(0, 0, 90) * right = up). The BNO sees R·P1·R⁻¹, a turn about
+    // R·forward, so R is the yaw that takes forward to that axis.
+    bool TryReadHeading(Vector4 step2, out Quaternion heading, out float angle, out Vector3 axis, out string problem)
+    {
+        Quaternion turn = receiver.ToUnityRotation(step2) * Quaternion.Inverse(receiver.ToUnityRotation(zeroRaw));
+        turn.ToAngleAxis(out angle, out axis);
+        if (angle > 180f)
+        {
+            angle = 360f - angle;
+            axis = -axis;
+        }
+
+        heading = Quaternion.identity;
+        problem = null;
+        if (Mathf.Abs(angle - 90f) > Step2AngleTolerance)
+            problem = $"expected ~90°, got {angle:F0}°";
+        else if (Mathf.Abs(axis.y) > Step2MaxVerticalAxis)
+            problem = "that was mostly a turn about the vertical, not a tip";
+        if (problem != null)
+            return false;
+
+        Vector3 flat = new Vector3(axis.x, 0f, axis.z).normalized;
+        heading = Quaternion.AngleAxis(Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg, Vector3.up);
+        return true;
     }
 
     public void CycleConversion()
@@ -187,9 +259,18 @@ public class PodAxisTest : MonoBehaviour
             return;
 
         Quaternion current = receiver.GetRotation(podId);
-        box.localRotation = zeroed
-            ? current * Quaternion.Inverse(receiver.ToUnityRotation(zeroRaw))
-            : current;
+        if (!zeroed)
+        {
+            box.localRotation = current;
+            return;
+        }
+
+        Quaternion sinceZero = current * Quaternion.Inverse(receiver.ToUnityRotation(zeroRaw));
+        // Recomputed every frame from the raw samples, so a conversion change applies at once.
+        if (headingSet && TryReadHeading(step2Raw, out Quaternion heading, out _, out _, out _))
+            box.localRotation = Quaternion.Inverse(heading) * sinceZero * heading;
+        else
+            box.localRotation = sinceZero;
     }
 
     void UpdateRate()
@@ -222,6 +303,7 @@ public class PodAxisTest : MonoBehaviour
             loggedPodId = podId;
             loggedState = -1;
             zeroed = false;
+            headingSet = false;
             rateCount = receiver.GetPacketCount(podId);
             rateStart = Time.unscaledTime;
         }
@@ -304,9 +386,8 @@ public class PodAxisTest : MonoBehaviour
             Quaternion converted = receiver.ToUnityRotation(raw);
             GUILayout.Label($"Crudo (BNO085 i, j, k, real): <b>{Format(raw)}</b>", textStyle);
             GUILayout.Label($"Convertido a Unity (x, y, z, w): <b>{Format(converted)}</b>   euler <b>{FormatEuler(converted)}</b>", textStyle);
-            GUILayout.Label(zeroed
-                ? $"Caja (desde el cero, hace {Time.time - zeroedAt:F0} s): euler <b>{FormatEuler(box.localRotation)}</b>"
-                : "Caja: sin poner en cero (muestra la rotación convertida tal cual)", textStyle);
+            GUILayout.Label(!zeroed ? "Caja: sin poner en cero (muestra la rotación convertida tal cual)"
+                : $"Caja ({(headingSet ? "cero completo" : "solo paso 1")}, hace {Time.time - zeroedAt:F0} s): euler <b>{FormatEuler(box.localRotation)}</b>", textStyle);
         }
         else
         {
@@ -317,12 +398,18 @@ public class PodAxisTest : MonoBehaviour
         GUILayout.Label("Los pods no la envían: el game rotation vector del BNO085 no trae estimación de precisión.", smallStyle);
         GUILayout.Space(6);
         GUILayout.Label($"Conversión: <b><size=20>{receiver.conversion}</size></b>   ·   espejo X: {YesNo(receiver.flipX)}   Y: {YesNo(receiver.flipY)}   Z: {YesNo(receiver.flipZ)}", textStyle);
-        GUILayout.Label("<b>Z</b> poner en cero   ·   <b>C</b> cambiar conversión   ·   <b>1 / 2 / 3</b> espejo X / Y / Z   (o los botones en el Inspector de PodAxisTest)", textStyle);
+        GUILayout.Label("<b>Z</b> cero paso 1   ·   <b>X</b> paso 2   ·   <b>C</b> conversión   ·   <b>1 / 2 / 3</b> espejo X / Y / Z   (o los botones en el Inspector de PodAxisTest)", textStyle);
         // The Input System drops the keyboard while the Game view doesn't have focus
         // (editorInputBehaviorInPlayMode = PointersAndKeyboardsRespectGameViewFocus).
         if (!guiFocused)
             GUILayout.Label("<color=#ffaa33><b>La vista Game no tiene el foco: las teclas no llegan.</b> Haz clic dentro de la vista Game, o usa los botones del Inspector.</color>", textStyle);
-        GUILayout.Label("Pon el pod como la caja (plano, cara de arriba hacia arriba, USB a la derecha) y presiona Z. Luego gíralo: la caja debe girar igual.", smallStyle);
+        // One line in every state, so the layout never changes with it.
+        string next = !zeroed
+            ? "<b>Paso 1:</b> pon el pod plano, cara de arriba hacia arriba, el extremo del <b>USB a la derecha</b>, y presiona <b>Z</b>."
+            : !headingSet
+                ? "<b>Paso 2:</b> sin girarlo hacia los lados, levanta el extremo del <b>USB</b> hasta que apunte <b>hacia arriba</b> (90°) y presiona <b>X</b>."
+                : "<b>Listo:</b> gira el pod como quieras; la caja debe girar igual. Para repetir, vuelve al paso 1 (Z).";
+        GUILayout.Label($"<color=#9fd0ff>{next}</color>", textStyle);
         if (state == 0)
             GUILayout.Label("Sin datos: revisa que bridge.py esté corriendo (desde Bridge/) y que el pod esté prendido.", smallStyle);
         GUILayout.EndArea();
@@ -335,6 +422,10 @@ public class PodAxisTest : MonoBehaviour
         DrawAxisLabel(cam, axesOrigin + Vector3.right * 0.36f, "+X", AxisXColor);
         DrawAxisLabel(cam, axesOrigin + Vector3.up * 0.36f, "+Y", AxisYColor);
         DrawAxisLabel(cam, axesOrigin + Vector3.forward * 0.36f, "+Z (adentro)", AxisZColor);
+
+        // Name the orange end, so it's clear which end of the real pod it is.
+        if (box.gameObject.activeSelf)
+            DrawAxisLabel(cam, box.TransformPoint(new Vector3(PodSizeMeters.x * BoxScale / 2f + 0.07f, 0f, 0f)), "USB", UsbColor);
     }
 
     void DrawAxisLabel(Camera cam, Vector3 world, string text, Color color)

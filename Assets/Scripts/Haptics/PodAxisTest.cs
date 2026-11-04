@@ -134,7 +134,8 @@ public class PodAxisTest : MonoBehaviour
 
     // --- controls ----------------------------------------------------------------
 
-    void Zero()
+    // Also called by the Inspector buttons (PodAxisTestInspector), which work without Game view focus.
+    public void Zero()
     {
         if (receiver == null || !receiver.TryGetRawRotation(podId, out Vector4 raw))
         {
@@ -148,13 +149,14 @@ public class PodAxisTest : MonoBehaviour
         Debug.Log($"[PodAxisTest] pod {podId} zeroed at raw {Format(raw)} (converted {Format(receiver.ToUnityRotation(raw))})");
     }
 
-    void CycleConversion()
+    public void CycleConversion()
     {
         if (receiver != null)
             receiver.conversion = (receiver.conversion + 1) % ConversionCount;
     }
 
-    void ToggleFlip(int axis)
+    // axis: 0 = X, 1 = Y, 2 = Z.
+    public void ToggleFlip(int axis)
     {
         if (receiver == null)
             return;
@@ -297,7 +299,11 @@ public class PodAxisTest : MonoBehaviour
         GUILayout.Label("Los pods no la envían: el game rotation vector del BNO085 no trae estimación de precisión.", smallStyle);
         GUILayout.Space(6);
         GUILayout.Label($"Conversión: <b><size=20>{receiver.conversion}</size></b>   ·   espejo X: {YesNo(receiver.flipX)}   Y: {YesNo(receiver.flipY)}   Z: {YesNo(receiver.flipZ)}", textStyle);
-        GUILayout.Label("<b>Z</b> poner en cero   ·   <b>C</b> cambiar conversión   ·   <b>1 / 2 / 3</b> espejo X / Y / Z", textStyle);
+        GUILayout.Label("<b>Z</b> poner en cero   ·   <b>C</b> cambiar conversión   ·   <b>1 / 2 / 3</b> espejo X / Y / Z   (o los botones en el Inspector de PodAxisTest)", textStyle);
+        // The Input System drops the keyboard while the Game view doesn't have focus
+        // (editorInputBehaviorInPlayMode = PointersAndKeyboardsRespectGameViewFocus).
+        if (!Application.isFocused)
+            GUILayout.Label("<color=#ffaa33><b>La vista Game no tiene el foco: las teclas no llegan.</b> Haz clic dentro de la vista Game, o usa los botones del Inspector.</color>", textStyle);
         GUILayout.Label("Pon el pod como la caja (plano, cara de arriba hacia arriba, USB a la derecha) y presiona Z. Luego gíralo: la caja debe girar igual.", smallStyle);
         if (state == 0)
             GUILayout.Label("Sin datos: revisa que bridge.py esté corriendo (desde Bridge/) y que el pod esté prendido.", smallStyle);

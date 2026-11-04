@@ -135,6 +135,13 @@ void connect_cb(uint16_t conn_handle) {
   if (strlen(name) >= 6) pid = (name[4] - '0') * 10 + (name[5] - '0');
   if (pid == 0 || pid > 99) { Bluefruit.disconnect(conn_handle); Bluefruit.Scanner.start(0); return; }
 
+  // Before enableNotify: notifications now reach notify_cb at once (not queued behind this
+  // callback), so the slot must already carry this pod's ID. loop() still prints nothing
+  // from it until slotUsed is set below. Setting it after used to label a reconnecting
+  // pod's first sample with the slot's previous pod (pod 9's as P,2) or 0 at startup.
+  podIdOf[id] = pid;
+  dirty[id]   = false;
+
   if (!podSvc[id].discover(conn_handle) || !quatChr[id].discover()
       || !quatChr[id].enableNotify()) {
     Serial.print("E,discover failed for "); Serial.println(name);
@@ -145,7 +152,6 @@ void connect_cb(uint16_t conn_handle) {
 
   hasCue[id] = cueChr[id].discover();     // optional: old pods lack it
 
-  podIdOf[id]  = pid;
   handles[id]  = conn_handle;
   slotUsed[id] = true;
 
@@ -163,6 +169,7 @@ void disconnect_cb(uint16_t conn_handle, uint8_t reason) {
       Serial.print(",0x"); Serial.println(reason, HEX);
       slotUsed[i] = false;
       hasCue[i]   = false;
+      dirty[i]    = false;
       handles[i]  = BLE_CONN_HANDLE_INVALID;
       break;
     }
@@ -221,11 +228,12 @@ void loop() {
   for (int i = 0; i < MAX_PODS; i++) {
     // notify_cb writes quat[i] from the BLE task: take a whole copy, never half old / half new.
     taskENTER_CRITICAL();
-    bool fresh = dirty[i];
-    if (fresh) {
+    // Only fully set-up connections (slotUsed is set at the end of connect_cb); a sample
+    // that arrives while a pod is still connecting is dropped.
+    bool fresh = dirty[i] && slotUsed[i];
+    if (fresh)
       memcpy(q, quat[i], 16);
-      dirty[i] = false;
-    }
+    dirty[i] = false;
     taskEXIT_CRITICAL();
     if (!fresh) continue;
 

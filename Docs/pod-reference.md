@@ -356,6 +356,22 @@ notify callback directly from the BLE task; the 16-byte copy is guarded with
 sample. `bridge.py` now also writes the receiver's `R`/`S`/`E` lines to a
 `*_events.csv` next to the samples, on the same clock, to check it.
 
+**Verified on hardware, 2026-11-04** (9 pods, ~5 min; pods 1 and 9 switched
+off and back on, pod 2 ran flat): while pod 1 (221.6 s) and pod 9 (246.5 s)
+reconnected, every other pod's longest gap was 0.11–0.23 s — normal jitter —
+and no moment had 3+ pods pausing together. **But the fix exposed a race:**
+notifications now arrive before `connect_cb` finished, while it still assigned
+the slot's pod ID last, so a connecting pod's first sample went out with the
+slot's previous ID — `P,0,…` at startup (1–2 per pod), and pod 9's first
+sample as `P,2,…` when it reconnected into pod 2's freed slot. **Fixed:** the
+ID is set before `enableNotify()`, and the main loop prints only slots whose
+`slotUsed` is set (end of `connect_cb`); `disconnect_cb` clears `dirty`. Needs
+re-flashing the receiver again.
+
+**Status line, for reading it by eye:** `S,8,9,1,3,4,5,6,7,8,9` = 8 connected,
+target 9, then the IDs — so with pod 9 connected "9" appears twice; that's not
+a duplicate.
+
 Commercial alternatives considered: SlimeVR uses Wi-Fi/UDP; Xsens and Rokoko
 use proprietary 2.4 GHz to a dongle. BLE connections are unusual for multi-node
 body tracking, which is why this needed proving.

@@ -107,7 +107,7 @@ public class PodAvatarTest : MonoBehaviour
         switch (guiPhase)
         {
             case PodAvatar.Phase.CountdownTPose:
-                instruction = "Ponte en <b>T</b>: brazos extendidos a los lados, palmas hacia abajo, mirando hacia la pantalla.";
+                instruction = "Ponte en <b>T</b>: brazos extendidos a los lados a la altura de los hombros, codos rectos, <b>palmas hacia abajo</b>, mirando hacia la pantalla.";
                 countdown = $"{Mathf.CeilToInt(podAvatar.PhaseTimeLeft)}";
                 break;
             case PodAvatar.Phase.CaptureTPose:
@@ -115,7 +115,9 @@ public class PodAvatarTest : MonoBehaviour
                 countdown = "●";
                 break;
             case PodAvatar.Phase.CountdownSecond:
-                instruction = "Ahora: <b>brazos abajo</b> pegados al cuerpo y una <b>sentadilla ligera</b>, inclinándote un poco hacia adelante.";
+                // The arms must swing straight down sideways, without twisting: the heading of
+                // each arm pod comes from the axis of that turn (PodAvatar.SecondPoseDelta).
+                instruction = "Ahora: <b>baja los brazos de lado, sin girarlos</b>, hasta los costados (<b>palmas hacia los muslos</b>), y haz una <b>sentadilla ligera</b> inclinándote un poco hacia adelante.";
                 countdown = $"{Mathf.CeilToInt(podAvatar.PhaseTimeLeft)}";
                 break;
             case PodAvatar.Phase.CaptureSecond:

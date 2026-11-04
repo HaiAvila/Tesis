@@ -413,8 +413,11 @@ the slot's pod ID last, so a connecting pod's first sample went out with the
 slot's previous ID — `P,0,…` at startup (1–2 per pod), and pod 9's first
 sample as `P,2,…` when it reconnected into pod 2's freed slot. **Fixed:** the
 ID is set before `enableNotify()`, and the main loop prints only slots whose
-`slotUsed` is set (end of `connect_cb`); `disconnect_cb` clears `dirty`. Needs
-re-flashing the receiver again.
+`slotUsed` is set (end of `connect_cb`); `disconnect_cb` clears `dirty`.
+**Verified on hardware, 2026-11-04 (second run, 7½ min):** no `P,0` lines, no
+sample under a pod's ID while it was off, and during three reconnects (pods
+1, 9, 5) every other pod's longest gap was 0.09–0.19 s; no shared pauses;
+18–19.5 samples/s per pod.
 
 **Status line, for reading it by eye:** `S,8,9,1,3,4,5,6,7,8,9` = 8 connected,
 target 9, then the IDs — so with pod 9 connected "9" appears twice; that's not

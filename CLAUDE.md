@@ -120,6 +120,7 @@ C# must live inside `Assets/`. Everything else must live outside it, or Unity im
 Firmware/pod_v2/        Pod firmware (Arduino). Editable under the rules above.
 Firmware/receiver_v2/   Receiver firmware (Arduino). Editable under the rules above.
 Bridge/bridge.py        Serial <-> UDP bridge. Python + pyserial.
+Bridge/cue.py           Send cues by hand: type "<pod> <cue> [param]" while bridge.py runs.
 Docs/pod-reference.md   Full hardware reference.
 ```
 

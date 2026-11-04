@@ -1,5 +1,8 @@
-// 15 - RECEIVER v2. Bluefruit multi-central.
+// 18 - RECEIVER v3. Bluefruit multi-central.
 // Board: Seeed nRF52 Boards (classic) -> Seeed XIAO nRF52840
+//
+// v3 = v2 (with both 2026-11-04 hardware-verified fixes) + battery/charging from
+// 19-byte pod packets + RSSI + a new H line. P, S and R lines are unchanged.
 //
 // Serial protocol, 115200 baud.
 //
@@ -10,11 +13,18 @@
 //  OUT, once a second:
 //      S,<connected>,<target>,<id>,<id>,...        (who is connected)
 //
+//  OUT, every 2 s per connected pod:
+//      H,<id>,<battery_mV>,<charging>,<rssi>
+//      battery_mV  integer mV; 0 = the pod sent no battery (old 16-byte packet,
+//                  or no reading yet)
+//      charging    1 = charging, 0 = not, -1 = unknown (old 16-byte packet)
+//      rssi        dBm as the receiver sees that pod (negative); 0 = not available
+//
 //  IN (PC -> receiver), one command per line:
 //      C,<id>,<cue>,<param>      fire a cue on one pod
 //      C,0,<cue>,<param>         id 0 = broadcast to every pod
 //
-//      cue: 0 STOP  1 CLICK  2 PULSE  3 TRIPLE  4 LONG  5 DOUBLE
+//      cue: 0 STOP  1 CLICK  2 PULSE  3 TRIPLE  4 LONG  5 DOUBLE  6 DONE  7 FAIL
 //
 //  Try it by hand in the Serial Monitor (line ending = Newline):
 //      C,0,3,0      -> every pod plays the camera-start triple
@@ -53,6 +63,9 @@ BLEClientCharacteristic cueChr[MAX_SLOTS]  = { C,C,C,C,C,C,C,C,C,C,C,C };
 #undef Q
 #undef C
 
+#define PKT_V3 16      // quaternion only
+#define PKT_V4 19      // quaternion + VBAT mV (uint16 LE) + flags
+
 bool     slotUsed[MAX_SLOTS];
 bool     hasCue[MAX_SLOTS];
 uint8_t  podIdOf[MAX_SLOTS];
@@ -60,9 +73,17 @@ uint16_t handles[MAX_SLOTS];
 float    quat[MAX_SLOTS][4];
 volatile bool dirty[MAX_SLOTS];
 
+// Battery info from 19-byte packets, written by notify_cb (BLE task) inside the
+// same critical section as the quaternion.
+bool     hasBat[MAX_SLOTS];      // last packet from this slot was 19 bytes
+uint16_t batMv[MAX_SLOTS];
+uint8_t  batFlags[MAX_SLOTS];    // bit0 charging, bit1 reading valid
+
 char    cmdBuf[48];
 uint8_t cmdLen = 0;
-unsigned long lastStatus = 0;
+unsigned long lastStatus = 0, lastHealth = 0;
+
+#define HEALTH_PERIOD_MS 2000
 
 int connectedCount() {
   int n = 0;
@@ -76,6 +97,8 @@ int slotOfPod(uint8_t id) {
   return -1;
 }
 
+void clearBat(int i) { hasBat[i] = false; batMv[i] = 0; batFlags[i] = 0; }
+
 void setup() {
   Serial.begin(115200);
   while (!Serial) delay(10);
@@ -83,6 +106,7 @@ void setup() {
   for (int i = 0; i < MAX_SLOTS; i++) {
     slotUsed[i] = false; hasCue[i] = false; dirty[i] = false;
     podIdOf[i]  = 0;     handles[i] = BLE_CONN_HANDLE_INVALID;
+    clearBat(i);
   }
 
   if (!Bluefruit.begin(0, MAX_PODS)) {
@@ -97,7 +121,7 @@ void setup() {
     // queue. connect_cb runs on that queue and blocks in discover() for ~1-2 s while a pod
     // (re)connects; with notifications on the same queue, every other pod's samples waited
     // behind it - all 9 froze together (seen twice in a 10-min run, each time a low-battery
-    // pod reconnected). notify_cb only copies 16 bytes, so it's safe to run directly.
+    // pod reconnected). notify_cb only copies a few bytes, so it's safe to run directly.
     quatChr[i].setNotifyCallback(notify_cb, false);
     quatChr[i].begin();
     cueChr[i].begin();
@@ -141,6 +165,9 @@ void connect_cb(uint16_t conn_handle) {
   // pod's first sample with the slot's previous pod (pod 9's as P,2) or 0 at startup.
   podIdOf[id] = pid;
   dirty[id]   = false;
+  taskENTER_CRITICAL();
+  clearBat(id);                   // no battery info carried over from the slot's last pod
+  taskEXIT_CRITICAL();
 
   if (!podSvc[id].discover(conn_handle) || !quatChr[id].discover()
       || !quatChr[id].enableNotify()) {
@@ -151,6 +178,10 @@ void connect_cb(uint16_t conn_handle) {
   }
 
   hasCue[id] = cueChr[id].discover();     // optional: old pods lack it
+
+  // RSSI: one non-blocking SoftDevice call; the stack then keeps the value cached
+  // and loop() only reads it.
+  c->monitorRssi();
 
   handles[id]  = conn_handle;
   slotUsed[id] = true;
@@ -171,19 +202,31 @@ void disconnect_cb(uint16_t conn_handle, uint8_t reason) {
       hasCue[i]   = false;
       dirty[i]    = false;
       handles[i]  = BLE_CONN_HANDLE_INVALID;
+      taskENTER_CRITICAL();
+      clearBat(i);
+      taskEXIT_CRITICAL();
       break;
     }
   }
   Bluefruit.Scanner.start(0);
 }
 
+// Accepts the old 16-byte packet (v3 pods) and the new 19-byte one (v4 pods), so one
+// pod can be flashed and soak-tested while the other 8 still run v3.
 void notify_cb(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
-  if (len != 16) return;
+  if (len != PKT_V3 && len != PKT_V4) return;
   for (int i = 0; i < MAX_PODS; i++) {
     if (&quatChr[i] == chr) {
-      // Runs in the BLE task while loop() may be reading quat[i]: copy as one piece.
+      // Runs in the BLE task while loop() may be reading: copy as one piece.
       taskENTER_CRITICAL();
       memcpy(quat[i], data, 16);
+      if (len == PKT_V4) {
+        hasBat[i]   = true;
+        batMv[i]    = (uint16_t)data[16] | ((uint16_t)data[17] << 8);
+        batFlags[i] = data[18];
+      } else {
+        hasBat[i]   = false;
+      }
       dirty[i] = true;
       taskEXIT_CRITICAL();
       return;
@@ -220,6 +263,32 @@ void pollSerial() {
   }
 }
 
+void printHealth() {
+  char out[48];
+  for (int i = 0; i < MAX_PODS; i++) {
+    bool used, bat;
+    uint16_t mv; uint8_t flags; uint16_t h;
+    taskENTER_CRITICAL();
+    used  = slotUsed[i];
+    bat   = hasBat[i];
+    mv    = batMv[i];
+    flags = batFlags[i];
+    h     = handles[i];
+    taskEXIT_CRITICAL();
+    if (!used) continue;
+
+    int mvOut  = (bat && (flags & 0x02)) ? mv : 0;
+    int chgOut = bat ? ((flags & 0x01) ? 1 : 0) : -1;
+
+    int rssi = 0;
+    BLEConnection* c = Bluefruit.Connection(h);
+    if (c) rssi = c->getRssi();     // cached by the stack; 0 if not available yet
+
+    snprintf(out, sizeof(out), "H,%u,%d,%d,%d", podIdOf[i], mvOut, chgOut, rssi);
+    Serial.println(out);
+  }
+}
+
 void loop() {
   pollSerial();
 
@@ -249,5 +318,10 @@ void loop() {
     for (int i = 0; i < MAX_PODS; i++)
       if (slotUsed[i]) { Serial.print(","); Serial.print(podIdOf[i]); }
     Serial.println();
+  }
+
+  if (millis() - lastHealth >= HEALTH_PERIOD_MS) {
+    lastHealth = millis();
+    printHealth();
   }
 }

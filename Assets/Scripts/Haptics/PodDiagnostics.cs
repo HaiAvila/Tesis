@@ -245,6 +245,12 @@ public class PodDiagnostics : MonoBehaviour
             string text = receiver.HasOrientation(pod.Key) ? $"<b>Pod {pod.Key}</b>"
                 : receiver.IsAlive(pod.Key) ? $"<color=#ffaa33><b>Pod {pod.Key}</b>\nsin IMU</color>"
                 : $"<color=#777777>Pod {pod.Key}</color>";
+            if (receiver.TryGetHealth(pod.Key, out PodReceiver.PodHealth health))
+            {
+                string label = health.ToLabel();
+                if (label.Length > 0)
+                    text += $"\n{label}";
+            }
             GUI.Label(new Rect(screen.x - slotPixels / 2f, Screen.height - screen.y, slotPixels, labelStyle.fontSize * 3f), text, labelStyle);
         }
     }

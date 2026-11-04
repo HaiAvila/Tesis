@@ -13,6 +13,7 @@ Serial Monitor is exactly what Unity receives. Nothing is reformatted.
 
     pod -> Unity    UDP 127.0.0.1:5005    "P,3,0.0120,-0.9981,..."
                                           "S,9,9,1,2,3,..."
+                                          "H,3,3920,0,-58"   (mV, charging, RSSI; every 2 s)
     Unity -> pod    UDP 127.0.0.1:5006    "C,3,2,20"
 """
 
@@ -99,9 +100,9 @@ def main():
         logf = open(name, "w", newline="")
         writer = csv.writer(logf)
         writer.writerow(["t_ms", "pod", "qi", "qj", "qk", "qr"])
-        # The receiver's R (connected / lost), S (status) and E (error) lines, on the same
-        # clock as the samples - so a gap in the samples can be matched to what the receiver
-        # was doing (e.g. a pod reconnecting).
+        # The receiver's R (connected / lost), S (status), E (error) and H (battery, charging,
+        # RSSI) lines, on the same clock as the samples - so a gap in the samples can be matched
+        # to what the receiver was doing (e.g. a pod reconnecting, or a battery running out).
         eventf = open(name.replace(".csv", "_events.csv"), "w", newline="")
         events = csv.writer(eventf)
         events.writerow(["t_ms", "line"])
@@ -117,6 +118,7 @@ def main():
     t0 = time.time()
     samples = 0
     last_report = t0
+    health = {}     # pod id -> latest H line's fields, for the periodic report only
 
     print(f"[bridge] forwarding to {UNITY_HOST}:{UNITY_PORT}   ctrl-C to stop")
     try:
@@ -144,6 +146,16 @@ def main():
                     f = line.split(",")
                     if len(f) == 6:
                         writer.writerow([int((time.time() - t0) * 1000)] + f[1:])
+            elif line.startswith("H,"):
+                # Only for the report below: a garbled line is still forwarded and logged,
+                # and must never stop the bridge.
+                try:
+                    _, pod, mv, charging, rssi = line.split(",")
+                    health[int(pod)] = (int(mv), int(charging), int(rssi))
+                except ValueError:
+                    pass
+                if events:
+                    events.writerow([int((time.time() - t0) * 1000), line])
             elif line[0] in "RSE":
                 print(f"[rx] {line}")
                 if events:
@@ -152,6 +164,10 @@ def main():
             now = time.time()
             if now - last_report >= 5:
                 print(f"[bridge] {samples / (now - last_report):.0f} samples/s")
+                if health:
+                    print("[pods] " + "  ".join(
+                        f"{pod}:{mv / 1000:.2f}V{'+' if charging == 1 else ''}/{rssi}dBm"
+                        for pod, (mv, charging, rssi) in sorted(health.items())))
                 samples = 0
                 last_report = now
 

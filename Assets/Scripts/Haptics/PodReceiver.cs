@@ -24,7 +24,60 @@ using Debug = UnityEngine.Debug;
 /// </remarks>
 public class PodReceiver : MonoBehaviour
 {
-    public enum Cue { Stop = 0, Click = 1, Pulse = 2, Triple = 3, Long = 4, Double = 5 }
+    public enum Cue { Stop = 0, Click = 1, Pulse = 2, Triple = 3, Long = 4, Double = 5, Done = 6, Fail = 7 }
+
+    /// <summary>A pod's latest H line: its battery and charge status (read on the pod) and
+    /// its signal (as the receiver sees it).</summary>
+    public struct PodHealth
+    {
+        public const int LowBatteryMillivolts = 3600;
+
+        public int batteryMillivolts;  // 0 = the pod reports no battery (firmware older than v4)
+        public int charging;           // 1 charging, 0 not, -1 unknown (firmware older than v4)
+        public int rssi;               // dBm, negative; 0 = not available
+
+        public bool HasBattery => batteryMillivolts > 0;
+        public bool IsCharging => charging == 1;
+        public bool HasRssi => rssi != 0;
+        public bool IsLow => HasBattery && !IsCharging && batteryMillivolts < LowBatteryMillivolts;
+        public int BatteryPercent => HasBattery ? PercentFromMillivolts(batteryMillivolts) : -1;
+
+        // A typical LiPo's voltage-to-charge curve: an estimate, and it reads high while
+        // charging and low under a buzz. (mV, %)
+        static readonly int[,] curve =
+        {
+            { 3270, 0 }, { 3610, 5 }, { 3690, 10 }, { 3710, 15 }, { 3730, 20 }, { 3750, 25 },
+            { 3770, 30 }, { 3790, 35 }, { 3800, 40 }, { 3820, 45 }, { 3840, 50 }, { 3850, 55 },
+            { 3870, 60 }, { 3910, 65 }, { 3950, 70 }, { 3980, 75 }, { 4020, 80 }, { 4080, 85 },
+            { 4110, 90 }, { 4150, 95 }, { 4200, 100 },
+        };
+
+        public static int PercentFromMillivolts(int mv)
+        {
+            int last = curve.GetLength(0) - 1;
+            if (mv <= curve[0, 0]) return 0;
+            if (mv >= curve[last, 0]) return 100;
+            for (int i = 1; i <= last; i++)
+            {
+                if (mv > curve[i, 0])
+                    continue;
+                float t = (mv - curve[i - 1, 0]) / (float)(curve[i, 0] - curve[i - 1, 0]);
+                return Mathf.RoundToInt(Mathf.Lerp(curve[i - 1, 1], curve[i, 1], t));
+            }
+            return 100;
+        }
+
+        /// <summary>For the test screens, rich text: "3.92 V, 67 %, -58 dBm".</summary>
+        public string ToLabel()
+        {
+            string battery = !HasBattery ? ""
+                : $"{batteryMillivolts / 1000f:F2} V, {BatteryPercent} %" + (IsCharging ? ", cargando" : "");
+            if (IsLow)
+                battery = $"<color=#ffaa33>{battery}, batería baja</color>";
+            string signal = HasRssi ? $"{rssi} dBm" : "";
+            return battery.Length > 0 && signal.Length > 0 ? $"{battery}, {signal}" : battery + signal;
+        }
+    }
 
     [Header("Network")]
     public int listenPort = 5005;
@@ -58,6 +111,8 @@ public class PodReceiver : MonoBehaviour
     readonly Dictionary<int, double> lastSeen = new Dictionary<int, double>();
     readonly Dictionary<int, bool> hasOrientation = new Dictionary<int, bool>();
     readonly Dictionary<int, long> packetCounts = new Dictionary<int, long>();
+    readonly Dictionary<int, PodHealth> health = new Dictionary<int, PodHealth>();
+    readonly Dictionary<int, double> healthSeen = new Dictionary<int, double>();
     readonly object gate = new object();
 
     static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -139,6 +194,20 @@ public class PodReceiver : MonoBehaviour
                 packetCounts[id] = (packetCounts.TryGetValue(id, out long n) ? n : 0) + 1;
                 if (valid)
                     rawRotations[id] = new Vector4(qi, qj, qk, qr);
+            }
+        }
+        else if (f[0] == "H" && f.Length == 5)
+        {
+            // H,<id>,<battery_mV>,<charging>,<rssi>, every 2 s per connected pod.
+            if (!int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)) return;
+            if (!int.TryParse(f[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int mv)) return;
+            if (!int.TryParse(f[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int charging)) return;
+            if (!int.TryParse(f[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int rssi)) return;
+
+            lock (gate)
+            {
+                health[id] = new PodHealth { batteryMillivolts = mv, charging = charging, rssi = rssi };
+                healthSeen[id] = Now;
             }
         }
         else if (f[0] == "S" && f.Length >= 3)
@@ -240,6 +309,19 @@ public class PodReceiver : MonoBehaviour
                 if (now - kv.Value < 1.0) list.Add(kv.Key);
             return list.ToArray();
         }
+    }
+
+    /// <summary>The pod's battery, charge status and signal, from its latest H line. False if
+    /// none arrived in the last `timeout` seconds (they come every 2 s while it's connected).</summary>
+    public bool TryGetHealth(int podId, out PodHealth podHealth, float timeout = 5f)
+    {
+        lock (gate)
+        {
+            if (healthSeen.TryGetValue(podId, out double t) && Now - t < timeout)
+                return health.TryGetValue(podId, out podHealth);
+        }
+        podHealth = default;
+        return false;
     }
 
     /// <summary>Fire a cue. podId 0 broadcasts to every pod.</summary>

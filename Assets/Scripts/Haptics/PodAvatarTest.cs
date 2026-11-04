@@ -59,7 +59,15 @@ public class PodAvatarTest : MonoBehaviour
         if (podAvatar.Calibrations.TryGetValue(id, out PodAvatar.PodCalibration c))
             cal = c.ok ? "  ·  <color=#7fe07f>calibrado</color>" : $"  ·  <color=#ff7766>{c.problem}</color>";
 
-        return $"Pod {id}  {entry.bone}:  {data}{cal}";
+        string health = "";
+        if (receiver != null && receiver.TryGetHealth(id, out PodReceiver.PodHealth h))
+        {
+            string label = h.ToLabel();
+            if (label.Length > 0)
+                health = $"  ·  {label}";
+        }
+
+        return $"Pod {id}  {entry.bone}:  {data}{health}{cal}";
     }
 
     void OnGUI()

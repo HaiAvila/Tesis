@@ -90,7 +90,7 @@ mode, where you write an amplitude register directly.
 
 | Firmware | Core (Tools → Board group) | Board | BLE stack |
 |---|---|---|---|
-| `pod_v2` (v3) | **Seeed nRF52 mbed-enabled Boards** | Seeed XIAO nRF52840 Sense | ArduinoBLE, peripheral |
+| `pod_v2` (v4) | **Seeed nRF52 mbed-enabled Boards** | Seeed XIAO nRF52840 Sense | ArduinoBLE, peripheral |
 | `receiver_v2` | **Seeed nRF52 Boards** (classic) | Seeed XIAO nRF52840 | Adafruit Bluefruit, multi-central |
 
 - **Pods on mbed:** the classic core's `Wire` does not work with the BNO085.
@@ -241,7 +241,9 @@ capacitor to GND, not on P0.31.)
 |---|---|---|
 | OUTPUT LOW | **1.42 V** (P0.14 at 0 V); divider draws 2.8 µA | ✅ safe |
 | OUTPUT HIGH | 3.3 + 0.9 × 0.338 = **3.60 V** | ❌ at the absolute maximum when full/charging — Seeed's own warning ("risk of burning out the P0.31 pin") |
-| floating (input — **firmware v3 never touches P0.14, so this is how the pods run today**) | nothing pulls the divider down: P0.31 and P0.14 drift toward VBAT until the pins' protection diodes clamp them a little above 3.3 V, < 1 µA through 1.5 MΩ | ⚠️ slightly outside spec; Seeed doesn't warn about it, but holding P0.14 LOW fixes it |
+| floating (input — how firmware v3 ran; **v4 holds it LOW**) | nothing pulls the divider down: P0.31 and P0.14 drift toward VBAT until the pins' protection diodes clamp them a little above 3.3 V, < 1 µA through 1.5 MΩ | ⚠️ slightly outside spec; Seeed doesn't warn about it, but holding P0.14 LOW fixes it |
+
+**Built in pod firmware v4 (2026-11-04), flashed on all 9.** The pins are driven through the nRF52840's registers (`NRF_P0`, `NRF_SAADC`), not the core's pin numbers, so no Arduino pin mapping can point at the wrong pin. Read every 5 s, 8 samples averaged, sent in every notify.
 
 **Rules for reading the battery:**
 - At the very start of `setup()`: P0.14 as **OUTPUT, LOW**. Never set it HIGH
@@ -452,10 +454,16 @@ body tracking, which is why this needed proving.
 ### Protocol
 
 **Serial, 115200** — `P,<id>,<qi>,<qj>,<qk>,<qr>` per sample;
-`S,<connected>,<target>,<ids...>` per second; `R,...` for events.
+`S,<connected>,<target>,<ids...>` per second; `R,...` for events;
+`H,<id>,<battery_mV>,<charging>,<rssi>` every 2 s per connected pod (`battery_mV` 0 = none
+sent, `charging` −1 = unknown: pod older than v4; `rssi` dBm, 0 = not available).
 `P,<id>,0,0,0,0` = connected, no IMU reading (see §8). The quaternion is the
 **game rotation vector** (no magnetometer): heading is relative to the pod's
 power-up orientation.
+
+**Pod notify (v4)** — 19 bytes every 50 ms: four floats i, j, k, real; VBAT mV, uint16
+little-endian (last 5 s reading); flags, bit0 = charging, bit1 = reading valid. The receiver
+still accepts v3's 16 bytes.
 
 **Commands** — `C,<id>,<cue>,<param>`, **id 0 = broadcast**.
 
@@ -467,6 +475,8 @@ power-up orientation.
 | 3 | TRIPLE | — | camera start |
 | 4 | LONG | ms ÷ 10 | cut |
 | 5 | DOUBLE | — | confirmations |
+| 6 | DONE | — | calibrated OK: tick, click, strong buzz, rising |
+| 7 | FAIL | — | this pod failed: two heavy pulsing buzzes |
 
 **Patterns execute on the pod**, not the server: one BLE write plays a whole
 pattern, so timing survives radio contention and costs one packet instead of
@@ -510,9 +520,9 @@ virtual surface texture
       no flips (see STATUS.md)
 - [x] **Pod-to-limb mapping** — final, §10 / `Docs/pod-map.md`
 - [x] Calibration + avatar on the desktop test scene (PodAvatarTest)
-- [ ] **Firmware batch, one re-flash:** battery voltage + charge status on pods,
-      RSSI on the receiver, optional 30 Hz notify
-- [ ] Avatar over Normcore (AvatarModel)
+- [x] **Firmware batch** — battery voltage + charge status on pods, RSSI on the receiver,
+      cues DONE and FAIL: v4, flashed on all 9 (2026-11-04). The optional 30 Hz notify was left out.
+- [x] Avatar over Normcore (AvatarModel) — built; receiving on a second machine still to try
 - [ ] **End-to-end latency** — Unity cue → vibration on skin, never measured,
       target under ~100 ms
 - [ ] Walker Tape under sustained vibration + sweat, full session
@@ -527,9 +537,9 @@ virtual surface texture
 
 | File | Role |
 |---|---|
-| `Firmware/pod_v2/` | Pod firmware v3. mbed core, ArduinoBLE peripheral. Quaternion notify + cue write, IMU watchdog. |
+| `Firmware/pod_v2/` | Pod firmware v4. mbed core, ArduinoBLE peripheral. Quaternion + battery notify, cue write, IMU watchdog. |
 | `Firmware/receiver_v2/` | Receiver. Classic core, Bluefruit multi-central, serial protocol. |
-| `Bridge/bridge.py` | Serial ↔ UDP. Needs `pip install pyserial`. Logs CSV. |
+| `Bridge/bridge.py` | Serial ↔ UDP. Needs `pip install pyserial`. Logs CSV (samples; R, S, E and H lines in `*_events.csv`), prints each pod's battery and RSSI every 5 s. |
 | `Assets/Scripts/Haptics/PodReceiver.cs` | Unity UDP listener + cue API. |
 
 Run the bridge from `Bridge/` so logs land there. Close the Arduino Serial

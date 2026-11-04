@@ -21,7 +21,7 @@ The wider point of the system is **remote rehearsal** — actor and director can
 - **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: sternum (pod 9, replaces the waist), biceps x2, wrists x2, quads x2, shins x2. **No hip pod**: the hips follow pod 9's yaw plus the headset's position. Which pod ID sits where, its humanoid bone and which way its USB end points: [`Docs/pod-map.md`](Docs/pod-map.md).
 - **IMU**: BNO085, **UNIT Electronics module** (not the Adafruit breakout — the I²C address is **0x4B**, not 0x4A). 9DOF, SH-2 sensor fusion. ICM-20948 as fallback/backup.
 - **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. **Pods and receiver use different Arduino cores, on purpose:**
-  - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
+  - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02; v4, 2026-11-04, adds the battery). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
   - **Receiver: the classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), because ArduinoBLE holds only one central connection and can't take 9 pods.
   - The two stacks interoperate. Don't move either one to the other core.
 - **Haptic driver**: DRV2605L, **UNIT Electronics DevLab module (UE0065)**, drives the LRA from the microcontroller.
@@ -44,7 +44,7 @@ Full hardware detail — wiring, assembly, RF measurements, power, gotchas — i
 
 - **Receiver**: a 10th XIAO on USB acting as BLE central for all 9 pods. Lives on a USB extension cable near the rehearsal area, at head height.
 - **`Bridge/bridge.py`**: forwards serial lines to Unity verbatim and relays cue commands back. Deliberately dumb — no translation. Needs `pip install pyserial`. Logs raw samples to CSV.
-- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `HasOrientation(podId)`, `ActivePods()`, `TryGetRawRotation(podId, out raw)` (the BNO085's i, j, k, real before conversion), `ToUnityRotation(raw)`, `GetPacketCount(podId)`, `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`. Lines are parsed on a background thread: **nothing in `Parse` may touch the Unity API** (`Time.realtimeSinceStartup` there killed the thread on the first sample — it uses a `Stopwatch`), and numbers are parsed with `InvariantCulture`.
+- **[`Assets/Scripts/Haptics/PodReceiver.cs`](Assets/Scripts/Haptics/PodReceiver.cs)**: the Unity boundary. Read it before touching anything haptics-related. Exposes `GetRotation(podId)`, `IsAlive(podId)`, `HasOrientation(podId)`, `ActivePods()`, `TryGetRawRotation(podId, out raw)` (the BNO085's i, j, k, real before conversion), `ToUnityRotation(raw)`, `GetPacketCount(podId)`, `TryGetHealth(podId, out health)` (battery mV and estimated %, charging, RSSI), `SendCue(...)`, and helpers `CueProximity` / `CueOrientation` / `CueStep` / `CueCameraStart` / `CueCut`. Lines are parsed on a background thread: **nothing in `Parse` may touch the Unity API** (`Time.realtimeSinceStartup` there killed the thread on the first sample — it uses a `Stopwatch`), and numbers are parsed with `InvariantCulture`.
 
 Orientation arrives at roughly **11 Hz per pod** (nine connections sharing one radio). That is intentional and sufficient — IMU rate is not the latency path. What has to be fast is a cue command going *out* to a pod.
 
@@ -54,7 +54,10 @@ P,<id>,<qi>,<qj>,<qk>,<qr>        one per sample
 S,<connected>,<target>,<id>,...   once a second
 R,connected,<id>,<cue|nocue>,<n>
 R,lost,<id>,<reason>
+H,<id>,<battery_mV>,<charging>,<rssi>   every 2 s per connected pod
 ```
+
+`H`: `battery_mV` 0 = the pod sent none (firmware older than v4, or no reading yet); `charging` 1 / 0, −1 = unknown (older than v4); `rssi` in dBm as the receiver sees that pod, 0 = not available. Pod v4's notify is 19 bytes: the four floats, VBAT in mV (uint16 LE), flags (bit0 charging, bit1 reading valid); the receiver still accepts v3's 16.
 
 **Pods → Unity (UDP 5005):** the serial lines above, forwarded unchanged. **`P,<id>,0,0,0,0` (all zeros) = the pod is connected but has no IMU reading** — the IMU didn't start or went quiet; `IsAlive` is true, `HasOrientation` false. The quaternion is the BNO085's **game rotation vector** (no magnetometer), so heading is relative to where the pod faced at power-up and drifts slowly.
 
@@ -68,8 +71,10 @@ R,lost,<id>,<reason>
 | 3 | TRIPLE | — | camera start |
 | 4 | LONG | ms ÷ 10 | cut (0 = 500 ms) |
 | 5 | DOUBLE | — | confirmations |
+| 6 | DONE | — | a pod calibrated |
+| 7 | FAIL | — | a pod failed to calibrate |
 
-Patterns run **on the pod**, not on the server: one BLE write plays a whole pattern, so timing survives radio contention and costs one packet instead of three.
+Patterns run **on the pod**, not on the server: one BLE write plays a whole pattern, so timing survives radio contention and costs one packet instead of three. The calibration countdown is not firmware: `PodAvatar` is the clock and sends CLICK at 3, 2, 1 s before each capture, DOUBLE when a pose is captured, then DONE or FAIL per pod.
 
 ### Haptic cue vocabulary
 

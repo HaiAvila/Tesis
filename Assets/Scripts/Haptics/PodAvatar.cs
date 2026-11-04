@@ -107,6 +107,8 @@ public class PodAvatar : MonoBehaviour
     public float countdownSeconds = 4f;
     [Tooltip("Seconds each pose is held and averaged.")]
     public float captureSeconds = 1f;
+    [Tooltip("Feel the calibration on the pods: CLICK at 3, 2, 1 s before each pose is captured, DOUBLE when it's captured, then DONE on each pod that calibrated and FAIL on each that didn't. Unity is the clock; the pods just play the cues.")]
+    public bool calibrationCues = true;
 
     [Header("Body collision")]
     [Tooltip("Keep the limbs out of the body and out of each other (AvatarCollision): an overlap is pushed out until the two just touch, turning the arm at the shoulder or the leg at the hip.")]
@@ -257,6 +259,7 @@ public class PodAvatar : MonoBehaviour
     public float PhaseTimeLeft => Mathf.Max(0f, phaseEnd - Time.time);
 
     float phaseEnd;
+    int nextTick;           // seconds before the capture of the next countdown CLICK; 0 = none left
     readonly Dictionary<int, QuaternionAverage> tPose = new Dictionary<int, QuaternionAverage>();
     readonly Dictionary<int, QuaternionAverage> secondPose = new Dictionary<int, QuaternionAverage>();
     readonly Dictionary<int, QuaternionAverage> thirdPose = new Dictionary<int, QuaternionAverage>();
@@ -542,10 +545,37 @@ public class PodAvatar : MonoBehaviour
     {
         CurrentPhase = phase;
         phaseEnd = Time.time + seconds;
+        nextTick = phase == Phase.CountdownTPose || phase == Phase.CountdownSecond || phase == Phase.CountdownThird
+            ? Mathf.Min(3, Mathf.FloorToInt(seconds)) : 0;
+    }
+
+    void SendCalibrationCue(PodReceiver.Cue cue)
+    {
+        if (calibrationCues && receiver != null)
+            receiver.SendCue(0, cue);
+    }
+
+    // After the last pose: each pod says how it went, so the one that failed can be found on
+    // the body.
+    void SendCalibrationResult()
+    {
+        if (!calibrationCues || receiver == null)
+            return;
+        foreach (BoneState b in bones)
+        {
+            bool ok = calibrations.TryGetValue(b.entry.podId, out PodCalibration cal) && cal.ok;
+            receiver.SendCue(b.entry.podId, ok ? PodReceiver.Cue.Done : PodReceiver.Cue.Fail);
+        }
     }
 
     void Update()
     {
+        if (nextTick > 0 && PhaseTimeLeft <= nextTick)
+        {
+            nextTick--;
+            SendCalibrationCue(PodReceiver.Cue.Click);
+        }
+
         switch (CurrentPhase)
         {
             case Phase.CountdownTPose:
@@ -556,6 +586,7 @@ public class PodAvatar : MonoBehaviour
                 if (Time.time >= phaseEnd)
                 {
                     Debug.Log($"[PodAvatar] T-pose captured for pods {string.Join(", ", tPose.Keys)}. Now: arms down to the sides, slight squat.");
+                    SendCalibrationCue(PodReceiver.Cue.Double);
                     SetPhase(Phase.CountdownSecond, countdownSeconds);
                 }
                 break;
@@ -569,11 +600,13 @@ public class PodAvatar : MonoBehaviour
                     if (UsesThirdPose)
                     {
                         Debug.Log($"[PodAvatar] second pose captured for pods {string.Join(", ", secondPose.Keys)}. Now: arms straight out in front, palms pressed together.");
+                        SendCalibrationCue(PodReceiver.Cue.Double);
                         SetPhase(Phase.CountdownThird, countdownSeconds);
                     }
                     else
                     {
                         Solve();
+                        SendCalibrationResult();
                         CurrentPhase = Phase.Idle;
                     }
                 }
@@ -586,6 +619,7 @@ public class PodAvatar : MonoBehaviour
                 if (Time.time >= phaseEnd)
                 {
                     Solve();
+                    SendCalibrationResult();
                     CurrentPhase = Phase.Idle;
                 }
                 break;

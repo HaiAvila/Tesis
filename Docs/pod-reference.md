@@ -215,6 +215,54 @@ If a problem ever reappears, the fallback needs no PCB change: bridge an 0805
 10 µF directly across the DRV module's VIN and GND pins, which are 2.54 mm
 apart.
 
+### Battery reading and charging pins — verified, 2026-11-04
+
+Checked against Seeed's own KiCad schematic for the plain XIAO nRF52840
+(`260828_Seeed_Studio_XIAO_nRF52840_v1.2`, sheet "02 XIAO Header & nRF52840")
+and Nordic's nRF52840 Product Specification v1.1. **No spare pods: follow
+these rules exactly.**
+
+**Chip limits (Nordic, Table 173 and §6.23):** no pin above **VDD + 0.3 V =
+3.6 V** (VDD is 3.3 V on the XIAO); analog inputs AIN0–AIN7 never above
+**VDD = 3.3 V**. A LiPo is 4.2 V full or charging. After reset every pin is a
+disconnected input, no pull (`PIN_CNF` reset `0x00000002`).
+
+**The divider (schematic):**
+
+```
+VBAT ──[R16 1 MΩ 1%]──┬──[R17 510 kΩ 1%]── P0.14 (READ_BAT, active low, straight to the pin)
+                      └── P0.31 (AIN7_BAT)     no capacitor, no transistor
+```
+
+P0.31 = VBAT × 510/1510 = **0.338 × VBAT**. (C30, 2.2 µF, is VBAT's filter
+capacitor to GND, not on P0.31.)
+
+| P0.14 | P0.31 at VBAT = 4.2 V | |
+|---|---|---|
+| OUTPUT LOW | **1.42 V** (P0.14 at 0 V); divider draws 2.8 µA | ✅ safe |
+| OUTPUT HIGH | 3.3 + 0.9 × 0.338 = **3.60 V** | ❌ at the absolute maximum when full/charging — Seeed's own warning ("risk of burning out the P0.31 pin") |
+| floating (input — **firmware v3 never touches P0.14, so this is how the pods run today**) | nothing pulls the divider down: P0.31 and P0.14 drift toward VBAT until the pins' protection diodes clamp them a little above 3.3 V, < 1 µA through 1.5 MΩ | ⚠️ slightly outside spec; Seeed doesn't warn about it, but holding P0.14 LOW fixes it |
+
+**Rules for reading the battery:**
+- At the very start of `setup()`: P0.14 as **OUTPUT, LOW**. Never set it HIGH
+  anywhere, never switch it back to an input.
+- Read P0.31 as an analog input. With the nRF52840's internal 0.6 V reference
+  and gain 1/6 the ADC range is 0–3.6 V; 1.42 V max is well inside.
+  VBAT = V(P0.31) × 1510/510 = V(P0.31) × 2.961.
+- **Never touch P0.13** (`P0.13_HICHG`, the charger's current setting). Left
+  alone (high impedance) the charger runs at the 50 mA default; Seeed's pages
+  contradict each other on which level means what, so don't drive it at all.
+
+**Charging status, P0.17 (`P0.17_~{CHG}`)** — safe to read: it's the charger's
+(BQ25101) open-drain CHG output, joined to the red charge LED, which runs from
+**3V3** through R5 (2.2 kΩ). So P0.17 never sees more than 3.3 V. LOW =
+charging (the red LED is on), HIGH = full or not charging. Read it as
+**INPUT** (or INPUT_PULLUP); **never as an output** — driving it LOW would light
+the LED, driving it HIGH would fight the charger while it pulls low.
+
+Charge time at the 50 mA default, 140–150 mAh: ~2–2½ h to ~90 %, ~3 h to full;
+the pod's switch must be ON (it sits between the battery and the XIAO).
+
 ---
 
 ## 8. Cold boot

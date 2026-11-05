@@ -24,6 +24,8 @@ public static class UIIcons
     static Sprite circle;
     static Sprite play;
     static Sprite pause;
+    static Sprite microphone;
+    static Sprite trash;
 
     // Filled circle, e.g. for a slider handle.
     public static Sprite Circle()
@@ -39,6 +41,30 @@ public static class UIIcons
         if (play == null)
             play = Build("Play", FitToUnitSquare(new List<Vector2> { new Vector2(0f, 0f), new Vector2(0.866f, 0.5f), new Vector2(0f, 1f) }), true);
         return play;
+    }
+
+    public static Sprite Microphone()
+    {
+        if (microphone == null)
+            microphone = Build("Microphone", new List<List<Vector2>>
+            {
+                Rectangle(0.37f, 0.42f, 0.63f, 0.92f),
+                Rectangle(0.45f, 0.2f, 0.55f, 0.42f),
+                Rectangle(0.28f, 0.1f, 0.72f, 0.2f),
+            }, true);
+        return microphone;
+    }
+
+    public static Sprite Trash()
+    {
+        if (trash == null)
+            trash = Build("Trash", new List<List<Vector2>>
+            {
+                Rectangle(0.2f, 0.72f, 0.8f, 0.8f),
+                Rectangle(0.4f, 0.8f, 0.6f, 0.9f),
+                Rectangle(0.27f, 0.1f, 0.73f, 0.66f),
+            }, true);
+        return trash;
     }
 
     public static Sprite Pause()

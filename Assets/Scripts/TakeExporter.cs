@@ -14,7 +14,10 @@ using UnityEngine;
 //   camara.csv   t + the director's viewfinder (position, rotation, focal length, visor up)
 //   cuerpo.csv   t + the avatar's root, head and 16 bones' local rotations, 20 Hz (PoseTrack)
 //   tomas.csv    a full-scene take's shot boundaries
+//   notas.csv    the director's voice notes, and their audio under notas/
 //
+// Notes can be added after a take was exported, so those are brought up to date every time.
+// Notes of a shot in general, with no take, go in notas_sin_toma.
 // A file with no rows isn't written. Decimal points, whatever the machine's language.
 public static class TakeExporter
 {
@@ -32,6 +35,7 @@ public static class TakeExporter
             if (Directory.Exists(folder))
             {
                 alreadyExported++;
+                ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), folder);
                 continue;
             }
 
@@ -42,8 +46,17 @@ public static class TakeExporter
             Directory.CreateDirectory(temporary);
 
             Export(database, session, temporary);
+            ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), temporary);
             Directory.Move(temporary, folder);
             exported++;
+        }
+
+        List<VoiceNote> withoutTake = database.GetVoiceNotesWithoutTake();
+        if (withoutTake.Count > 0)
+        {
+            string folder = Path.Combine(ExportRoot, "notas_sin_toma");
+            Directory.CreateDirectory(folder);
+            ExportNotes(withoutTake, folder);
         }
 
         Debug.Log($"[Export] {exported} takes exported, {alreadyExported} already there, in {ExportRoot}");
@@ -90,6 +103,27 @@ public static class TakeExporter
                 rows.Add(Row(b.ShotNumber, b.TIn, b.TOut.HasValue ? (object)b.TOut.Value : "", b.Source));
             WriteFile(folder, "tomas.csv", "shot,t_in,t_out,origen", rows);
         }
+    }
+
+    static void ExportNotes(List<VoiceNote> notes, string folder)
+    {
+        if (notes.Count == 0)
+            return;
+
+        string audioFolder = Path.Combine(folder, "notas");
+        Directory.CreateDirectory(audioFolder);
+
+        var rows = new List<string>();
+        foreach (VoiceNote note in notes)
+        {
+            rows.Add(Row(note.SceneNumber, note.ShotNumber, note.TakeTime.HasValue ? (object)note.TakeTime.Value : "", note.FechaHora, note.Duracion, note.Archivo));
+
+            string source = Path.Combine(VoiceNoteRecorder.NotesFolder, note.Archivo);
+            string destination = Path.Combine(audioFolder, note.Archivo);
+            if (File.Exists(source) && !File.Exists(destination))
+                File.Copy(source, destination);
+        }
+        WriteFile(folder, "notas.csv", "escena,shot,t_toma,fecha,duracion,archivo", rows);
     }
 
     static string BodyHeader()

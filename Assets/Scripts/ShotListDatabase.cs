@@ -436,6 +436,104 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    public void SaveVoiceNote(VoiceNote note)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.Insert(note);
+        }
+    }
+
+    // A take's notes, by the moment they were said, then the general notes of its shot.
+    public List<VoiceNote> GetVoiceNotes(string takeGuid, int sceneNumber, int shotNumber)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<VoiceNote>(
+                "SELECT * FROM NotasVoz WHERE session_guid = ? OR (session_guid IS NULL AND scene_number = ? AND shot_number = ?) " +
+                "ORDER BY session_guid IS NULL, t_toma, fecha_hora;",
+                takeGuid ?? "", sceneNumber, shotNumber);
+        }
+    }
+
+    public List<VoiceNote> GetVoiceNotesOfTake(string takeGuid)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<VoiceNote>("SELECT * FROM NotasVoz WHERE session_guid = ? ORDER BY t_toma, fecha_hora;", takeGuid);
+        }
+    }
+
+    public List<VoiceNote> GetVoiceNotesWithoutTake()
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<VoiceNote>("SELECT * FROM NotasVoz WHERE session_guid IS NULL ORDER BY scene_number, shot_number, fecha_hora;");
+        }
+    }
+
+    public void DeleteVoiceNote(VoiceNote note)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.Execute("DELETE FROM NotasVoz WHERE id = ?;", note.Id);
+        }
+        DeleteNoteFile(note);
+    }
+
+    static void DeleteNoteFile(VoiceNote note)
+    {
+        string path = Path.Combine(VoiceNoteRecorder.NotesFolder, note.Archivo);
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+
+    // The take was discarded: its notes stay, as notes of the shot.
+    public void DetachVoiceNotes(string takeGuid)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.Execute("UPDATE NotasVoz SET session_guid = NULL, t_toma = NULL WHERE session_guid = ?;", takeGuid);
+        }
+    }
+
+    // A take and everything recorded with it, its notes included.
+    public void DeleteSession(RecordingSession session)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        List<VoiceNote> notes = GetVoiceNotesOfTake(session.SessionGuid);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            connection.RunInTransaction(() =>
+            {
+                connection.Execute("DELETE FROM Metricas WHERE sesion_id = ?;", session.Id);
+                connection.Execute("DELETE FROM CamaraTrack WHERE sesion_id = ?;", session.Id);
+                connection.Execute("DELETE FROM PoseTrack WHERE sesion_id = ?;", session.Id);
+                connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", session.SessionGuid);
+                connection.Execute("DELETE FROM NotasVoz WHERE session_guid = ?;", session.SessionGuid);
+                connection.Execute("DELETE FROM Sesiones WHERE id = ?;", session.Id);
+            });
+        }
+
+        foreach (VoiceNote note in notes)
+            DeleteNoteFile(note);
+
+        Debug.Log($"ShotListDatabase: deleted session {session.Id} ({session.SessionGuid}) and its {notes.Count} notes");
+    }
+
     // Empty for sessions recorded before the pose track existed, or without pods.
     public List<PoseSample> GetPoseTrackForSession(int sessionId)
     {
@@ -532,6 +630,22 @@ public class ShotListDatabase : MonoBehaviour
                 FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
             );");
         connection.Execute("CREATE INDEX IF NOT EXISTS PoseTrack_sesion_id ON PoseTrack (sesion_id);");
+
+        // The director's spoken notes (the audio is a file in VoiceNoteRecorder.NotesFolder). By
+        // the session's GUID, not its id: a note can be said while the take isn't saved yet.
+        // session_guid NULL = a note of the shot in general; t_toma = the moment in the take.
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS NotasVoz (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_guid TEXT,
+                scene_number INTEGER,
+                shot_number INTEGER,
+                t_toma REAL,
+                fecha_hora TEXT,
+                duracion REAL,
+                archivo TEXT
+            );");
+        connection.Execute("CREATE INDEX IF NOT EXISTS NotasVoz_session_guid ON NotasVoz (session_guid);");
     }
 
     void ImportCsv(SQLiteConnection connection)
@@ -778,6 +892,19 @@ public class Metric
     [Column("rot_y")] public float RotY { get; set; }
     [Column("rot_z")] public float RotZ { get; set; }
     [Column("rot_w")] public float RotW { get; set; }
+}
+
+[Table("NotasVoz")]
+public class VoiceNote
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("session_guid")] public string SessionGuid { get; set; }
+    [Column("scene_number")] public int SceneNumber { get; set; }
+    [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("t_toma")] public float? TakeTime { get; set; }
+    [Column("fecha_hora")] public string FechaHora { get; set; }
+    [Column("duracion")] public float Duracion { get; set; }
+    [Column("archivo")] public string Archivo { get; set; }
 }
 
 [Table("PoseTrack")]

@@ -129,6 +129,20 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<PlayAreaOutline>() == null)
             gameObject.AddComponent<PlayAreaOutline>();
 
+        // Both roles: says when the connection is the problem - see ConnectionStatus.
+        if (GetComponent<ConnectionStatus>() == null)
+            gameObject.AddComponent<ConnectionStatus>();
+
+        // Actor only: which take this is - see ActorTakeInfo.
+        if (GetComponent<ActorTakeInfo>() == null)
+            gameObject.AddComponent<ActorTakeInfo>();
+
+        // Director only: spoken notes, and listening to them - see VoiceNoteRecorder.
+        if (GetComponent<VoiceNoteRecorder>() == null)
+            gameObject.AddComponent<VoiceNoteRecorder>();
+        if (GetComponent<VoiceNotesPanel>() == null)
+            gameObject.AddComponent<VoiceNotesPanel>();
+
         // Both roles: the director and the actor talking - see VoiceChat.
         if (GetComponent<VoiceChat>() == null)
             gameObject.AddComponent<VoiceChat>();
@@ -193,6 +207,19 @@ public class Bootstrap : MonoBehaviour
         Debug.Log($"[Bootstrap] disconnected from the room (in Ensayo Remoto: {wasInRemoteRehearsal}).");
 
         if (!wasInRemoteRehearsal)
+            return;
+
+#if DIRECTOR_BUILD
+        // A take in progress lives only on this device: Guardar or Descartar first, then home.
+        if (RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.FinishAfterConnectionLoss(GoHomeAfterConnectionLoss))
+            return;
+#endif
+        GoHomeAfterConnectionLoss();
+    }
+
+    static void GoHomeAfterConnectionLoss()
+    {
+        if (Mode != AppMode.Remote)
             return;
 
         SetMode(AppMode.None, "disconnected during Ensayo Remoto");

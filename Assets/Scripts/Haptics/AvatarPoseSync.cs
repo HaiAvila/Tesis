@@ -124,6 +124,9 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     InputAction calibrateAction;
 #endif
 
+    // After a disconnect the model is a fresh one, not in any datastore: writing to it throws.
+    bool Online => model != null && realtime != null && realtime.connected;
+
     public bool IsSending { get; private set; }
     public bool IsReceiving { get; private set; }
     public bool HasPodsHere => hasPods;
@@ -342,7 +345,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         lastLocalPhase = phase;
         localPhaseMessage = true;
 
-        if (model != null)
+        if (Online)
         {
             model.RequestOwnership();
             if (finished)
@@ -555,7 +558,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     {
         int podCount = receiver != null ? receiver.ActivePods().Length : 0;
         hasPods = podCount > 0;
-        if (model != null && podCount != lastPodsSent && (hasPods || lastPodsSent > 0))
+        if (Online && podCount != lastPodsSent && (hasPods || lastPodsSent > 0))
         {
             model.RequestOwnership();
             model.podsConnected = podCount;
@@ -596,7 +599,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         if (IsSending || IsReceiving)
             Place();
 
-        if (IsSending && model != null && Time.time >= nextSendTime)
+        if (IsSending && Online && Time.time >= nextSendTime)
         {
             nextSendTime = Time.time + 1f / Mathf.Max(1f, sendRate);
             if (!model.isOwnedLocallySelf)
@@ -713,7 +716,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         const float checkSeconds = 0.25f;
         const float sendSeconds = 2f;
 
-        if (!heardPods || model == null || podAvatar == null || Time.time < nextStatusCheck)
+        if (!heardPods || !Online || podAvatar == null || Time.time < nextStatusCheck)
             return;
         nextStatusCheck = Time.time + checkSeconds;
 

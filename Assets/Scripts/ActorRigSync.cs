@@ -18,8 +18,17 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
     public static event Action CalibrationRequested;
 
     const float MinYawChange = 0.05f;
+    const float MinPositionChange = 0.01f;
+
+    // After a disconnect the model is a fresh one, not in any datastore: writing to it throws.
+    bool Online => model != null && realtime != null && realtime.connected;
 
     public float RigYaw => model != null ? model.rigYaw : 0f;
+    public Vector3 RigPosition => model != null ? model.rigPosition : Vector3.zero;
+    public byte[] LimitPoints => model != null ? model.limitPoints : null;
+
+    // Normcore clears the owner when the actor leaves.
+    public bool HasActor => model != null && model.ownerIDSelf >= 0;
 
     void Awake()
     {
@@ -62,9 +71,11 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
         FloatingMessage.Show("El actor fijó su inicio");
     }
 #else
+    int sentLimitVersion = -1;
+
     void Update()
     {
-        if (model == null)
+        if (!Online)
             return;
 
         XROrigin rig = FindFirstObjectByType<XROrigin>();
@@ -77,12 +88,23 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
         float yaw = rig.transform.eulerAngles.y;
         if (Mathf.Abs(Mathf.DeltaAngle(model.rigYaw, yaw)) > MinYawChange)
             model.rigYaw = yaw;
+
+        Vector3 position = rig.transform.position;
+        if (Vector3.Distance(model.rigPosition, position) > MinPositionChange)
+            model.rigPosition = position;
+
+        PlayAreaOutline playArea = PlayAreaOutline.Instance;
+        if (playArea != null && playArea.LimitVersion != sentLimitVersion)
+        {
+            sentLimitVersion = playArea.LimitVersion;
+            model.limitPoints = PlayAreaOutline.EncodePoints(playArea.RigLocalPoints);
+        }
     }
 
     // StartMarkAligner, when the actor presses X.
     public void NotifyStartSet()
     {
-        if (model == null)
+        if (!Online)
             return;
 
         model.RequestOwnership();
@@ -93,8 +115,11 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
     // one with the pods, and starting a calibration that already started does nothing.
     public void RequestCalibration()
     {
-        if (model == null)
+        if (!Online)
+        {
+            CalibrationRequested?.Invoke();
             return;
+        }
 
         model.RequestOwnership();
         model.calibrateCounter++;

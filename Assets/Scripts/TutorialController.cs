@@ -492,7 +492,9 @@ public class TutorialController : MonoBehaviour
             case Mode.DirectorRemote:
                 list.Add(DirectorCalibrationStep());
                 list.Add(VoiceStep("el actor"));
+                list.Add(VoiceNoteStep());
                 list.Add(MoveTipStep());
+                list.Add(new Step { Text = $"En el piso, la {Key("línea roja")} es el {Act("límite real del actor")} y la {Key("azul")} es {Act("el tuyo")}: pídele solo lo que le cabe en su espacio." });
                 list.Add(new Step { Text = $"Arriba a la izquierda, {Key("Pods 9/9")} te dice {Act("cuántos pods están conectados")}: se pone ámbar con batería baja y rojo si falta uno. El detalle está en el menú de pausa, en {Key("Estado de pods")}." });
                 AddDirectorRemoteSteps(list);
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. Desde ahí, {Key("Menú Principal")} {Act("termina el ensayo")}, también para el actor."));
@@ -500,6 +502,7 @@ public class TutorialController : MonoBehaviour
 
             case Mode.DirectorInspection:
                 AddDirectorInspectionSteps(list);
+                list.Add(VoiceNoteStep());
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}: desde ahí vas a Selección de Escenas, Favoritos o al Menú Principal."));
                 break;
 #else
@@ -564,6 +567,12 @@ public class TutorialController : MonoBehaviour
     Step DirectorCalibrationStep() => new Step
     {
         Text = $"El actor {Act("calibra su avatar")} con {Key("Y")} en su control. Si prefieres iniciarlo tú, abre el menú de pausa y elige {Key("Calibrar")}.",
+    };
+
+    // Director only (VoiceNoteRecorder).
+    Step VoiceNoteStep() => new Step
+    {
+        Text = $"Para grabar una {Act("nota de voz")}, presiona el {Key("joystick izquierdo")} hacia adentro, o el botón {Key("Nota de voz")} en la esquina. Presiona otra vez para terminar. El actor no te escucha. Para oírla, usa el {Key("micrófono")} del panel de reproducción.",
     };
 
     // Ensayo Remoto only: there's no one to talk to otherwise.

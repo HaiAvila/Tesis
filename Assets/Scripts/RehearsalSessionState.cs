@@ -56,6 +56,9 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // machine with the pods, and OnCommand never fires for its own commands).
     public static event Action<SessionCommand> CommandSentLocally;
 
+    // After a disconnect the model is a fresh one, not in any datastore: writing to it throws.
+    bool Online => model != null && realtime != null && realtime.connected;
+
     int lastKnownOwnerID = NoOwner;
     int commandBaseline;
     int lastSentCounter = -1;
@@ -74,7 +77,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // Director only, same ownership pattern as SetState. Scene first, then the shot.
     public void SetSelection(int sceneNumber, int shotNumber)
     {
-        if (model == null)
+        if (!Online)
         {
             Debug.LogWarning($"[SessionSync] SetSelection(scene {sceneNumber}, shot {shotNumber}) ignored: not connected to a room yet.");
             return;
@@ -90,7 +93,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // write in this project (RehearsalSessionSync.SelectTake, ActorPositionSync).
     public void SetState(int state)
     {
-        if (model == null)
+        if (!Online)
             return;
 
         model.RequestOwnership();
@@ -101,7 +104,7 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // Director only, same ownership pattern as SetState.
     public void SetRecording(bool recording)
     {
-        if (model == null)
+        if (!Online)
             return;
 
         model.RequestOwnership();
@@ -111,9 +114,11 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
     // Director only. commandId first, then the counter - receivers react to the counter.
     public void SendCommand(SessionCommand command)
     {
-        if (model == null)
+        if (!Online)
         {
-            Debug.LogWarning($"[SessionSync] SendCommand({command}) ignored: not connected to a room yet.");
+            // This machine may be the one it's for (the pods here, in testing).
+            Debug.LogWarning($"[SessionSync] SendCommand({command}) not sent: not connected to a room.");
+            CommandSentLocally?.Invoke(command);
             return;
         }
 

@@ -16,12 +16,20 @@ public static class FloatingMessage
     const float MinWidth = 620f;
     const float Height = 140f;
     const float HorizontalPadding = 50f;
+    const float LongWidth = 1100f;
+    const float LongDrop = 0.25f;
+    const int LongFontSize = 42;
     static readonly Color TextColor = new Color(1f, 1f, 1f, 1f);
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.75f);
 
     static Font font;
 
-    public static void Show(string text)
+    public static void Show(string text) => Show(text, HoldSeconds, 0f, 0f);
+
+    // Something to read: a smaller font, wrapped, held for this long, under eye level.
+    public static void ShowLong(string text, float seconds) => Show(text, seconds, LongWidth, LongDrop);
+
+    static void Show(string text, float holdSeconds, float wrapWidth, float drop)
     {
         Camera head = Camera.main;
         if (head == null)
@@ -45,7 +53,7 @@ public static class FloatingMessage
 
         var rect = (RectTransform)messageObject.transform;
         rect.sizeDelta = new Vector2(MinWidth, Height);
-        rect.SetPositionAndRotation(head.transform.position + forward * Distance, Quaternion.LookRotation(forward, Vector3.up));
+        rect.SetPositionAndRotation(head.transform.position + forward * Distance + Vector3.down * drop, Quaternion.LookRotation(forward, Vector3.up));
         rect.localScale = Vector3.one * WorldScale;
 
         Image background = messageObject.GetComponent<Image>();
@@ -63,7 +71,7 @@ public static class FloatingMessage
         Text label = textObject.GetComponent<Text>();
         label.font = font;
         label.text = text;
-        label.fontSize = FontSize;
+        label.fontSize = wrapWidth > 0f ? LongFontSize : FontSize;
         label.fontStyle = FontStyle.Bold;
         label.color = TextColor;
         label.alignment = TextAnchor.MiddleCenter;
@@ -75,12 +83,25 @@ public static class FloatingMessage
         label.verticalOverflow = VerticalWrapMode.Overflow;
         rect.sizeDelta = new Vector2(Mathf.Max(MinWidth, label.preferredWidth + HorizontalPadding * 2f), Height);
 
+        if (wrapWidth > 0f)
+        {
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            rect.sizeDelta = new Vector2(wrapWidth, Height);
+            textRect.offsetMin = new Vector2(HorizontalPadding, 0f);
+            textRect.offsetMax = new Vector2(-HorizontalPadding, 0f);
+            rect.sizeDelta = new Vector2(wrapWidth, Mathf.Max(Height, label.preferredHeight + HorizontalPadding));
+        }
+
+        messageObject.GetComponent<FadeOut>().holdSeconds = holdSeconds;
+
         XRUISetup.MoveToUILayer(messageObject);
     }
 
     // Holds, fades the CanvasGroup out, then destroys the message.
     class FadeOut : MonoBehaviour
     {
+        public float holdSeconds = HoldSeconds;
+
         CanvasGroup group;
         float elapsed;
 
@@ -92,10 +113,10 @@ public static class FloatingMessage
         void Update()
         {
             elapsed += Time.deltaTime;
-            if (elapsed < HoldSeconds)
+            if (elapsed < holdSeconds)
                 return;
 
-            float t = (elapsed - HoldSeconds) / FadeSeconds;
+            float t = (elapsed - holdSeconds) / FadeSeconds;
             group.alpha = 1f - Mathf.Clamp01(t);
             if (t >= 1f)
                 Destroy(gameObject);

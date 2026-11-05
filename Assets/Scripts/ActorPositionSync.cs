@@ -68,6 +68,10 @@ public class ActorPositionSync : MonoBehaviour
         if (actorRig == null || actorRig.Camera == null)
             return;
 
+        // Not while disconnected: there's no datastore to ask.
+        if (realtimeTransform.realtime == null || !realtimeTransform.realtime.connected)
+            return;
+
         if (!realtimeTransform.isOwnedLocallySelf)
             realtimeTransform.RequestOwnership();
 

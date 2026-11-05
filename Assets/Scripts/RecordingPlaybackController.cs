@@ -35,6 +35,8 @@ public class RecordingPlaybackController : MonoBehaviour
     // times the slider has been dragged and released.
     public bool IsPanelOpen => panelObject != null;
     public bool IsPlaying => isPlaying;
+    public RecordingSession CurrentSession => currentSession;
+    public float PlaybackTime => playbackTime;
     public int ScrubCount { get; private set; }
 
     const int IconFontSize = 36;
@@ -95,6 +97,11 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Vector3 MarkerPointerSize = new Vector3(0.015f, 0.015f, 0.5f);
 
     PlaybackAvatar playbackAvatar;
+#if DIRECTOR_BUILD
+    const float NoteTickWidth = 6f;
+    static readonly Color NoteTickColor = new Color(1f, 0.79f, 0.29f, 1f);
+    readonly List<GameObject> noteTicks = new List<GameObject>();
+#endif
     GameObject panelObject;
     Image playPauseIcon;
     Text loopText;
@@ -346,6 +353,9 @@ public class RecordingPlaybackController : MonoBehaviour
 
         BuildAvatar(poseFrames, avatarLayout);
         BuildPanel();
+#if DIRECTOR_BUILD
+        RefreshNoteTicks();
+#endif
 
         // Avatar only when there's no camera track.
         if (HasCameraTrack)
@@ -489,6 +499,9 @@ public class RecordingPlaybackController : MonoBehaviour
             buttonCount += 1f; // close
         if (HasCameraTrack)
             buttonCount += 1f; // monitor toggle
+#if DIRECTOR_BUILD
+        buttonCount += currentSession != null ? 2f : 1f; // notes + delete (only a saved take)
+#endif
         float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
         if (boundaries != null)
@@ -590,10 +603,107 @@ public class RecordingPlaybackController : MonoBehaviour
         if (HasCameraTrack)
             monitorToggleText = CreateIconButton(rowObject.transform, "▣", OnMonitorToggleClicked, ButtonActiveColor);
 
+#if DIRECTOR_BUILD
+        Image notesIcon = CreateSpriteIconButton(rowObject.transform, "Notas", OnNotesClicked);
+        notesIcon.sprite = UIIcons.Microphone();
+        notesIcon.color = TextColor;
+
+        if (currentSession != null)
+        {
+            Image deleteIcon = CreateSpriteIconButton(rowObject.transform, "Borrar", OnDeleteClicked);
+            deleteIcon.sprite = UIIcons.Trash();
+            deleteIcon.color = TextColor;
+        }
+#endif
+
         // Only present when reviewing an in-memory buffer (no scene change to exit through).
         if (onManualClose != null)
             CreateIconButton(rowObject.transform, "✕", OnCloseClicked, ButtonColor);
     }
+
+#if DIRECTOR_BUILD
+    string NotesTakeGuid => currentSession != null ? currentSession.SessionGuid
+        : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeGuid : null;
+
+    void OnNotesClicked()
+    {
+        if (VoiceNotesPanel.Instance == null)
+            return;
+
+        int scene = currentSession != null ? currentSession.SceneNumber : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeScene : Bootstrap.CurrentSceneNumber;
+        int shot = currentSession != null ? currentSession.ShotNumber : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeShot : Bootstrap.CurrentShotNumber;
+        VoiceNotesPanel.Instance.Show(NotesTakeGuid, scene, shot, SeekTo, null);
+    }
+
+    void SeekTo(float time)
+    {
+        SetPlaying(false);
+        playbackTime = Mathf.Clamp(time, 0f, totalDuration);
+        ApplySampleAt(playbackTime);
+        UpdateSliderAndTimeText();
+    }
+
+    void OnDeleteClicked()
+    {
+        if (currentSession == null || VoiceNotesPanel.Instance == null)
+            return;
+
+        RecordingSession session = currentSession;
+        VoiceNotesPanel.Instance.Confirm("¿Borrar esta toma y sus notas? No se puede deshacer.", () =>
+        {
+            ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+            if (database == null)
+            {
+                Debug.LogError("RecordingPlaybackController: no ShotListDatabase instance found, nothing deleted.");
+                return;
+            }
+
+            database.DeleteSession(session);
+            FloatingMessage.Show("Toma borrada");
+            Bootstrap.LoadSceneSelect();
+        });
+    }
+
+    // A mark on the slider at each moment the director said something.
+    public void RefreshNoteTicks()
+    {
+        foreach (GameObject tick in noteTicks)
+        {
+            if (tick != null)
+                Destroy(tick);
+        }
+        noteTicks.Clear();
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        string guid = NotesTakeGuid;
+        if (scrubSlider == null || database == null || string.IsNullOrEmpty(guid) || totalDuration <= 0f)
+            return;
+
+        Transform handleArea = scrubSlider.handleRect.parent; // inset like the handle, so the marks line up
+        foreach (VoiceNote note in database.GetVoiceNotesOfTake(guid))
+        {
+            if (!note.TakeTime.HasValue)
+                continue;
+
+            var tick = new GameObject("NoteTick", typeof(RectTransform), typeof(Image));
+            tick.transform.SetParent(handleArea, false);
+            tick.transform.SetAsFirstSibling();
+            tick.layer = handleArea.gameObject.layer;
+
+            float x = Mathf.Clamp01(note.TakeTime.Value / totalDuration);
+            var rect = (RectTransform)tick.transform;
+            rect.anchorMin = new Vector2(x, 0f);
+            rect.anchorMax = new Vector2(x, 1f);
+            rect.sizeDelta = new Vector2(NoteTickWidth, 0f);
+            rect.anchoredPosition = Vector2.zero;
+
+            Image image = tick.GetComponent<Image>();
+            image.color = NoteTickColor;
+            image.raycastTarget = false;
+            noteTicks.Add(tick);
+        }
+    }
+#endif
 
     void OnMonitorToggleClicked()
     {

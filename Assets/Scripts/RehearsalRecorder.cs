@@ -98,6 +98,16 @@ public class RehearsalRecorder : MonoBehaviour
 
     // The Ver replay / Guardar / Descartar panel shown after stopping (read by the tutorial).
     public bool IsDecisionPanelOpen => decisionPanelObject != null;
+
+    // A take being recorded, or recorded and neither saved nor discarded yet.
+    public bool HasPendingTake => IsRecording || buffer.Count > 0;
+    public string PendingTakeGuid => sessionGuidAtStart;
+    public int PendingTakeScene => sceneNumberAtStart;
+    public int PendingTakeShot => shotNumberAtStart;
+    public float RecordingTime => Time.time - recordingStartTime;
+
+    // Runs once the pending take is saved or discarded - see FinishAfterConnectionLoss.
+    Action afterDecision;
 #endif
 
     void Awake()
@@ -143,6 +153,29 @@ public class RehearsalRecorder : MonoBehaviour
     }
 
 #if DIRECTOR_BUILD
+    // The connection dropped mid-rehearsal: the take is local, so it's kept. Stops recording if it
+    // still was, and leaves the director to decide on it; `done` runs after that. False if
+    // there's no pending take.
+    public bool FinishAfterConnectionLoss(Action done)
+    {
+        if (!HasPendingTake)
+            return false;
+
+        afterDecision = done;
+        Debug.Log($"[Connection] connection lost with a take pending ({buffer.Count} samples): keeping it");
+        FloatingMessage.Show("Se perdió la conexión. La toma sigue aquí");
+        if (IsRecording)
+            StopRecording();
+        return true;
+    }
+
+    void RunAfterDecision()
+    {
+        Action done = afterDecision;
+        afterDecision = null;
+        done?.Invoke();
+    }
+
     void OnRecordingShortcutPressed(InputAction.CallbackContext context)
     {
         // Ensayo Remoto only - Inspección de Escenas has no live actor to record.
@@ -537,6 +570,7 @@ public class RehearsalRecorder : MonoBehaviour
         cameraBuffer.Clear();
         poseBuffer.Clear();
         boundaryBuffer.Clear();
+        RunAfterDecision();
     }
 
     void OnDiscardClicked()
@@ -556,6 +590,13 @@ public class RehearsalRecorder : MonoBehaviour
             if (database != null)
                 database.DeleteBoundaries(sessionGuidAtStart);
         }
+
+        // The take is gone, but what the director said about it is kept, as notes of the shot.
+        ShotListDatabase notes = FindFirstObjectByType<ShotListDatabase>();
+        if (notes != null)
+            notes.DetachVoiceNotes(sessionGuidAtStart);
+
+        RunAfterDecision();
     }
 #endif
 

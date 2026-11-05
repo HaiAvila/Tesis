@@ -24,6 +24,9 @@ public class VoiceChat : MonoBehaviour
     Realtime realtime;
     RealtimeAvatarVoice voice;
 
+    // The director's voice note is private: the actor doesn't hear it.
+    public bool NoteRecording { get; set; }
+
     public bool MicrophoneOn
     {
         get => PlayerPrefs.GetInt(MutedKey, 0) == 0;
@@ -82,7 +85,7 @@ public class VoiceChat : MonoBehaviour
     void Update()
     {
         if (voice != null)
-            voice.mute = !MicrophoneOn || Bootstrap.Mode != Bootstrap.AppMode.Remote;
+            voice.mute = !MicrophoneOn || NoteRecording || Bootstrap.Mode != Bootstrap.AppMode.Remote;
     }
 
     void OnDestroy()

@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Nov 4, 2026 (firmware v4: battery, RSSI, calibration cues).
+Updated after every task (see CLAUDE.md). Last update: Nov 5, 2026 (tutorial: calibration first, joysticks only a tip).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -152,5 +152,5 @@ Updated after every task (see CLAUDE.md). Last update: Nov 4, 2026 (firmware v4:
 - Scene 2 (spaceship) lighting: the scene asked for skybox ambient, but its ambient was never generated (measured as zero), and the floor is fully metallic with no reflection probe, so shadows were pure black. It now has a cool trilight ambient (sky 0.45/0.52/0.58, equator 0.30/0.35/0.38, ground 0.16/0.16/0.17), the directional light goes from 0.7 to 0.9, and a realtime `ReflectionProbe_Interior` refreshes once on load over the walkable area, at intensity 2.5. Placeholder values, tuned by eye. Scenes 1 and 3 also have no generated ambient, but they're lit directly.
 - Director viewfinder: virtual camera on the right hand, named lenses + fine zoom, REC badge, "scene only" feed. Its camera track is recorded (`CamaraTrack`) and replayed on a monitor.
 - Replay panel: play/pause, loop, restart, scrub, preferida/favorita. Favoritos screen.
-- Per-mode controls tutorial (`TutorialController`), replayable from the pause menu. In a full-scene take the director's Ensayo Remoto tutorial adds a Siguiente toma step (left Y; also done once recording stops, since it's optional) and its Guardar step mentions only favorita.
+- Per-mode controls tutorial (`TutorialController`), replayable from the pause menu. Ensayo Remoto explains the calibration right after the ray step (the actor: poses and buzzes, the director starts it; the director: the C key, Editor only, since a Quest has no keyboard and there's no Calibrar button yet). Moving and turning with the joysticks is now an info-only tip in every mode that had those steps, not actions to perform. Ensayar Solo has no calibration step: nothing on the actor's Quest can start one yet. In a full-scene take the director's Ensayo Remoto tutorial adds a Siguiente toma step (left Y; also done once recording stops, since it's optional) and its Guardar step mentions only favorita.
 - Controls reference: `Docs/Controles.md`.

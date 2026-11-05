@@ -1,9 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.XR.CoreUtils;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
@@ -15,9 +13,12 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // - The first time a content scene opens in a given mode, a small panel asks whether to see
 //   the tutorial. Answering (Sí or No) is remembered per role and mode in PlayerPrefs, so it
 //   isn't asked again. It can always be replayed from the pause menu's "Tutorial" option.
-// - Steps that ask for an action (walk, press B, raise the viewfinder...) move on by
-//   themselves once the action is detected, with a short "¡Muy bien!" and a haptic pulse.
-//   Info-only steps have a "Siguiente" button. "Saltar tutorial" is always there.
+// - Steps that ask for an action (press B, raise the viewfinder...) move on by themselves once
+//   the action is detected, with a short "¡Muy bien!" and a haptic pulse. Info-only steps have
+//   a "Siguiente" button. "Saltar tutorial" is always there.
+// - Ensayo Remoto explains the calibration right after the ray, so it's known before the first
+//   one. Moving and turning with the joysticks is only a tip: nobody has to do it, since
+//   walking and turning your head need no teaching.
 // - Text is Mexican Spanish (tú). In each hint the control to press is highlighted in amber
 //   and what it does in light blue (rich text - see Key/Act).
 // - In the Editor each hint also shows the XR Device Simulator keys for that control.
@@ -68,8 +69,6 @@ public class TutorialController : MonoBehaviour
     const float StepDoneDelaySeconds = 0.9f;
 
     const float WalkDistanceMeters = 0.5f;
-    const float StickThreshold = 0.6f;
-    const float RigTurnDegrees = 20f;
 
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.88f);
     static readonly Color ButtonColor = new Color(0.28f, 0.28f, 0.34f, 0.95f);
@@ -89,8 +88,6 @@ public class TutorialController : MonoBehaviour
 
     public static TutorialController Instance { get; private set; }
 
-    InputAction leftStickAction;
-    InputAction rightStickAction;
     Font uiFont;
     Coroutine promptCoroutine;
 
@@ -113,8 +110,6 @@ public class TutorialController : MonoBehaviour
 
     // Captured when each step starts - action steps compare against these.
     Vector3 baselineHeadPosition;
-    Transform rig;
-    float baselineRigYaw;
     int baselineAlignCount;
 #if DIRECTOR_BUILD
     float baselineFocalLength;
@@ -140,18 +135,6 @@ public class TutorialController : MonoBehaviour
         Instance = this;
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        // Same binding convention as the other controller shortcuts: real + simulator. Only
-        // read, never consumed, so stock locomotion on the same sticks keeps working.
-        leftStickAction = new InputAction("TutorialLeftStick", InputActionType.Value, expectedControlType: "Vector2");
-        leftStickAction.AddBinding("<XRController>{LeftHand}/{Primary2DAxis}");
-        leftStickAction.AddBinding("<XRSimulatedController>{LeftHand}/primary2DAxis");
-        leftStickAction.Enable();
-
-        rightStickAction = new InputAction("TutorialRightStick", InputActionType.Value, expectedControlType: "Vector2");
-        rightStickAction.AddBinding("<XRController>{RightHand}/{Primary2DAxis}");
-        rightStickAction.AddBinding("<XRSimulatedController>{RightHand}/primary2DAxis");
-        rightStickAction.Enable();
-
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
@@ -159,11 +142,6 @@ public class TutorialController : MonoBehaviour
     {
         if (Instance == this)
             Instance = null;
-
-        leftStickAction.Disable();
-        leftStickAction.Dispose();
-        rightStickAction.Disable();
-        rightStickAction.Dispose();
 
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
@@ -258,7 +236,8 @@ public class TutorialController : MonoBehaviour
 
         currentMode = mode;
         titleText.text = $"Tutorial · {ModeName(mode)}";
-        SetHint("¿Quieres ver un tutorial de los controles?", null, TextColor);
+        bool teachesCalibration = mode == Mode.ActorRemote || (mode == Mode.DirectorRemote && Application.isEditor);
+        SetHint(teachesCalibration ? "¿Quieres ver un tutorial de cómo calibrar y de los controles?" : "¿Quieres ver un tutorial de los controles?", null, TextColor);
         SetButtons("Sí", () =>
         {
             MarkSeen(mode);
@@ -346,9 +325,6 @@ public class TutorialController : MonoBehaviour
         Camera head = Camera.main;
         baselineHeadPosition = head != null ? head.transform.position : Vector3.zero;
 
-        XROrigin origin = FindFirstObjectByType<XROrigin>();
-        rig = origin != null ? origin.transform : null;
-        baselineRigYaw = rig != null ? rig.eulerAngles.y : 0f;
         baselineAlignCount = StartMarkAligner.Instance != null ? StartMarkAligner.Instance.ManualAlignCount : 0;
 
 #if DIRECTOR_BUILD
@@ -373,8 +349,10 @@ public class TutorialController : MonoBehaviour
         {
 #if DIRECTOR_BUILD
             case Mode.DirectorRemote:
-                list.Add(WalkStep());
-                list.Add(TurnStep());
+                // Calibrar is only the temporary C key for now: no keyboard on a Quest.
+                if (Application.isEditor)
+                    list.Add(DirectorCalibrationStep());
+                list.Add(MoveTipStep());
                 AddDirectorRemoteSteps(list);
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. Desde ahí, {Key("Menú Principal")} {Act("termina el ensayo")}, también para el actor."));
                 break;
@@ -385,8 +363,8 @@ public class TutorialController : MonoBehaviour
                 break;
 #else
             case Mode.ActorRemote:
-                list.Add(WalkStep());
-                list.Add(TurnStep());
+                list.Add(ActorCalibrationStep());
+                list.Add(MoveTipStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
@@ -395,8 +373,7 @@ public class TutorialController : MonoBehaviour
                 break;
 
             case Mode.ActorSolo:
-                list.Add(WalkStep());
-                list.Add(TurnStep());
+                list.Add(MoveTipStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
@@ -426,21 +403,23 @@ public class TutorialController : MonoBehaviour
         SimulatorHint = "Simulador: mantén T (izq.) o Y (der.) y haz clic izquierdo.",
     };
 
-    // Real steps and the left joystick both move the head through the scene.
-    Step WalkStep() => new Step
+    // Just a tip, nothing to do: walking and turning your head need no teaching.
+    Step MoveTipStep() => new Step
     {
-        Text = $"{Act("Camina")} por la escena: caminando de verdad o con el {Key("joystick izquierdo")}.",
-        SimulatorHint = "Simulador: mantén T + W/A/S/D.",
-        IsDone = () => HeadMovedFromBaseline(),
+        Text = $"Consejo: si no quieres caminar, también puedes {Act("moverte")} con el {Key("joystick izquierdo")} y {Act("girar")} con el {Key("joystick derecho")}.",
+        SimulatorHint = "Simulador: mantén T + W/A/S/D para moverte, Y + A/D para girar.",
     };
 
-    // Joystick turning rotates the rig itself, unlike turning the head.
-    Step TurnStep() => new Step
+    // Actor: the director starts the calibration (AvatarPoseSync), so this only explains it. The
+    // poses match AvatarPoseSync's messages, the buzzes PodAvatar's calibration cues.
+    Step ActorCalibrationStep() => new Step
     {
-        Text = $"Usa el {Key("joystick derecho")} para {Act("girar")} a la izquierda o a la derecha.",
-        SimulatorHint = "Simulador: mantén Y + A/D.",
-        IsDone = () => Mathf.Abs(rightStickAction.ReadValue<Vector2>().x) > StickThreshold
-                       || (rig != null && Mathf.Abs(Mathf.DeltaAngle(baselineRigYaw, rig.eulerAngles.y)) > RigTurnDegrees),
+        Text = $"Antes de ensayar, el director {Act("calibra tu avatar")}. Un mensaje te dice cada pose: {Key("en T")}, {Key("brazos abajo con sentadilla ligera")} y {Key("palmas juntas al frente")}. Los pods dan 3 toques antes de cada pose y un {Act("doble pulso")} al capturarla.",
+    };
+
+    Step DirectorCalibrationStep() => new Step
+    {
+        Text = $"Cuando el actor esté listo, presiona {Key("C")} en el teclado para {Act("calibrar su avatar")}. Primero explícale las poses: en T, brazos abajo con sentadilla ligera y palmas juntas al frente.",
     };
 
     // Actor only: the real room's outline (PlayAreaOutline).
@@ -918,7 +897,6 @@ public class TutorialController : MonoBehaviour
         stepDone = false;
         onPrimary = null;
         onSecondary = null;
-        rig = null;
         obstacles.Clear();
         obstacleSignature = 0;
         obstaclesChanged = false;

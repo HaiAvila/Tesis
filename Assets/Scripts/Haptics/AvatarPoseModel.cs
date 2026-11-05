@@ -16,6 +16,9 @@ using Normal.Realtime;
 //   then; viewers fall back to the start mark's direction.
 // calibrationPhase: PodAvatar.Phase as an int, so the actor's headset can show each pose.
 // calibratedPods: how many pods the last calibration solved.
+// podsConnected: how many pods the machine with the pods hears now, so the actor's headset knows
+//   whether it can ask for a calibration. Owning the model from the start is fine: it's that
+//   machine's anyway.
 [RealtimeModel(createMetaModel: true)]
 public partial class AvatarPoseModel
 {
@@ -25,4 +28,5 @@ public partial class AvatarPoseModel
     [RealtimeProperty(4, true, true)] private bool _hasRootYaw;
     [RealtimeProperty(5, true, true)] private int _calibrationPhase;
     [RealtimeProperty(6, true, true)] private int _calibratedPods;
+    [RealtimeProperty(7, true, true)] private int _podsConnected;
 }

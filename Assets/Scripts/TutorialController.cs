@@ -16,9 +16,14 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 // - Steps that ask for an action (press B, raise the viewfinder...) move on by themselves once
 //   the action is detected, with a short "¡Muy bien!" and a haptic pulse. Info-only steps have
 //   a "Siguiente" button. "Saltar tutorial" is always there.
-// - Ensayo Remoto explains the calibration right after the ray, so it's known before the first
-//   one. Moving and turning with the joysticks is only a tip: nobody has to do it, since
-//   walking and turning your head need no teaching.
+// - The actor's tutorials end on how to calibrate, so the limit and the start are set first.
+//   Moving and turning with the joysticks is only a tip: nobody has to do it, since walking and
+//   turning your head need no teaching.
+//
+// The same panel guides the actor through a take's setup, every time, not just once (see
+// UpdateActorSetup): the Quest's limit goes back to tiny on every launch, and the avatar has to
+// be calibrated. It also holds the calibration's poses, too long for a floating message and
+// needed for the whole countdown; a tutorial in progress waits for them.
 // - Text is Mexican Spanish (tú). In each hint the control to press is highlighted in amber
 //   and what it does in light blue (rich text - see Key/Act).
 // - In the Editor each hint also shows the XR Device Simulator keys for that control.
@@ -69,6 +74,7 @@ public class TutorialController : MonoBehaviour
     const float StepDoneDelaySeconds = 0.9f;
 
     const float WalkDistanceMeters = 0.5f;
+    const float SetupDelaySeconds = 1.5f;
 
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.88f);
     static readonly Color ButtonColor = new Color(0.28f, 0.28f, 0.34f, 0.95f);
@@ -111,6 +117,15 @@ public class TutorialController : MonoBehaviour
     // Captured when each step starts - action steps compare against these.
     Vector3 baselineHeadPosition;
     int baselineAlignCount;
+
+#if !DIRECTOR_BUILD
+    // The actor's setup hints and the calibration's poses, in this same panel.
+    bool setupPanel;         // the panel is showing a hint: nothing else asked for it
+    bool showingPhase;
+    string setupText;
+    bool limitDismissed, calibrationDismissed;
+    float setupNotBefore;
+#endif
 #if DIRECTOR_BUILD
     float baselineFocalLength;
     bool baselinePlaying;
@@ -151,6 +166,11 @@ public class TutorialController : MonoBehaviour
         // Whatever was showing belonged to the scene that just unloaded. A tutorial in
         // progress isn't resumed - it can be replayed from the pause menu.
         CleanUp();
+
+#if !DIRECTOR_BUILD
+        limitDismissed = calibrationDismissed = false;
+        setupNotBefore = Time.time + SetupDelaySeconds;
+#endif
 
         Mode current = CurrentMode();
         if (current == Mode.None || HasSeen(current))
@@ -236,7 +256,7 @@ public class TutorialController : MonoBehaviour
 
         currentMode = mode;
         titleText.text = $"Tutorial · {ModeName(mode)}";
-        bool teachesCalibration = mode == Mode.ActorRemote || (mode == Mode.DirectorRemote && Application.isEditor);
+        bool teachesCalibration = mode == Mode.ActorRemote || mode == Mode.ActorSolo || (mode == Mode.DirectorRemote && Application.isEditor);
         SetHint(teachesCalibration ? "¿Quieres ver un tutorial de cómo calibrar y de los controles?" : "¿Quieres ver un tutorial de los controles?", null, TextColor);
         SetButtons("Sí", () =>
         {
@@ -294,10 +314,19 @@ public class TutorialController : MonoBehaviour
 
     void Update()
     {
+#if !DIRECTOR_BUILD
+        UpdateActorSetup();
+#endif
+
         if (panelObject == null)
             return;
 
         UpdateFollow();
+
+#if !DIRECTOR_BUILD
+        if (showingPhase)
+            return;
+#endif
 
         if (steps == null || stepIndex >= steps.Count)
             return;
@@ -319,6 +348,96 @@ public class TutorialController : MonoBehaviour
         if (Time.time - stepDoneTime >= StepDoneDelaySeconds)
             NextStep();
     }
+
+    // Whether the calibration's poses show in this panel on this machine (the actor, in a take).
+    public bool ShowsCalibrationHere
+    {
+        get
+        {
+            Mode mode = CurrentMode();
+            return mode == Mode.ActorRemote || mode == Mode.ActorSolo;
+        }
+    }
+
+#if !DIRECTOR_BUILD
+    // In order: the calibration's poses, if one is running (a tutorial in progress resumes after);
+    // nothing while a tutorial is open; then a tiny limit, then calibrating. Each hint can be put
+    // off until the next take, and goes away by itself once it's dealt with.
+    void UpdateActorSetup()
+    {
+        if (!ShowsCalibrationHere || Time.time < setupNotBefore)
+            return;
+
+        AvatarPoseSync avatar = AvatarPoseSync.Instance;
+        string phaseText = avatar != null ? AvatarPoseSync.PhaseInstruction(avatar.RunningPhase) : null;
+        if (phaseText != null)
+        {
+            if (promptCoroutine != null)
+            {
+                StopCoroutine(promptCoroutine);
+                promptCoroutine = null;
+            }
+
+            if (panelObject == null && !BuildPanel())
+                return;
+            showingPhase = true;
+            titleText.text = "Calibración";
+            SetHint(phaseText, null, TextColor);
+            SetButtons(null, null, null, null);
+            return;
+        }
+
+        if (showingPhase)
+        {
+            showingPhase = false;
+            if (steps != null)
+                ShowStep();
+            else
+                CleanUp();
+            return;
+        }
+
+        if (promptCoroutine != null || (panelObject != null && !setupPanel))
+            return;
+
+        PlayAreaOutline playArea = PlayAreaOutline.Instance;
+        string text = null;
+        Action dismiss = null;
+        if (!limitDismissed && playArea != null && playArea.IsTiny)
+        {
+            text = $"Tu {Key("límite")} es muy chico: {playArea.Width:F1} × {playArea.Depth:F1} m. {Act("Camina hacia afuera")} de la línea celeste y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.";
+            dismiss = () => limitDismissed = true;
+        }
+        else if (!calibrationDismissed && avatar != null && avatar.PodsAvailable && !avatar.IsSending && !avatar.IsReceiving)
+        {
+            text = $"Cuando estés listo, presiona {Key("Y")} (control izquierdo) para {Act("calibrar tu avatar")}.";
+            dismiss = () => calibrationDismissed = true;
+        }
+
+        if (text == null)
+        {
+            if (setupPanel)
+                CleanUp();
+            return;
+        }
+
+        if (setupPanel && text == setupText)
+            return;
+
+        if (panelObject == null && !BuildPanel())
+            return;
+
+        setupPanel = true;
+        setupText = text;
+        titleText.text = "Antes de ensayar";
+        SetHint(text, "Simulador: mantén T + N para calibrar.", TextColor);
+        SetButtons(null, null, "Ahora no", () =>
+        {
+            dismiss();
+            CleanUp();
+        });
+    }
+#endif
 
     void CaptureBaselines()
     {
@@ -363,13 +482,13 @@ public class TutorialController : MonoBehaviour
                 break;
 #else
             case Mode.ActorRemote:
-                list.Add(ActorCalibrationStep());
                 list.Add(MoveTipStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
                 list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Si termina el ensayo, {Act("regresas al menú principal")}." });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")}."));
+                list.Add(ActorCalibrationStep());
                 break;
 
             case Mode.ActorSolo:
@@ -390,6 +509,7 @@ public class TutorialController : MonoBehaviour
                     IsDone = () => SoloRehearsalController.Instance != null && !SoloRehearsalController.Instance.IsRunning,
                 });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te regresa al inicio")} para elegir otra toma."));
+                list.Add(ActorCalibrationStep());
                 break;
 #endif
         }
@@ -410,22 +530,23 @@ public class TutorialController : MonoBehaviour
         SimulatorHint = "Simulador: mantén T + W/A/S/D para moverte, Y + A/D para girar.",
     };
 
-    // Actor: the director starts the calibration (AvatarPoseSync), so this only explains it. The
-    // poses match AvatarPoseSync's messages, the buzzes PodAvatar's calibration cues.
+    // Info only, so nobody is made to calibrate in the tutorial; the hint afterwards asks for it.
+    // The poses match AvatarPoseSync's instructions, the buzzes PodAvatar's calibration cues.
     Step ActorCalibrationStep() => new Step
     {
-        Text = $"Antes de ensayar, el director {Act("calibra tu avatar")}. Un mensaje te dice cada pose: {Key("en T")}, {Key("brazos abajo con sentadilla ligera")} y {Key("palmas juntas al frente")}. Los pods dan 3 toques antes de cada pose y un {Act("doble pulso")} al capturarla.",
+        Text = $"Por último, presiona {Key("Y")} (control izquierdo) para {Act("calibrar tu avatar")} cuando estés listo. Este panel te dice cada pose: {Key("en T")}, {Key("brazos abajo con sentadilla ligera")} y {Key("palmas juntas al frente")}. Los pods dan 3 toques antes de cada pose y un {Act("doble pulso")} al capturarla.",
+        SimulatorHint = "Simulador: mantén T + N.",
     };
 
     Step DirectorCalibrationStep() => new Step
     {
-        Text = $"Cuando el actor esté listo, presiona {Key("C")} en el teclado para {Act("calibrar su avatar")}. Primero explícale las poses: en T, brazos abajo con sentadilla ligera y palmas juntas al frente.",
+        Text = $"El actor {Act("calibra su avatar")} con {Key("Y")} en su control. Si prefieres iniciarlo tú, presiona {Key("C")} en el teclado.",
     };
 
     // Actor only: the real room's outline (PlayAreaOutline).
     Step PlayAreaStep() => new Step
     {
-        Text = $"La {Key("línea celeste")} en el piso es el {Act("límite de tu espacio real")}: si la cruzas, el Quest te muestra tu cuarto.",
+        Text = $"La {Key("línea celeste")} en el piso es el {Act("límite de tu espacio real")}. Si es muy chica, {Act("camina hacia afuera")} y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.",
     };
 
     // Actor only: "Fijar inicio aquí" (StartMarkAligner).
@@ -893,6 +1014,11 @@ public class TutorialController : MonoBehaviour
             Destroy(panelObject);
         panelObject = null;
 
+#if !DIRECTOR_BUILD
+        setupPanel = false;
+        showingPhase = false;
+        setupText = null;
+#endif
         steps = null;
         stepDone = false;
         onPrimary = null;

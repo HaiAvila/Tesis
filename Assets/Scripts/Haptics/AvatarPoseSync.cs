@@ -1,6 +1,7 @@
 using System;
 using Normal.Realtime;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 // The actor's avatar over Normcore (AvatarPoseModel), on the persistent "ActorAvatar" object
@@ -24,9 +25,11 @@ using UnityEngine.SceneManagement;
 //   the start mark;
 // - the lowest foot stands on the set's floor - so a squat lowers the hips.
 //
-// Calibrar: SessionCommand.Calibrate from the director (another machine, through Normcore, or
-// this one - the temporary C key), or the Inspector button. Ignored on a machine without
-// pods. The phase is synced, so every headset shows which pose comes next.
+// Calibrar: the actor's Y in a take (ActorRigSync, through Normcore), SessionCommand.Calibrate
+// from the director (another machine, through Normcore, or this one - the temporary C key), or
+// the Inspector button. Ignored on a machine without pods. The phase is synced, so every headset
+// shows which pose comes next: the actor's in TutorialController's panel, where a long
+// instruction fits and stays up.
 //
 // Shown in the content scenes only, and not on the actor's own build (seeing your own body
 // from a headset that isn't aligned with it is worse than seeing nothing) unless
@@ -108,10 +111,30 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     float nextMarkSearch;
     RehearsalSessionState sessionState;
     bool hasPods;
+    int lastPodsSent = -1;
+#if !DIRECTOR_BUILD
+    InputAction calibrateAction;
+#endif
 
     public bool IsSending { get; private set; }
     public bool IsReceiving { get; private set; }
     public bool HasPodsHere => hasPods;
+
+    // Whether any machine in the room hears pods. Normcore clears the owner when that machine leaves.
+    public bool PodsAvailable => hasPods || (model != null && model.ownerIDSelf >= 0 && model.podsConnected > 0);
+
+    // A calibration running on this machine or on the one with the pods. Idle otherwise.
+    public PodAvatar.Phase RunningPhase
+    {
+        get
+        {
+            if (podAvatar != null && podAvatar.CurrentPhase != PodAvatar.Phase.Idle)
+                return podAvatar.CurrentPhase;
+            if (model != null && !model.isOwnedLocallySelf && model.ownerIDSelf >= 0)
+                return (PodAvatar.Phase)model.calibrationPhase;
+            return PodAvatar.Phase.Idle;
+        }
+    }
 
     void Awake()
     {
@@ -162,6 +185,16 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         }
 
         RehearsalSessionState.CommandSentLocally += OnCommand;
+        ActorRigSync.CalibrationRequested += OnCalibrationRequested;
+
+#if !DIRECTOR_BUILD
+        // Left secondary (Y on a Quest): free on the actor. Simulator: T + N.
+        calibrateAction = new InputAction("Calibrate", InputActionType.Button);
+        calibrateAction.AddBinding("<XRController>{LeftHand}/{secondaryButton}");
+        calibrateAction.AddBinding("<XRSimulatedController>{LeftHand}/secondaryButton");
+        calibrateAction.performed += OnCalibratePressed;
+        calibrateAction.Enable();
+#endif
     }
 
     void Start()
@@ -176,8 +209,18 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         if (Instance == this)
             Instance = null;
         RehearsalSessionState.CommandSentLocally -= OnCommand;
+        ActorRigSync.CalibrationRequested -= OnCalibrationRequested;
         if (sessionState != null)
             sessionState.OnCommand -= OnCommand;
+
+#if !DIRECTOR_BUILD
+        if (calibrateAction != null)
+        {
+            calibrateAction.performed -= OnCalibratePressed;
+            calibrateAction.Disable();
+            calibrateAction.Dispose();
+        }
+#endif
     }
 
     // --- calibration ------------------------------------------------------------------
@@ -187,6 +230,38 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         if (command == SessionCommand.Calibrate)
             StartCalibration("command from the director");
     }
+
+    void OnCalibrationRequested()
+    {
+        StartCalibration("the actor pressed Y");
+    }
+
+#if !DIRECTOR_BUILD
+    void OnCalibratePressed(InputAction.CallbackContext context)
+    {
+        bool actorFlow = Bootstrap.Mode == Bootstrap.AppMode.Remote || Bootstrap.Mode == Bootstrap.AppMode.Solo;
+        if (!actorFlow || !Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || PanelFocusManager.IsModalOpen)
+            return;
+
+        if (RunningPhase != PodAvatar.Phase.Idle)
+            return;
+
+        if (StartMarkAligner.IsTakeRunning)
+        {
+            FloatingMessage.Show("No puedes calibrar durante la toma");
+            return;
+        }
+
+        if (!PodsAvailable)
+        {
+            FloatingMessage.Show("No hay pods conectados");
+            return;
+        }
+
+        if (ActorRigSync.Instance != null)
+            ActorRigSync.Instance.RequestCalibration();
+    }
+#endif
 
     public void StartCalibration(string reason = "Inspector")
     {
@@ -276,6 +351,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
         hasReceived = false;
         layoutSent = false;
+        lastPodsSent = -1;
         if (currentModel == null)
             return;
 
@@ -381,7 +457,14 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
     void Update()
     {
-        hasPods = receiver != null && receiver.ActivePods().Length > 0;
+        int podCount = receiver != null ? receiver.ActivePods().Length : 0;
+        hasPods = podCount > 0;
+        if (model != null && podCount != lastPodsSent && (hasPods || lastPodsSent > 0))
+        {
+            model.RequestOwnership();
+            model.podsConnected = podCount;
+            lastPodsSent = podCount;
+        }
 
         if (podAvatar != null)
             TrackLocalPhase();
@@ -524,19 +607,26 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
     // --- what each headset shows during the calibration ------------------------------------
 
+    // What to do in this phase; null when none is running.
+    public static string PhaseInstruction(PodAvatar.Phase phase) => phase switch
+    {
+        PodAvatar.Phase.CountdownTPose => "Calibración: ponte en T, palmas abajo",
+        PodAvatar.Phase.CaptureTPose => "Quieto en T…",
+        PodAvatar.Phase.CountdownSecond => "Baja los brazos de lado, palmas a los muslos, y haz una sentadilla ligera",
+        PodAvatar.Phase.CaptureSecond => "Quieto…",
+        PodAvatar.Phase.CountdownThird => "Párate derecho, brazos al frente, junta las palmas",
+        PodAvatar.Phase.CaptureThird => "Quieto con las palmas juntas…",
+        _ => null,
+    };
+
     static void ShowPhaseMessage(PodAvatar.Phase phase, int solved)
     {
-        string text = phase switch
-        {
-            PodAvatar.Phase.CountdownTPose => "Calibración: ponte en T, palmas abajo",
-            PodAvatar.Phase.CaptureTPose => "Quieto en T…",
-            PodAvatar.Phase.CountdownSecond => "Baja los brazos de lado, palmas a los muslos, y haz una sentadilla ligera",
-            PodAvatar.Phase.CaptureSecond => "Quieto…",
-            PodAvatar.Phase.CountdownThird => "Párate derecho, brazos al frente, junta las palmas",
-            PodAvatar.Phase.CaptureThird => "Quieto con las palmas juntas…",
-            _ => solved > 0 ? $"Calibración lista: {solved} pods" : "La calibración no resolvió ningún pod",
-        };
+        string text = PhaseInstruction(phase) ?? (solved > 0 ? $"Calibración lista: {solved} pods" : "La calibración no resolvió ningún pod");
         Debug.Log($"[AvatarSync] calibration phase {phase}: \"{text}\"");
-        FloatingMessage.Show(text);
+
+        // The poses are in the panel when there's one here (the actor, in a take).
+        bool inPanel = phase != PodAvatar.Phase.Idle && TutorialController.Instance != null && TutorialController.Instance.ShowsCalibrationHere;
+        if (!inPanel)
+            FloatingMessage.Show(text);
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using Normal.Realtime;
 using Unity.XR.CoreUtils;
 using UnityEngine;
@@ -12,6 +13,9 @@ using UnityEngine;
 public class ActorRigSync : RealtimeComponent<ActorRigModel>
 {
     public static ActorRigSync Instance { get; private set; }
+
+    // The actor pressed Y. Raised on every machine; only the one with the pods acts on it.
+    public static event Action CalibrationRequested;
 
     const float MinYawChange = 0.05f;
 
@@ -28,15 +32,31 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
             Instance = null;
     }
 
-#if DIRECTOR_BUILD
     protected override void OnRealtimeModelReplaced(ActorRigModel previousModel, ActorRigModel currentModel)
     {
         if (previousModel != null)
+        {
+            previousModel.calibrateCounterDidChange -= OnCalibrateCounterDidChange;
+#if DIRECTOR_BUILD
             previousModel.startSetCounterDidChange -= OnStartSetCounterDidChange;
+#endif
+        }
+
         if (currentModel != null)
+        {
+            currentModel.calibrateCounterDidChange += OnCalibrateCounterDidChange;
+#if DIRECTOR_BUILD
             currentModel.startSetCounterDidChange += OnStartSetCounterDidChange;
+#endif
+        }
     }
 
+    void OnCalibrateCounterDidChange(ActorRigModel changedModel, int counter)
+    {
+        CalibrationRequested?.Invoke();
+    }
+
+#if DIRECTOR_BUILD
     void OnStartSetCounterDidChange(ActorRigModel changedModel, int counter)
     {
         FloatingMessage.Show("El actor fijó su inicio");
@@ -67,6 +87,18 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
 
         model.RequestOwnership();
         model.startSetCounter++;
+    }
+
+    // AvatarPoseSync, when the actor presses Y. Also raised here for this machine: it may be the
+    // one with the pods, and starting a calibration that already started does nothing.
+    public void RequestCalibration()
+    {
+        if (model == null)
+            return;
+
+        model.RequestOwnership();
+        model.calibrateCounter++;
+        CalibrationRequested?.Invoke();
     }
 #endif
 }

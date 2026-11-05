@@ -24,7 +24,7 @@ pods ──BLE──> receiver ──USB──> bridge ──> pose solver ─�
 
 It also:
 - receives the actor's headset pose from Normcore (the avatar's root);
-- runs the calibration when the director presses **Calibrar**;
+- runs the calibration when the actor presses **Y** in a take (the director can too);
 - records the takes with pose data;
 - generates automatic cues from the approved take;
 - plays live cues and the cue timeline on the pods;

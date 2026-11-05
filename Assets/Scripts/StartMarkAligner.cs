@@ -108,7 +108,7 @@ public class StartMarkAligner : MonoBehaviour
             ActorRigSync.Instance.NotifyStartSet();
     }
 
-    static bool IsTakeRunning =>
+    public static bool IsTakeRunning =>
         (RehearsalSessionSync.Instance != null && RehearsalSessionSync.Instance.IsRecording)
         || (SoloRehearsalController.Instance != null && SoloRehearsalController.Instance.IsRunning);
 

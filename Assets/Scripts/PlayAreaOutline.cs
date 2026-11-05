@@ -9,9 +9,10 @@ using UnityEngine.XR;
 // boundary - as a light-blue line on the virtual floor, so the actor sees how much real room
 // they have and where it sits in the set before walking into the boundary's passthrough.
 //
-// The boundary comes from OpenXR through XRInputSubsystem.TryGetBoundaryPoints (on a Quest, the
-// largest rectangle inside a Roomscale boundary; a Stationary boundary or the Editor reports
-// none, and nothing is drawn). The points are in tracking space, i.e. relative to the rig, so
+// The boundary comes from OpenXR through XRInputSubsystem.TryGetBoundaryPoints (the Editor reports
+// none, and nothing is drawn). On a Quest the app starts on a tiny Stationary boundary, seen as a
+// tiny square, even after a Roomscale one was drawn; walking out of it lets the actor create a
+// new one. IsTiny lets TutorialController say so. The points are in tracking space, i.e. relative to the rig, so
 // the outline is parented to the XR Origin at its feet: when the rig moves - "Fijar inicio
 // aquí" (StartMarkAligner) or joystick locomotion - the real room moves within the set and
 // the line follows. Rebuilt on every take and whenever the headset reports a new boundary.
@@ -20,6 +21,17 @@ using UnityEngine.XR;
 // colliders, no raycast targets.
 public class PlayAreaOutline : MonoBehaviour
 {
+    // Meta asks for at least 2 × 2 m to draw a Roomscale boundary, and a Stationary one is about
+    // 1 × 1 m.
+    const float TinySideMeters = 1.5f;
+
+    public static PlayAreaOutline Instance { get; private set; }
+
+    public bool HasReading { get; private set; }
+    public float Width { get; private set; }
+    public float Depth { get; private set; }
+    public bool IsTiny => HasReading && Mathf.Min(Width, Depth) < TinySideMeters;
+
 #if !DIRECTOR_BUILD
     const float LineWidth = 0.03f;
     const float FloorOffset = 0.03f; // a touch above the start mark (2.5 cm) so they never fight
@@ -33,11 +45,15 @@ public class PlayAreaOutline : MonoBehaviour
 
     void Awake()
     {
+        Instance = this;
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
     void OnDestroy()
     {
+        if (Instance == this)
+            Instance = null;
+
         SceneManager.sceneLoaded -= OnSceneLoaded;
         if (subsystem != null)
             subsystem.boundaryChanged -= OnBoundaryChanged;
@@ -74,11 +90,19 @@ public class PlayAreaOutline : MonoBehaviour
             Build();
     }
 
+    // Back from the Quest's own boundary screens, in case boundaryChanged didn't fire.
+    void OnApplicationFocus(bool hasFocus)
+    {
+        if (hasFocus && InActorTake)
+            Build();
+    }
+
     void Build()
     {
         if (outlineRoot != null)
             Destroy(outlineRoot);
         outlineRoot = null;
+        HasReading = false;
 
         XRInputSubsystem input = FindInputSubsystem();
         if (input != subsystem)
@@ -127,6 +151,9 @@ public class PlayAreaOutline : MonoBehaviour
         }
 
         loggedNoBoundary = false;
+        Width = max.x - min.x;
+        Depth = max.z - min.z;
+        HasReading = true;
         Debug.Log($"[PlayArea] play area drawn: {local.Count} corners, about {max.x - min.x:F1} × {max.z - min.z:F1} m");
     }
 

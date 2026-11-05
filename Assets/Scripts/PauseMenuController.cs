@@ -13,6 +13,8 @@ public class PauseMenuController : MonoBehaviour
 {
     const float PanelDistance = 1.5f;
     const float PanelWorldScale = 0.0025f;
+    const float CompactPanelWorldScale = 0.002f;  // a long menu, so it still fits in view
+    const int CompactOptionCount = 6;
     const int ButtonFontSize = 30;
     const float ButtonWidth = 420f;
     const float ButtonHeight = 90f;
@@ -123,7 +125,14 @@ public class PauseMenuController : MonoBehaviour
 #if DIRECTOR_BUILD
         menuOptions.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
         menuOptions.Add(new PauseMenuOption { Label = "Favoritos", OnSelected = ShowFavorites });
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote)
+            menuOptions.Add(new PauseMenuOption { Label = "Calibrar", OnSelected = StartCalibration });
+        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
+            menuOptions.Add(new PauseMenuOption { Label = "Exportar tomas a CSV", OnSelected = ExportTakes });
 #endif
+
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote && VoiceChat.Instance != null)
+            menuOptions.Add(new PauseMenuOption { Label = VoiceChat.Instance.MicrophoneOn ? "Micrófono: encendido" : "Micrófono: apagado", OnSelected = ToggleMicrophone });
 
         menuOptions.Add(new PauseMenuOption { Label = "Estado de pods", OnSelected = ShowPodStatus });
 
@@ -216,7 +225,7 @@ public class PauseMenuController : MonoBehaviour
         canvasRect.sizeDelta = new Vector2(panelWidth, panelHeight);
         canvasRect.position = panelPosition;
         canvasRect.rotation = panelRotation;
-        canvasRect.localScale = Vector3.one * PanelWorldScale;
+        canvasRect.localScale = Vector3.one * (menuOptions.Count >= CompactOptionCount ? CompactPanelWorldScale : PanelWorldScale);
 
         var background = new GameObject("Background", typeof(RectTransform), typeof(Image));
         background.transform.SetParent(canvasRect, false);
@@ -288,6 +297,12 @@ public class PauseMenuController : MonoBehaviour
         option.OnSelected?.Invoke();
     }
 
+    void ToggleMicrophone()
+    {
+        VoiceChat.Instance.MicrophoneOn = !VoiceChat.Instance.MicrophoneOn;
+        FloatingMessage.Show(VoiceChat.Instance.MicrophoneOn ? "Micrófono encendido" : "Micrófono apagado");
+    }
+
     void ShowPodStatus()
     {
         if (PodStatusController.Instance != null)
@@ -328,6 +343,46 @@ public class PauseMenuController : MonoBehaviour
     }
 
 #if DIRECTOR_BUILD
+    // Runs on the machine with the pods, through the command channel.
+    void StartCalibration()
+    {
+        if (RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.IsRecording)
+        {
+            FloatingMessage.Show("No puedes calibrar durante la toma");
+            return;
+        }
+
+        if (AvatarPoseSync.Instance == null || !AvatarPoseSync.Instance.PodsAvailable)
+        {
+            FloatingMessage.Show("No hay pods conectados");
+            return;
+        }
+
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SendCommand(SessionCommand.Calibrate);
+    }
+
+    void ExportTakes()
+    {
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("PauseMenuController: no ShotListDatabase instance found, nothing exported.");
+            return;
+        }
+
+        try
+        {
+            int exported = TakeExporter.ExportAll(database, out int alreadyExported);
+            FloatingMessage.Show(exported > 0 ? $"{exported} tomas exportadas" : "No hay tomas nuevas");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Export] failed: {e}");
+            FloatingMessage.Show("No se pudieron exportar las tomas");
+        }
+    }
+
     void GoToSceneSelect()
     {
         Bootstrap.LoadSceneSelect();

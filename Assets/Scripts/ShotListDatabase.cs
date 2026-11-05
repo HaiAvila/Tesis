@@ -391,6 +391,16 @@ public class ShotListDatabase : MonoBehaviour
 
     // Every favorited session across every scene/shot, most recent first - for the
     // Favoritos screen.
+    public List<RecordingSession> GetAllSessions()
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<RecordingSession>("SELECT * FROM Sesiones ORDER BY id ASC;");
+        }
+    }
+
     public List<RecordingSession> GetFavoriteSessions()
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);

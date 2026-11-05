@@ -256,7 +256,7 @@ public class TutorialController : MonoBehaviour
 
         currentMode = mode;
         titleText.text = $"Tutorial · {ModeName(mode)}";
-        bool teachesCalibration = mode == Mode.ActorRemote || mode == Mode.ActorSolo || (mode == Mode.DirectorRemote && Application.isEditor);
+        bool teachesCalibration = mode == Mode.ActorRemote || mode == Mode.ActorSolo || mode == Mode.DirectorRemote;
         SetHint(teachesCalibration ? "¿Quieres ver un tutorial de cómo calibrar y de los controles?" : "¿Quieres ver un tutorial de los controles?", null, TextColor);
         SetButtons("Sí", () =>
         {
@@ -417,7 +417,7 @@ public class TutorialController : MonoBehaviour
         Action dismiss = null;
         if (!limitDismissed && playArea != null && playArea.IsTiny)
         {
-            text = $"Tu {Key("límite")} es muy chico: {playArea.Width:F1} × {playArea.Depth:F1} m. {Act("Camina hacia afuera")} de la línea celeste y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.";
+            text = $"Tu {Key("límite")} es muy chico: {playArea.Width:F1} × {playArea.Depth:F1} m. {Act("Camina hacia afuera")} de él y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.";
             dismiss = () => limitDismissed = true;
         }
         else if (missingPods != null)
@@ -490,9 +490,8 @@ public class TutorialController : MonoBehaviour
         {
 #if DIRECTOR_BUILD
             case Mode.DirectorRemote:
-                // Calibrar is only the temporary C key for now: no keyboard on a Quest.
-                if (Application.isEditor)
-                    list.Add(DirectorCalibrationStep());
+                list.Add(DirectorCalibrationStep());
+                list.Add(VoiceStep("el actor"));
                 list.Add(MoveTipStep());
                 list.Add(new Step { Text = $"Arriba a la izquierda, {Key("Pods 9/9")} te dice {Act("cuántos pods están conectados")}: se pone ámbar con batería baja y rojo si falta uno. El detalle está en el menú de pausa, en {Key("Estado de pods")}." });
                 AddDirectorRemoteSteps(list);
@@ -505,11 +504,12 @@ public class TutorialController : MonoBehaviour
                 break;
 #else
             case Mode.ActorRemote:
+                list.Add(VoiceStep("el director"));
                 list.Add(MoveTipStep());
                 list.Add(PlayAreaStep());
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
-                list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Si termina el ensayo, {Act("regresas al menú principal")}." });
+                list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Mientras graba, verás {Key("Grabando")} arriba a la izquierda. Si termina el ensayo, {Act("regresas al menú principal")}." });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")} y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
                 list.Add(ActorCalibrationStep());
                 break;
@@ -563,13 +563,19 @@ public class TutorialController : MonoBehaviour
 
     Step DirectorCalibrationStep() => new Step
     {
-        Text = $"El actor {Act("calibra su avatar")} con {Key("Y")} en su control. Si prefieres iniciarlo tú, presiona {Key("C")} en el teclado.",
+        Text = $"El actor {Act("calibra su avatar")} con {Key("Y")} en su control. Si prefieres iniciarlo tú, abre el menú de pausa y elige {Key("Calibrar")}.",
     };
 
-    // Actor only: the real room's outline (PlayAreaOutline).
+    // Ensayo Remoto only: there's no one to talk to otherwise.
+    Step VoiceStep(string otherPerson) => new Step
+    {
+        Text = $"Puedes {Act("hablar con")} {otherPerson}: tu micrófono está encendido durante el ensayo. Si están en el mismo cuarto, apágalo en el menú de pausa, en {Key("Micrófono")}.",
+    };
+
+    // Actor only: the Quest's own limit (it isn't drawn by the app).
     Step PlayAreaStep() => new Step
     {
-        Text = $"La {Key("línea celeste")} en el piso es el {Act("límite de tu espacio real")}. Si es muy chica, {Act("camina hacia afuera")} y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.",
+        Text = $"El Quest marca el {Act("límite de tu espacio real")}. Si es muy chico, {Act("camina hacia afuera")} de él y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.",
     };
 
     // Actor only: "Fijar inicio aquí" (StartMarkAligner).

@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 // Remote-rehearsal flow on top of RehearsalSessionState (the synced model, on this same
@@ -23,9 +22,7 @@ public class RehearsalSessionSync : MonoBehaviour
     public static RehearsalSessionSync Instance { get; private set; }
 
     RehearsalSessionState sessionState;
-#if DIRECTOR_BUILD
-    InputAction debugCalibrateAction;
-#else
+#if !DIRECTOR_BUILD
     Coroutine pendingSelectionCoroutine;
 #endif
 
@@ -56,24 +53,12 @@ public class RehearsalSessionSync : MonoBehaviour
         }
 #endif
 
-#if DIRECTOR_BUILD
-        // TEMPORARY debug - C sends Calibrate, to test the command channel before any real
-        // button sends commands. Remove once a real sender exists.
-        debugCalibrateAction = new InputAction("DebugSendCalibrate", InputActionType.Button, "<Keyboard>/c");
-        debugCalibrateAction.performed += _ => SendCommand(SessionCommand.Calibrate);
-        debugCalibrateAction.Enable();
-#endif
     }
 
     void OnDestroy()
     {
         if (Instance == this)
             Instance = null;
-
-#if DIRECTOR_BUILD
-        debugCalibrateAction?.Disable();
-        debugCalibrateAction?.Dispose();
-#endif
     }
 
     // Command channel - see RehearsalSessionState. SendCommand is for the director.

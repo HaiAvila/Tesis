@@ -7,9 +7,12 @@ using UnityEngine.UI;
 // destroyed directly from its RecordingStarted/RecordingStopped events (the same
 // start/stop calls that drive the actual recording), never a separate timer, so it can't
 // drift out of sync with whether a recording is really running.
+//
+// The actor gets the same dot plus the word "Grabando", in Ensayo Remoto, following the
+// recording state the director syncs (RehearsalSessionSync.IsRecording): without it they can't
+// tell a take has started.
 public class RecordingIndicator : MonoBehaviour
 {
-#if DIRECTOR_BUILD
     const int CircleTextureSize = 64;
     const float DotDiameter = 0.035f;
     const float PulseMinAlpha = 0.35f;
@@ -24,6 +27,61 @@ public class RecordingIndicator : MonoBehaviour
 
     GameObject indicatorObject;
 
+#if !DIRECTOR_BUILD
+    // To the right of the dot, head-locked like it.
+    static readonly Vector3 ActorLabelOffset = new Vector3(-0.115f, 0.12f, 0.5f);
+    const float ActorLabelScale = 0.0003f;
+    const int ActorLabelFontSize = 56;
+    static readonly Vector2 ActorLabelSize = new Vector2(320f, 76f);
+
+    void Update()
+    {
+        bool recording = Bootstrap.Mode == Bootstrap.AppMode.Remote
+                         && RehearsalSessionSync.Instance != null && RehearsalSessionSync.Instance.IsRecording
+                         && Bootstrap.IsContentScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+
+        if (recording && indicatorObject == null)
+        {
+            Camera headCamera = Camera.main;
+            if (headCamera == null)
+                return;
+            BuildIndicator(headCamera.transform);
+            BuildActorLabel();
+        }
+        else if (!recording && indicatorObject != null)
+        {
+            Destroy(indicatorObject);
+            indicatorObject = null;
+        }
+    }
+
+    // A child of the dot, so it goes with it. The dot's canvas is scaled to the dot, hence the scale.
+    void BuildActorLabel()
+    {
+        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        labelObject.transform.SetParent(indicatorObject.transform, false);
+
+        var rect = (RectTransform)labelObject.transform;
+        rect.sizeDelta = ActorLabelSize;
+        rect.pivot = new Vector2(0f, 0.5f);
+        rect.SetPositionAndRotation(indicatorObject.transform.parent.TransformPoint(ActorLabelOffset), indicatorObject.transform.rotation);
+        rect.localScale = Vector3.one * (ActorLabelScale / DotDiameter);
+
+        Text label = labelObject.GetComponent<Text>();
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.text = "Grabando";
+        label.fontSize = ActorLabelFontSize;
+        label.fontStyle = FontStyle.Bold;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+        label.horizontalOverflow = HorizontalWrapMode.Overflow;
+        label.raycastTarget = false;
+
+        XRUISetup.MoveToUILayer(indicatorObject);
+    }
+#endif
+
+#if DIRECTOR_BUILD
     void Start()
     {
         if (RehearsalRecorder.Instance != null)
@@ -41,6 +99,7 @@ public class RecordingIndicator : MonoBehaviour
             RehearsalRecorder.Instance.RecordingStopped -= OnRecordingStopped;
         }
     }
+#endif
 
     void OnRecordingStarted()
     {
@@ -134,5 +193,4 @@ public class RecordingIndicator : MonoBehaviour
         cachedCircleSprite = Sprite.Create(texture, new Rect(0, 0, CircleTextureSize, CircleTextureSize), new Vector2(0.5f, 0.5f));
         return cachedCircleSprite;
     }
-#endif
 }

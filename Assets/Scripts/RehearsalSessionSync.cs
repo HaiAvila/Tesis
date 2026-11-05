@@ -83,6 +83,14 @@ public class RehearsalSessionSync : MonoBehaviour
             sessionState.SendCommand(command);
     }
 
+    public bool IsRecording => sessionState != null && sessionState.IsRecording;
+
+    public void SetRecording(bool recording)
+    {
+        if (sessionState != null)
+            sessionState.SetRecording(recording);
+    }
+
     public void ResetCommandBaseline()
     {
         if (sessionState != null)

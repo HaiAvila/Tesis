@@ -10,8 +10,9 @@ using Normal.Realtime;
 // layout: the avatar's size - root scale (float), then the local positions of the bones the
 //   body measurements move (AvatarPoseSync.LayoutBones order, 3 floats each). Reliable,
 //   written once per calibration.
-// rootYaw / hasRootYaw: which way the actor faced during the T-pose, from the headset (the
-//   avatar faces that way when the chest pod reads its T-pose heading). false = no headset
+// rootYaw / hasRootYaw: which way the actor faced during the T-pose, from the headset and
+//   relative to the rig (ActorRigSync), so it survives the rig turning: the avatar faces
+//   rootYaw + the rig's yaw when the chest pod reads its T-pose heading. false = no headset
 //   then; viewers fall back to the start mark's direction.
 // calibrationPhase: PodAvatar.Phase as an int, so the actor's headset can show each pose.
 // calibratedPods: how many pods the last calibration solved.

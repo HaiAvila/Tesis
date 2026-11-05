@@ -16,8 +16,9 @@ using UnityEngine.SceneManagement;
 // avatar's size once (scale and the joints the body measurements moved).
 //
 // Placed the same way on every machine, after the pose:
-// - facing: the way the actor's headset faced during the T-pose (rootYaw), else the start
-//   mark's direction;
+// - facing: the way the actor's headset faced during the T-pose relative to the rig (rootYaw)
+//   plus how the rig is turned now (ActorRigSync: X, a new take and the joystick turn the rig
+//   but not the actor), else the start mark's direction;
 // - the head bone turns with the headset;
 // - the head bone sits under the headset (eyesForwardOfHeadBone behind the eyes), else over
 //   the start mark;
@@ -211,7 +212,8 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         {
             Vector3 f = ActorPositionSync.Instance.transform.forward;
             f.y = 0f;
-            tPoseForwardSum += f.normalized;
+            // Relative to the rig, so turning the rig later turns the avatar with it.
+            tPoseForwardSum += Quaternion.Euler(0f, -CurrentRigYaw, 0f) * f.normalized;
         }
 
         if (phase == lastLocalPhase)
@@ -225,7 +227,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
             if (localHasRootYaw)
                 localRootYaw = Mathf.Atan2(tPoseForwardSum.x, tPoseForwardSum.z) * Mathf.Rad2Deg;
             Debug.Log(localHasRootYaw
-                ? $"[AvatarSync] T-pose facing from the headset: {localRootYaw:F0}°"
+                ? $"[AvatarSync] T-pose facing from the headset: {localRootYaw:F0}° from the rig"
                 : "[AvatarSync] no headset during the T-pose: the avatar faces the start mark's way");
         }
 
@@ -442,7 +444,9 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         // Facing: the T-pose's, from the headset; else the start mark's.
         bool hasYaw = IsSending ? localHasRootYaw : model != null && model.hasRootYaw;
         float yaw = IsSending ? localRootYaw : model != null ? model.rootYaw : 0f;
-        if (!hasYaw)
+        if (hasYaw)
+            yaw += CurrentRigYaw;
+        else
             yaw = mark != null ? mark.eulerAngles.y : root.eulerAngles.y;
         root.rotation = Quaternion.Euler(0f, yaw, 0f);
 
@@ -476,6 +480,8 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         Vector3 shift = new Vector3(target.x - head.position.x, floorY - sole, target.z - head.position.z);
         root.position += shift;
     }
+
+    static float CurrentRigYaw => ActorRigSync.Instance != null ? ActorRigSync.Instance.RigYaw : 0f;
 
     Transform FindStartMark()
     {

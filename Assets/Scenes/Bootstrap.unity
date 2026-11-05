@@ -254,6 +254,13 @@ MonoBehaviour:
   smoothing: 18
   countdownSeconds: 4
   captureSeconds: 1
+  calibrationCues: 1
+  preventInterpenetration: 1
+  showCollisionGizmos: 0
+  flatFeet: 1
+  keepFeetOnFloor: 1
+  plantFeet: 1
+  plantSwitchHeight: 0.02
 --- !u!114 &146049630
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1066,6 +1073,7 @@ GameObject:
   - component: {fileID: 1680960053}
   - component: {fileID: 1680960054}
   - component: {fileID: 1680960055}
+  - component: {fileID: 1680960056}
   m_Layer: 0
   m_Name: ActorPositionSync
   m_TagString: Untagged
@@ -1109,6 +1117,9 @@ MonoBehaviour:
   - componentID: 1
     component: {fileID: 1680960054}
     isDeprecated: 0
+  - componentID: 2
+    component: {fileID: 1680960056}
+    isDeprecated: 0
   _childViews: []
 --- !u!114 &1680960054
 MonoBehaviour:
@@ -1141,6 +1152,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2aaea0c17f88a347b28b85c44f75dc3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ActorPositionSync
+--- !u!114 &1680960056
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1680960051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 586720a84364d9a4ba5523c80c5b9415, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ActorRigSync
 --- !u!1001 &1690822990
 PrefabInstance:
   m_ObjectHideFlags: 0

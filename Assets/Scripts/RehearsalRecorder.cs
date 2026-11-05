@@ -252,6 +252,8 @@ public class RehearsalRecorder : MonoBehaviour
         recordingStartedAt = DateTime.Now;
         recordingStartTime = Time.time;
         IsRecording = true;
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SetRecording(true);
         samplingCoroutine = StartCoroutine(SampleLoop());
 
         RecordingStarted?.Invoke();
@@ -263,6 +265,8 @@ public class RehearsalRecorder : MonoBehaviour
             return;
 
         IsRecording = false;
+        if (RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SetRecording(false);
         if (samplingCoroutine != null)
             StopCoroutine(samplingCoroutine);
 

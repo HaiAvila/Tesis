@@ -68,6 +68,9 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
 
     public int SceneNumber => model != null ? model.sceneNumber : NoSceneSelected;
 
+    // HasOwner: a director who left mid-take can't clear it, and shouldn't block anyone.
+    public bool IsRecording => model != null && model.isRecording && HasOwner;
+
     // Director only, same ownership pattern as SetState. Scene first, then the shot.
     public void SetSelection(int sceneNumber, int shotNumber)
     {
@@ -93,6 +96,16 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
         model.RequestOwnership();
         model.sessionState = state;
         Debug.Log($"[SessionSync] write sessionState={state}");
+    }
+
+    // Director only, same ownership pattern as SetState.
+    public void SetRecording(bool recording)
+    {
+        if (model == null)
+            return;
+
+        model.RequestOwnership();
+        model.isRecording = recording;
     }
 
     // Director only. commandId first, then the counter - receivers react to the counter.

@@ -19,7 +19,8 @@ using UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity;
 //   and the virtual start are under the actor wherever they're standing.
 // - "Fijar inicio aquí": the left controller's X (primary) re-does it at any time. The actor
 //   walks to one end of the real room, faces the open space and presses X - the start moves
-//   under their feet with the room ahead of them.
+//   under their feet with the room ahead of them. Not during a take: it would be a teleport in
+//   the recording. The director is told ("El actor fijó su inicio").
 //
 // The director is never moved by this (#if !DIRECTOR_BUILD): they move with the joystick
 // and don't need their real walk to match the set.
@@ -96,8 +97,20 @@ public class StartMarkAligner : MonoBehaviour
         if (!InActorTake || PanelFocusManager.IsModalOpen)
             return;
 
+        if (IsTakeRunning)
+        {
+            FloatingMessage.Show("No puedes fijar el inicio durante la toma");
+            return;
+        }
+
         Align("X pressed", manual: true);
+        if (ActorRigSync.Instance != null)
+            ActorRigSync.Instance.NotifyStartSet();
     }
+
+    static bool IsTakeRunning =>
+        (RehearsalSessionSync.Instance != null && RehearsalSessionSync.Instance.IsRecording)
+        || (SoloRehearsalController.Instance != null && SoloRehearsalController.Instance.IsRunning);
 
     void Align(string reason, bool manual)
     {

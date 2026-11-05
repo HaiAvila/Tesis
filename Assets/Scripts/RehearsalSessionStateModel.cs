@@ -27,4 +27,6 @@ public partial class RehearsalSessionStateModel
     [RealtimeProperty(3, true, true)] private int _commandCounter;
     [RealtimeProperty(4, true, true)] private int _shotNumber;
     [RealtimeProperty(5, true, true)] private int _sceneNumber;
+    // The director is recording: the actor can't re-set the start until it stops.
+    [RealtimeProperty(6, true, true)] private bool _isRecording;
 }

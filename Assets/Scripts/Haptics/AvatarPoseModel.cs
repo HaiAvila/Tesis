@@ -16,6 +16,8 @@ using Normal.Realtime;
 //   then; viewers fall back to the start mark's direction.
 // calibrationPhase: PodAvatar.Phase as an int, so the actor's headset can show each pose.
 // calibratedPods: how many pods the last calibration solved.
+// podStatus: each pod's connection, battery and signal, every 2 s and as soon as one comes or
+//   goes. See PodStatus.
 // podsConnected: how many pods the machine with the pods hears now, so the actor's headset knows
 //   whether it can ask for a calibration. Owning the model from the start is fine: it's that
 //   machine's anyway.
@@ -29,4 +31,5 @@ public partial class AvatarPoseModel
     [RealtimeProperty(5, true, true)] private int _calibrationPhase;
     [RealtimeProperty(6, true, true)] private int _calibratedPods;
     [RealtimeProperty(7, true, true)] private int _podsConnected;
+    [RealtimeProperty(8, true, true)] private byte[] _podStatus;
 }

@@ -123,7 +123,7 @@ public class TutorialController : MonoBehaviour
     bool setupPanel;         // the panel is showing a hint: nothing else asked for it
     bool showingPhase;
     string setupText;
-    bool limitDismissed, calibrationDismissed;
+    bool limitDismissed, podsDismissed, calibrationDismissed;
     float setupNotBefore;
 #endif
 #if DIRECTOR_BUILD
@@ -168,7 +168,7 @@ public class TutorialController : MonoBehaviour
         CleanUp();
 
 #if !DIRECTOR_BUILD
-        limitDismissed = calibrationDismissed = false;
+        limitDismissed = podsDismissed = calibrationDismissed = false;
         setupNotBefore = Time.time + SetupDelaySeconds;
 #endif
 
@@ -361,8 +361,9 @@ public class TutorialController : MonoBehaviour
 
 #if !DIRECTOR_BUILD
     // In order: the calibration's poses, if one is running (a tutorial in progress resumes after);
-    // nothing while a tutorial is open; then a tiny limit, then calibrating. Each hint can be put
-    // off until the next take, and goes away by itself once it's dealt with.
+    // nothing while a tutorial is open or during a take; then a tiny limit, a pod problem, then
+    // calibrating. Each hint can be put off until the next take, and goes away by itself once
+    // it's dealt with.
     void UpdateActorSetup()
     {
         if (!ShowsCalibrationHere || Time.time < setupNotBefore)
@@ -400,6 +401,17 @@ public class TutorialController : MonoBehaviour
         if (promptCoroutine != null || (panelObject != null && !setupPanel))
             return;
 
+        if (StartMarkAligner.IsTakeRunning)
+        {
+            if (setupPanel)
+                CleanUp();
+            return;
+        }
+
+        PodStatusController pods = PodStatusController.Instance;
+        string missingPods = pods != null && !podsDismissed ? pods.MissingPods() : null;
+        string lowPods = pods != null && !podsDismissed ? pods.LowPods() : null;
+
         PlayAreaOutline playArea = PlayAreaOutline.Instance;
         string text = null;
         Action dismiss = null;
@@ -407,6 +419,16 @@ public class TutorialController : MonoBehaviour
         {
             text = $"Tu {Key("límite")} es muy chico: {playArea.Width:F1} × {playArea.Depth:F1} m. {Act("Camina hacia afuera")} de la línea celeste y, cuando el Quest te lo ofrezca, {Act("crea un límite nuevo")} del tamaño de tu cuarto.";
             dismiss = () => limitDismissed = true;
+        }
+        else if (missingPods != null)
+        {
+            text = $"{Key("Sin conexión")}: {missingPods}. {Act("Revisa que los pods estén encendidos")} y cerca del receptor. Puedes ver el detalle en el menú de pausa, en {Key("Estado de pods")}.";
+            dismiss = () => podsDismissed = true;
+        }
+        else if (lowPods != null)
+        {
+            text = $"{Key("Batería baja")}: {lowPods}. {Act("Carga los pods")} cuando puedas. Puedes ver el detalle en el menú de pausa, en {Key("Estado de pods")}.";
+            dismiss = () => podsDismissed = true;
         }
         else if (!calibrationDismissed && avatar != null && avatar.PodsAvailable && !avatar.IsSending && !avatar.IsReceiving)
         {
@@ -430,7 +452,7 @@ public class TutorialController : MonoBehaviour
         setupPanel = true;
         setupText = text;
         titleText.text = "Antes de ensayar";
-        SetHint(text, "Simulador: mantén T + N para calibrar.", TextColor);
+        SetHint(text, null, TextColor);
         SetButtons(null, null, "Ahora no", () =>
         {
             dismiss();
@@ -472,6 +494,7 @@ public class TutorialController : MonoBehaviour
                 if (Application.isEditor)
                     list.Add(DirectorCalibrationStep());
                 list.Add(MoveTipStep());
+                list.Add(new Step { Text = $"Arriba a la izquierda, {Key("Pods 9/9")} te dice {Act("cuántos pods están conectados")}: se pone ámbar con batería baja y rojo si falta uno. El detalle está en el menú de pausa, en {Key("Estado de pods")}." });
                 AddDirectorRemoteSteps(list);
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. Desde ahí, {Key("Menú Principal")} {Act("termina el ensayo")}, también para el actor."));
                 break;
@@ -487,7 +510,7 @@ public class TutorialController : MonoBehaviour
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
                 list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Si termina el ensayo, {Act("regresas al menú principal")}." });
-                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")}."));
+                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")} y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
                 list.Add(ActorCalibrationStep());
                 break;
 
@@ -508,7 +531,7 @@ public class TutorialController : MonoBehaviour
                     SimulatorHint = "Simulador: mantén Y + N.",
                     IsDone = () => SoloRehearsalController.Instance != null && !SoloRehearsalController.Instance.IsRunning,
                 });
-                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te regresa al inicio")} para elegir otra toma."));
+                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te regresa al inicio")} para elegir otra toma y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
                 list.Add(ActorCalibrationStep());
                 break;
 #endif

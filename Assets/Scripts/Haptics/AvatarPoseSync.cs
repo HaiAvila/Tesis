@@ -116,6 +116,9 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     RehearsalSessionState sessionState;
     bool hasPods;
     int lastPodsSent = -1;
+    bool heardPods;
+    int lastStatusMask = -1;
+    float nextStatusCheck, nextStatusSend;
     GameObject playbackTemplate;
 #if !DIRECTOR_BUILD
     InputAction calibrateAction;
@@ -127,6 +130,18 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
     // Whether any machine in the room hears pods. Normcore clears the owner when that machine leaves.
     public bool PodsAvailable => hasPods || (model != null && model.ownerIDSelf >= 0 && model.podsConnected > 0);
+
+    // Each pod's state (PodStatus): read here if this machine has the pods, else as received.
+    // Null when no machine has them. Normcore clears the owner when that machine leaves.
+    public byte[] LatestPodStatus
+    {
+        get
+        {
+            if (heardPods && receiver != null && podAvatar != null)
+                return PodStatus.Encode(receiver, podAvatar.mapping);
+            return model != null && model.ownerIDSelf >= 0 ? model.podStatus : null;
+        }
+    }
 
     // A calibration running on this machine or on the one with the pods. Idle otherwise.
     public PodAvatar.Phase RunningPhase
@@ -362,6 +377,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         hasReceived = false;
         layoutSent = false;
         lastPodsSent = -1;
+        lastStatusMask = -1;
         if (currentModel == null)
             return;
 
@@ -546,6 +562,10 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
             lastPodsSent = podCount;
         }
 
+        if (hasPods)
+            heardPods = true;
+        SendPodStatus();
+
         if (podAvatar != null)
             TrackLocalPhase();
 
@@ -687,6 +707,27 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     }
 
     // --- what each headset shows during the calibration ------------------------------------
+
+    void SendPodStatus()
+    {
+        const float checkSeconds = 0.25f;
+        const float sendSeconds = 2f;
+
+        if (!heardPods || model == null || podAvatar == null || Time.time < nextStatusCheck)
+            return;
+        nextStatusCheck = Time.time + checkSeconds;
+
+        byte[] status = PodStatus.Encode(receiver, podAvatar.mapping);
+        int mask = PodStatus.ConnectedMask(status);
+        if (mask == lastStatusMask && Time.time < nextStatusSend)
+            return;
+
+        if (!model.isOwnedLocallySelf)
+            model.RequestOwnership();
+        model.podStatus = status;
+        lastStatusMask = mask;
+        nextStatusSend = Time.time + sendSeconds;
+    }
 
     // What to do in this phase; null when none is running.
     public static string PhaseInstruction(PodAvatar.Phase phase) => phase switch

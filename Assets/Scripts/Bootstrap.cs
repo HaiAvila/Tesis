@@ -129,6 +129,10 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<PlayAreaOutline>() == null)
             gameObject.AddComponent<PlayAreaOutline>();
 
+        // Both roles: what each one gets to know about the pods - see PodStatusController.
+        if (GetComponent<PodStatusController>() == null)
+            gameObject.AddComponent<PodStatusController>();
+
         // Both roles: back to the start mark instead of falling into the void - see FallGuard.
         if (GetComponent<FallGuard>() == null)
             gameObject.AddComponent<FallGuard>();

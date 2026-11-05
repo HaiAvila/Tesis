@@ -125,6 +125,8 @@ public class PauseMenuController : MonoBehaviour
         menuOptions.Add(new PauseMenuOption { Label = "Favoritos", OnSelected = ShowFavorites });
 #endif
 
+        menuOptions.Add(new PauseMenuOption { Label = "Estado de pods", OnSelected = ShowPodStatus });
+
         // Replays the controls tutorial for the current mode - it's only offered
         // automatically the first time.
         menuOptions.Add(new PauseMenuOption { Label = "Tutorial", OnSelected = ShowTutorial });
@@ -284,6 +286,12 @@ public class PauseMenuController : MonoBehaviour
         SendHaptic();
 
         option.OnSelected?.Invoke();
+    }
+
+    void ShowPodStatus()
+    {
+        if (PodStatusController.Instance != null)
+            PodStatusController.Instance.ShowPanel();
     }
 
     void ShowTutorial()

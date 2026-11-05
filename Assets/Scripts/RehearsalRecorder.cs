@@ -20,6 +20,9 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 public class RehearsalRecorder : MonoBehaviour
 {
     const float SampleInterval = 0.1f;
+    // The avatar on its own ticks: the pods arrive at about 19 Hz, and a quick gesture would be
+    // lost at the head's 10 Hz.
+    const float PoseSampleInterval = 0.05f;
 
     public static RehearsalRecorder Instance { get; private set; }
 
@@ -36,7 +39,12 @@ public class RehearsalRecorder : MonoBehaviour
     // filled in lock-step with buffer by SampleOnce, saved/discarded together with it.
     readonly List<CameraTrackSample> cameraBuffer = new List<CameraTrackSample>();
 
+    // The actor's avatar, whenever this machine has one to show - see AvatarPoseSync.
+    readonly List<PoseSample> poseBuffer = new List<PoseSample>();
+    byte[] avatarLayoutAtStart;
+
     Coroutine samplingCoroutine;
+    Coroutine poseSamplingCoroutine;
     float recordingStartTime;
     DateTime recordingStartedAt;
     int shotNumberAtStart;
@@ -232,6 +240,8 @@ public class RehearsalRecorder : MonoBehaviour
 
         buffer.Clear();
         cameraBuffer.Clear();
+        poseBuffer.Clear();
+        avatarLayoutAtStart = null;
         shotNumberAtStart = Bootstrap.CurrentShotNumber;
         sceneNumberAtStart = Bootstrap.CurrentSceneNumber;
         fullSceneAtStart = Bootstrap.IsFullScene;
@@ -255,6 +265,7 @@ public class RehearsalRecorder : MonoBehaviour
         if (RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SetRecording(true);
         samplingCoroutine = StartCoroutine(SampleLoop());
+        poseSamplingCoroutine = StartCoroutine(PoseSampleLoop());
 
         RecordingStarted?.Invoke();
     }
@@ -269,6 +280,8 @@ public class RehearsalRecorder : MonoBehaviour
             RehearsalSessionSync.Instance.SetRecording(false);
         if (samplingCoroutine != null)
             StopCoroutine(samplingCoroutine);
+        if (poseSamplingCoroutine != null)
+            StopCoroutine(poseSamplingCoroutine);
 
         RecordingStopped?.Invoke();
 
@@ -503,7 +516,7 @@ public class RehearsalRecorder : MonoBehaviour
 
         // Same panel/capsule/free-fly system as Inspección de Escenas, just fed directly
         // from the buffer instead of a DB query - nothing saved yet. Reappears when closed.
-        RecordingPlaybackController.Instance.StartPlaybackFromBuffer(buffer, ShowDecisionPanel, fullSceneAtStart ? boundaryBuffer : null);
+        RecordingPlaybackController.Instance.StartPlaybackFromBuffer(buffer, ShowDecisionPanel, fullSceneAtStart ? boundaryBuffer : null, poseBuffer, avatarLayoutAtStart);
     }
 
     void OnSaveClicked()
@@ -518,10 +531,11 @@ public class RehearsalRecorder : MonoBehaviour
             database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
                 fullSceneAtStart ? RecordingSession.TipoEscena : RecordingSession.TipoToma, sessionGuidAtStart,
                 recordingStartedAt, pendingDuration, buffer, cameraBuffer,
-                fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita);
+                fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita, poseBuffer, avatarLayoutAtStart);
 
         buffer.Clear();
         cameraBuffer.Clear();
+        poseBuffer.Clear();
         boundaryBuffer.Clear();
     }
 
@@ -531,6 +545,7 @@ public class RehearsalRecorder : MonoBehaviour
         SendHaptic();
         buffer.Clear();
         cameraBuffer.Clear();
+        poseBuffer.Clear();
 
         // The boundaries go with the session: dropped from memory and, in case anything wrote
         // some already, from the DB too.
@@ -550,6 +565,22 @@ public class RehearsalRecorder : MonoBehaviour
         while (true)
         {
             SampleOnce();
+            yield return wait;
+        }
+    }
+
+    IEnumerator PoseSampleLoop()
+    {
+        var wait = new WaitForSeconds(PoseSampleInterval);
+        while (true)
+        {
+            AvatarPoseSync avatar = AvatarPoseSync.Instance;
+            if (avatar != null && avatar.TryCaptureFrame(out byte[] frame))
+            {
+                poseBuffer.Add(new PoseSample { TiempoRelativo = Time.time - recordingStartTime, Datos = frame });
+                if (avatarLayoutAtStart == null)
+                    avatarLayoutAtStart = avatar.CaptureLayout();
+            }
             yield return wait;
         }
     }

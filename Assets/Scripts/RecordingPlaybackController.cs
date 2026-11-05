@@ -9,10 +9,11 @@ using UnityEngine.UI;
 
 // Persistent (lives under Bootstrap, DontDestroyOnLoad). When a content scene loads while
 // Bootstrap.Mode is Inspect, loads the most recent recorded session for the current
-// shot and plays it back on a placeholder capsule at the original relative speed between
+// shot and plays it back on the actor's avatar at the original relative speed between
 // samples (not instant, not accelerated), with a small transport panel (play/pause,
 // restart, loop, scrub slider, time label). Never touches the director's own camera/rig -
-// the capsule is a separate object.
+// the avatar is a separate object (PlaybackAvatar), and the live one hides while the panel
+// is open.
 //
 // The panel is NOT parented to the camera (that causes VR motion sickness) and is NOT
 // fixed in the world either. It's body-locked with a lag: it only re-anchors itself,
@@ -25,7 +26,7 @@ using UnityEngine.UI;
 // camera copies the recorded pose/focal length into a RenderTexture shown on a monitor
 // panel that follows the playback panel. The director's own head camera and XR Origin are
 // never moved along the recorded path. Sessions without a camera track (older recordings,
-// or "Ver replay" of an unsaved buffer) play the ghost only, exactly as before.
+// or "Ver replay" of an unsaved buffer) play the avatar only.
 public class RecordingPlaybackController : MonoBehaviour
 {
     public static RecordingPlaybackController Instance { get; private set; }
@@ -36,8 +37,6 @@ public class RecordingPlaybackController : MonoBehaviour
     public bool IsPlaying => isPlaying;
     public int ScrubCount { get; private set; }
 
-    const float CapsuleHeight = 1.8f;
-    const float CapsuleRadius = 0.25f;
     const int IconFontSize = 36;
     const int TimeLabelFontSize = 16;
     const float ButtonSize = 60f;
@@ -67,7 +66,6 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Color ButtonColor = new Color(0.3f, 0.3f, 0.36f, 0.55f);
     static readonly Color ButtonActiveColor = new Color(0.25f, 0.55f, 0.3f, 0.75f);
     static readonly Color TextColor = new Color(0.95f, 0.95f, 0.98f, 0.95f);
-    static readonly Color CapsuleColor = new Color(1f, 0.75f, 0.1f, 1f);
     static readonly Color SliderBackgroundColor = new Color(0.05f, 0.05f, 0.08f, 0.6f);
     static readonly Color SliderFillColor = new Color(0.6f, 0.6f, 0.68f, 0.8f);
     static readonly Color SliderHandleColor = new Color(0.95f, 0.95f, 0.98f, 0.95f);
@@ -96,7 +94,7 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Vector3 MarkerBodySize = new Vector3(0.14f, 0.1f, 0.18f);
     static readonly Vector3 MarkerPointerSize = new Vector3(0.015f, 0.015f, 0.5f);
 
-    GameObject capsule;
+    PlaybackAvatar playbackAvatar;
     GameObject panelObject;
     Image playPauseIcon;
     Text loopText;
@@ -218,8 +216,8 @@ public class RecordingPlaybackController : MonoBehaviour
         PanelFocusManager.Unregister(panelObject);
         PanelFocusManager.Unregister(monitorObject);
 
-        if (capsule != null)
-            Destroy(capsule);
+        if (playbackAvatar != null)
+            playbackAvatar.Destroy();
         if (panelObject != null)
             Destroy(panelObject);
         if (cameraMarker != null)
@@ -231,7 +229,7 @@ public class RecordingPlaybackController : MonoBehaviour
         if (monitorRenderTexture != null)
             monitorRenderTexture.Release();
 
-        capsule = null;
+        playbackAvatar = null;
         panelObject = null;
         cameraSamples = null;
         cameraMarker = null;
@@ -315,7 +313,7 @@ public class RecordingPlaybackController : MonoBehaviour
             Debug.Log($"[Escena] replaying full-scene session {session.Id} (scene {session.SceneNumber}) with {sessionBoundaries.Count} shot boundaries");
         }
 
-        BeginPlayback(dbSamples, null, session, database.GetCameraTrackForSession(session.Id), sessionBoundaries);
+        BeginPlayback(dbSamples, null, session, database.GetCameraTrackForSession(session.Id), sessionBoundaries, database.GetPoseTrackForSession(session.Id), session.AvatarLayout);
     }
 
     // Plays back an in-memory buffer directly - e.g. "Ver replay" right after stopping a
@@ -323,7 +321,7 @@ public class RecordingPlaybackController : MonoBehaviour
     // onClosed fires when the panel's close button is pressed, so the caller (e.g. the
     // save/discard decision popup) knows to reappear. bufferBoundaries: a full-scene take's
     // shot boundaries, still in memory too (null for a single shot).
-    public void StartPlaybackFromBuffer(List<Metric> bufferSamples, Action onClosed, IReadOnlyList<ShotBoundary> bufferBoundaries = null)
+    public void StartPlaybackFromBuffer(List<Metric> bufferSamples, Action onClosed, IReadOnlyList<ShotBoundary> bufferBoundaries = null, List<PoseSample> bufferPoses = null, byte[] bufferLayout = null)
     {
         if (bufferSamples == null || bufferSamples.Count == 0)
         {
@@ -333,10 +331,10 @@ public class RecordingPlaybackController : MonoBehaviour
         }
 
         CleanUp();
-        BeginPlayback(bufferSamples, onClosed, null, null, bufferBoundaries != null ? new List<ShotBoundary>(bufferBoundaries) : null);
+        BeginPlayback(bufferSamples, onClosed, null, null, bufferBoundaries != null ? new List<ShotBoundary>(bufferBoundaries) : null, bufferPoses, bufferLayout);
     }
 
-    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null, List<CameraTrackSample> cameraSamplesToPlay = null, List<ShotBoundary> shotBoundaries = null)
+    void BeginPlayback(List<Metric> samplesToPlay, Action onClosed, RecordingSession session = null, List<CameraTrackSample> cameraSamplesToPlay = null, List<ShotBoundary> shotBoundaries = null, List<PoseSample> poseFrames = null, byte[] avatarLayout = null)
     {
         samples = samplesToPlay;
         totalDuration = samples[samples.Count - 1].TiempoRelativo;
@@ -346,10 +344,10 @@ public class RecordingPlaybackController : MonoBehaviour
         boundaries = shotBoundaries != null && shotBoundaries.Count > 0 ? shotBoundaries : null;
         monitorEnabled = true;
 
-        BuildCapsule();
+        BuildAvatar(poseFrames, avatarLayout);
         BuildPanel();
 
-        // Ghost only (the original behavior) when there's no camera track.
+        // Avatar only when there's no camera track.
         if (HasCameraTrack)
         {
             BuildCameraMarker();
@@ -463,13 +461,18 @@ public class RecordingPlaybackController : MonoBehaviour
         rotation = Quaternion.LookRotation(flatForward, Vector3.up);
     }
 
-    void BuildCapsule()
+    void BuildAvatar(List<PoseSample> poseFrames, byte[] avatarLayout)
     {
-        capsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        capsule.name = "PlaybackCapsule";
-        capsule.transform.localScale = new Vector3(CapsuleRadius * 2f, CapsuleHeight * 0.5f, CapsuleRadius * 2f);
-        Destroy(capsule.GetComponent<Collider>());
-        capsule.GetComponent<Renderer>().material.color = CapsuleColor;
+        if (AvatarPoseSync.Instance == null)
+        {
+            Debug.LogError("RecordingPlaybackController: no AvatarPoseSync instance found, the replay has no avatar.");
+            return;
+        }
+
+        playbackAvatar = new PlaybackAvatar(AvatarPoseSync.Instance.CreatePlaybackAvatar(), poseFrames, avatarLayout);
+        Debug.Log($"[Replay] avatar: {(poseFrames != null ? poseFrames.Count : 0)} body frames");
+        if (!playbackAvatar.HasBodyData)
+            FloatingMessage.Show("Toma sin datos del cuerpo");
     }
 
     void BuildPanel()
@@ -970,20 +973,26 @@ public class RecordingPlaybackController : MonoBehaviour
     {
         ApplyCameraSampleAt(time);
 
-        if (samples == null || samples.Count == 0 || capsule == null)
+        if (samples == null || samples.Count == 0 || playbackAvatar == null)
             return;
+
+        if (playbackAvatar.HasBodyData)
+        {
+            playbackAvatar.ShowFrameAt(time);
+            return;
+        }
 
         Metric first = samples[0];
         if (time <= first.TiempoRelativo)
         {
-            SetCapsuleTransform(first);
+            ShowUnderHead(first);
             return;
         }
 
         Metric last = samples[samples.Count - 1];
         if (time >= last.TiempoRelativo)
         {
-            SetCapsuleTransform(last);
+            ShowUnderHead(last);
             return;
         }
 
@@ -1004,14 +1013,14 @@ public class RecordingPlaybackController : MonoBehaviour
                 new Quaternion(a.RotX, a.RotY, a.RotZ, a.RotW),
                 new Quaternion(b.RotX, b.RotY, b.RotZ, b.RotW), t);
 
-            capsule.transform.SetPositionAndRotation(position, rotation);
+            playbackAvatar.ShowUnderHead(position, rotation);
             return;
         }
     }
 
-    void SetCapsuleTransform(Metric sample)
+    void ShowUnderHead(Metric sample)
     {
-        capsule.transform.SetPositionAndRotation(
+        playbackAvatar.ShowUnderHead(
             new Vector3(sample.PosX, sample.PosY, sample.PosZ),
             new Quaternion(sample.RotX, sample.RotY, sample.RotZ, sample.RotW));
     }

@@ -33,7 +33,11 @@ using UnityEngine.SceneManagement;
 //
 // Shown in the content scenes only, and not on the actor's own build (seeing your own body
 // from a headset that isn't aligned with it is worse than seeing nothing) unless
-// showOnActorBuild.
+// showOnActorBuild. Hidden while a replay is open: the replay's own avatar (PlaybackAvatar) is
+// the one to look at, and two bodies in the same place only confuse.
+//
+// Recording: RehearsalRecorder takes whatever this machine is showing (TryCaptureFrame) - the
+// final pose and placement, sent or received alike.
 [DefaultExecutionOrder(100)] // after PodAvatar's LateUpdate: the pose is final when it's sent
 public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 {
@@ -112,6 +116,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     RehearsalSessionState sessionState;
     bool hasPods;
     int lastPodsSent = -1;
+    GameObject playbackTemplate;
 #if !DIRECTOR_BUILD
     InputAction calibrateAction;
 #endif
@@ -170,6 +175,11 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         rightFoot = avatar.GetBoneTransform(HumanBodyBones.RightFoot);
         headRest = Quaternion.Inverse(root.rotation) * head.rotation;
         headRestLocal = head.localRotation;
+
+        // Before anything is resized, posed or hidden: what a replay's avatar starts from.
+        playbackTemplate = Instantiate(avatar.gameObject, transform);
+        playbackTemplate.name = "PlaybackAvatarTemplate";
+        playbackTemplate.SetActive(false);
 
         // Before PodAvatar resizes anything: how far the soles are below the ankles.
         renderers = avatar.GetComponentsInChildren<Renderer>();
@@ -426,18 +436,88 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
     void ApplyLayout(byte[] data)
     {
+        if (ApplyLayout(data, root, avatar))
+            Debug.Log($"[AvatarSync] the actor's size received (scale {root.localScale.x:F3})");
+    }
+
+    // Also for a replay's avatar. False if there's no layout to apply.
+    public static bool ApplyLayout(byte[] data, Transform avatarRoot, Animator animator)
+    {
         if (data == null || data.Length < 4 + LayoutBones.Length * 12)
-            return;
+            return false;
 
         float scale = BitConverter.ToSingle(data, 0);
         if (scale > 0.01f)
-            root.localScale = Vector3.one * scale;
+            avatarRoot.localScale = Vector3.one * scale;
         for (int i = 0; i < LayoutBones.Length; i++)
         {
-            if (layoutJoints[i] != null)
-                layoutJoints[i].localPosition = new Vector3(BitConverter.ToSingle(data, 4 + i * 12), BitConverter.ToSingle(data, 8 + i * 12), BitConverter.ToSingle(data, 12 + i * 12));
+            Transform joint = animator.GetBoneTransform(LayoutBones[i]);
+            if (joint != null)
+                joint.localPosition = new Vector3(BitConverter.ToSingle(data, 4 + i * 12), BitConverter.ToSingle(data, 8 + i * 12), BitConverter.ToSingle(data, 12 + i * 12));
         }
-        Debug.Log($"[AvatarSync] the actor's size received (scale {scale:F3})");
+        return true;
+    }
+
+    // --- recording and replaying ----------------------------------------------------------
+
+    // One frame of PoseTrack: the root's position (3 floats) and yaw (float), the head's local
+    // rotation (4 × int16), then each synced bone's local rotation, same format as the model's.
+    const int FrameHeadOffset = 16;
+    const int FrameBonesOffset = FrameHeadOffset + 8;
+
+    // This machine's avatar as it stands now, if it has one: it's being sent or received.
+    public bool TryCaptureFrame(out byte[] frame)
+    {
+        frame = null;
+        if (!IsSending && !IsReceiving)
+            return false;
+
+        byte[] rotations = EncodeRotations();
+        frame = new byte[FrameBonesOffset + rotations.Length];
+        Vector3 p = root.position;
+        WriteFloat(frame, 0, p.x);
+        WriteFloat(frame, 4, p.y);
+        WriteFloat(frame, 8, p.z);
+        WriteFloat(frame, 12, root.eulerAngles.y);
+        Quaternion q = head.localRotation;
+        WriteShort(frame, FrameHeadOffset, q.x);
+        WriteShort(frame, FrameHeadOffset + 2, q.y);
+        WriteShort(frame, FrameHeadOffset + 4, q.z);
+        WriteShort(frame, FrameHeadOffset + 6, q.w);
+        Array.Copy(rotations, 0, frame, FrameBonesOffset, rotations.Length);
+        return true;
+    }
+
+    public byte[] CaptureLayout() => EncodeLayout();
+
+    public static void ReadFrameRoot(byte[] frame, out Vector3 position, out float yaw, out Quaternion headRotation)
+    {
+        position = new Vector3(BitConverter.ToSingle(frame, 0), BitConverter.ToSingle(frame, 4), BitConverter.ToSingle(frame, 8));
+        yaw = BitConverter.ToSingle(frame, 12);
+        headRotation = ReadQuaternion(frame, FrameHeadOffset);
+    }
+
+    public static Quaternion ReadFrameBone(byte[] frame, int bone) => ReadQuaternion(frame, FrameBonesOffset + bone * 8);
+
+    static Quaternion ReadQuaternion(byte[] data, int offset)
+    {
+        var q = new Quaternion(ReadShort(data, offset), ReadShort(data, offset + 2), ReadShort(data, offset + 4), ReadShort(data, offset + 6));
+        float magnitude = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+        return magnitude > 0.0001f ? new Quaternion(q.x / magnitude, q.y / magnitude, q.z / magnitude, q.w / magnitude) : Quaternion.identity;
+    }
+
+    // A fresh copy of the Y Bot for a replay; its owner destroys it.
+    public Animator CreatePlaybackAvatar()
+    {
+        GameObject copy = Instantiate(playbackTemplate);
+        copy.name = "PlaybackAvatar";
+        copy.SetActive(true);
+        foreach (Renderer r in copy.GetComponentsInChildren<Renderer>())
+        {
+            if (r is SkinnedMeshRenderer smr)
+                smr.updateWhenOffscreen = true;
+        }
+        return copy.GetComponent<Animator>();
     }
 
     static void WriteShort(byte[] data, int offset, float value)
@@ -515,7 +595,8 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
             model.rotations = EncodeRotations();
         }
 
-        SetShown((IsSending || IsReceiving) && RoleShowsAvatar() && (!onlyInContentScenes || InContentScene()));
+        bool replayOpen = RecordingPlaybackController.Instance != null && RecordingPlaybackController.Instance.IsPanelOpen;
+        SetShown((IsSending || IsReceiving) && !replayOpen && RoleShowsAvatar() && (!onlyInContentScenes || InContentScene()));
     }
 
     void Place()

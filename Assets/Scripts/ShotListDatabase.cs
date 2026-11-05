@@ -154,6 +154,10 @@ public class ShotListDatabase : MonoBehaviour
         if (!existingColumns.Contains("session_id"))
             connection.Execute("ALTER TABLE Sesiones ADD COLUMN session_id TEXT;");
 
+        // The avatar's size in the take (AvatarPoseSync's layout). Null without a pose track.
+        if (!existingColumns.Contains("avatar_layout"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN avatar_layout BLOB;");
+
         // Rows from before these columns: every one was a single shot (tipo already defaults
         // to "toma"), so its scene is the shot's; and each gets a GUID of its own. Only rows
         // still missing a value are touched, so this is a no-op on every later start.
@@ -187,7 +191,7 @@ public class ShotListDatabase : MonoBehaviour
     // into per-shot references first, which comes later - so esPreferida is ignored for it.
     // A scene recording's ShotBoundaries go in the same transaction, so they can never exist
     // without their session either.
-    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false)
+    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false, List<PoseSample> poseFrames = null, byte[] avatarLayout = null)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -205,7 +209,8 @@ public class ShotListDatabase : MonoBehaviour
                 FechaHora = startedAt.ToString("o"),
                 Duracion = duration,
                 EsPreferida = esPreferida,
-                EsFavorita = esFavorita
+                EsFavorita = esFavorita,
+                AvatarLayout = avatarLayout
             };
 
             connection.RunInTransaction(() =>
@@ -224,6 +229,14 @@ public class ShotListDatabase : MonoBehaviour
                     cameraSample.SesionId = session.Id;
 
                 connection.InsertAll(cameraSamples);
+
+                if (poseFrames != null)
+                {
+                    foreach (PoseSample frame in poseFrames)
+                        frame.SesionId = session.Id;
+
+                    connection.InsertAll(poseFrames);
+                }
 
                 if (boundaries != null)
                 {
@@ -413,6 +426,18 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // Empty for sessions recorded before the pose track existed, or without pods.
+    public List<PoseSample> GetPoseTrackForSession(int sessionId)
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            return connection.Query<PoseSample>(
+                "SELECT * FROM PoseTrack WHERE sesion_id = ? ORDER BY tiempo_relativo ASC;", sessionId);
+        }
+    }
+
     public List<Metric> GetMetricsForSession(int sessionId)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
@@ -485,6 +510,18 @@ public class ShotListDatabase : MonoBehaviour
                 visor_activo INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
             );");
+
+        // The actor's avatar during the take, from what this machine was showing: one frame per
+        // row, on its own ticks (faster than Metricas). See AvatarPoseSync.TryCaptureFrame.
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS PoseTrack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sesion_id INTEGER,
+                tiempo_relativo REAL,
+                datos BLOB,
+                FOREIGN KEY (sesion_id) REFERENCES Sesiones(id)
+            );");
+        connection.Execute("CREATE INDEX IF NOT EXISTS PoseTrack_sesion_id ON PoseTrack (sesion_id);");
     }
 
     void ImportCsv(SQLiteConnection connection)
@@ -690,6 +727,7 @@ public class RecordingSession
     [Column("duracion")] public float Duracion { get; set; }
     [Column("es_preferida")] public bool EsPreferida { get; set; }
     [Column("es_favorita")] public bool EsFavorita { get; set; }
+    [Column("avatar_layout")] public byte[] AvatarLayout { get; set; }
 
     [Ignore] public bool IsScene => Tipo == TipoEscena;
 }
@@ -730,6 +768,15 @@ public class Metric
     [Column("rot_y")] public float RotY { get; set; }
     [Column("rot_z")] public float RotZ { get; set; }
     [Column("rot_w")] public float RotW { get; set; }
+}
+
+[Table("PoseTrack")]
+public class PoseSample
+{
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("sesion_id")] public int SesionId { get; set; }
+    [Column("tiempo_relativo")] public float TiempoRelativo { get; set; }
+    [Column("datos")] public byte[] Datos { get; set; }
 }
 
 [Table("CamaraTrack")]

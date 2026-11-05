@@ -6,8 +6,9 @@ using UnityEngine;
 // permission on the Quest).
 //
 // Each machine creates its own VoiceClient (a Resources prefab: RealtimeView +
-// RealtimeAvatarVoice + AudioSource) when it joins the room, kept across scene changes; Normcore
-// removes it when that machine leaves and plays the others' voices through their copies. The
+// RealtimeAvatarVoice + AudioSource + VoiceClient, which keeps every copy across scene changes)
+// when it joins the room; Normcore removes it when that machine leaves and plays the others'
+// voices through their copies. The
 // AudioSource isn't spatial, so a remote voice sounds the same wherever anyone stands.
 //
 // The microphone only sends during Ensayo Remoto, and the pause menu can turn it off (for
@@ -74,7 +75,6 @@ public class VoiceChat : MonoBehaviour
             return;
         }
 
-        DontDestroyOnLoad(client);
         voice = client.GetComponent<RealtimeAvatarVoice>();
         Debug.Log("[Voice] voice client created");
     }

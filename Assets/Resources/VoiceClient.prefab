@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 5015063113951433182}
   - component: {fileID: 7537941027118558503}
   - component: {fileID: 2738239842559211550}
+  - component: {fileID: 7652320466321124336}
   m_Layer: 0
   m_Name: VoiceClient
   m_TagString: Untagged
@@ -165,3 +166,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd4ff7916cbc1db4dae0b06d829ff79f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Normal.Realtime.Shared::Normal.Realtime.RealtimeAvatarVoice
+--- !u!114 &7652320466321124336
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9083640135505845453}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62fdfcd8553e80f4d99e87149e254fa2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoiceClient

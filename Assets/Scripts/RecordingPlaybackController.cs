@@ -105,6 +105,14 @@ public class RecordingPlaybackController : MonoBehaviour
     GameObject panelObject;
     Image playPauseIcon;
     Text loopText;
+    Text speedText;
+
+    // The speed button cycles through these, from 1×. Slow ones to study a movement, fast ones
+    // to get through a long take. Back to 1× for every new replay.
+    static readonly float[] Speeds = { 1f, 1.5f, 2f, 0.25f, 0.5f };
+    const int SpeedFontSize = 22;
+    int speedIndex;
+    public float PlaybackSpeed => Speeds[speedIndex];
     Text timeText;
     Image preferidaIcon;
     Image favoritaIcon;
@@ -250,6 +258,8 @@ public class RecordingPlaybackController : MonoBehaviour
         currentVisorActive = false;
         playPauseIcon = null;
         loopText = null;
+        speedText = null;
+        speedIndex = 0;
         timeText = null;
         preferidaIcon = null;
         favoritaIcon = null;
@@ -492,7 +502,7 @@ public class RecordingPlaybackController : MonoBehaviour
         ComputeDesiredAnchor(head, out anchorPosition, out anchorRotation);
         isTransitioning = false;
 
-        float buttonCount = 3f; // play/pause + restart + loop
+        float buttonCount = 4f; // play/pause + restart + loop + speed
         if (currentSession != null)
             buttonCount += currentSession.IsScene ? 1f : 2f; // preferida (not for a scene recording) + favorita - only when a saved session (not an unsaved buffer) is playing
         if (onManualClose != null)
@@ -578,6 +588,8 @@ public class RecordingPlaybackController : MonoBehaviour
         playPauseIcon.sprite = isPlaying ? UIIcons.Pause() : UIIcons.Play();
         playPauseIcon.color = TextColor;
         CreateIconButton(rowObject.transform, "↺", OnRestartClicked, ButtonColor); // ↺
+        speedText = CreateIconButton(rowObject.transform, SpeedLabel(), OnSpeedClicked, ButtonColor);
+        speedText.fontSize = SpeedFontSize;
         loopText = CreateIconButton(rowObject.transform, "∞", OnLoopToggleClicked, ButtonColor); // ∞ (loop toggle; color indicates on/off)
 
         // Only present for a DB-backed session - an unsaved buffer ("Ver replay" before
@@ -990,6 +1002,20 @@ public class RecordingPlaybackController : MonoBehaviour
         callback?.Invoke();
     }
 
+    string SpeedLabel() => PlaybackSpeed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "×";
+
+    void OnSpeedClicked()
+    {
+        speedIndex = (speedIndex + 1) % Speeds.Length;
+        if (speedText != null)
+        {
+            speedText.text = SpeedLabel();
+            Image speedButtonImage = speedText.transform.parent.GetComponent<Image>();
+            if (speedButtonImage != null)
+                speedButtonImage.color = PlaybackSpeed == 1f ? ButtonColor : ButtonActiveColor;
+        }
+    }
+
     void OnLoopToggleClicked()
     {
         isLooping = !isLooping;
@@ -1041,7 +1067,7 @@ public class RecordingPlaybackController : MonoBehaviour
         {
             if (isPlaying && samples != null)
             {
-                playbackTime += Time.deltaTime;
+                playbackTime += Time.deltaTime * PlaybackSpeed;
 
                 if (playbackTime >= totalDuration)
                 {

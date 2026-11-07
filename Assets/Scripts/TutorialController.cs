@@ -701,7 +701,7 @@ public class TutorialController : MonoBehaviour
             });
             list.Add(new Step
             {
-                Text = $"{Key("↺")} {Act("regresa al inicio")}, {Key("∞")} {Act("repite la toma en loop")} y {Key("▣")} {Act("muestra u oculta")} lo que grabó la cámara virtual.",
+                Text = $"{Key("↺")} {Act("regresa al inicio")}, {Key("1×")} {Act("cambia la velocidad")} (1.5×, 2×, 0.25×, 0.5×), {Key("∞")} {Act("repite la toma en loop")} y {Key("▣")} {Act("muestra u oculta")} lo que grabó la cámara virtual.",
             });
             list.Add(new Step
             {

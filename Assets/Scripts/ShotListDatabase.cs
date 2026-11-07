@@ -436,6 +436,31 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // What the scene list shows next to each shot: its takes, the latest one's date, whether one
+    // is preferida, and its notes (those of its takes and its general ones). Keyed by
+    // (scene, shot), shot 0 being the whole scene's recordings.
+    public Dictionary<(int scene, int shot), TakeSummary> GetTakeSummaries()
+    {
+        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        var result = new Dictionary<(int, int), TakeSummary>();
+
+        using (var connection = new SQLiteConnection(dbPath))
+        {
+            foreach (SummaryRow row in connection.Query<SummaryRow>(
+                "SELECT scene_number, shot_number, COUNT(*) AS takes, MAX(fecha_hora) AS latest, MAX(es_preferida) AS preferida FROM Sesiones GROUP BY scene_number, shot_number;"))
+                result[(row.SceneNumber, row.ShotNumber)] = new TakeSummary { Takes = row.Takes, Latest = row.Latest, HasPreferida = row.Preferida != 0 };
+
+            foreach (SummaryRow row in connection.Query<SummaryRow>(
+                "SELECT scene_number, shot_number, COUNT(*) AS takes FROM NotasVoz GROUP BY scene_number, shot_number;"))
+            {
+                if (!result.TryGetValue((row.SceneNumber, row.ShotNumber), out TakeSummary summary))
+                    result[(row.SceneNumber, row.ShotNumber)] = summary = new TakeSummary();
+                summary.Notes = row.Takes;
+            }
+        }
+        return result;
+    }
+
     public void SaveVoiceNote(VoiceNote note)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
@@ -530,6 +555,7 @@ public class ShotListDatabase : MonoBehaviour
 
         foreach (VoiceNote note in notes)
             DeleteNoteFile(note);
+        TakeAudioRecorder.DeleteTracks(session.SessionGuid);
 
         Debug.Log($"ShotListDatabase: deleted session {session.Id} ({session.SessionGuid}) and its {notes.Count} notes");
     }
@@ -892,6 +918,24 @@ public class Metric
     [Column("rot_y")] public float RotY { get; set; }
     [Column("rot_z")] public float RotZ { get; set; }
     [Column("rot_w")] public float RotW { get; set; }
+}
+
+public class TakeSummary
+{
+    public int Takes;
+    public string Latest;
+    public bool HasPreferida;
+    public int Notes;
+}
+
+// A row of GetTakeSummaries' queries.
+class SummaryRow
+{
+    [Column("scene_number")] public int SceneNumber { get; set; }
+    [Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("takes")] public int Takes { get; set; }
+    [Column("latest")] public string Latest { get; set; }
+    [Column("preferida")] public int Preferida { get; set; }
 }
 
 [Table("NotasVoz")]

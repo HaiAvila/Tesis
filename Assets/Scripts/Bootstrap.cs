@@ -47,6 +47,10 @@ public class Bootstrap : MonoBehaviour
     // never leak into an unrelated later shot selection.
     public static int? CurrentSessionId;
 
+    // Inspección of a shot without opening any take: to walk the set and leave notes. Read once
+    // by RecordingPlaybackController.
+    public static bool InspectWithoutTake;
+
     // What the user is doing right now - one explicit value instead of the two booleans
     // (IsInspecting, ActorJoinedRemoteRehearsal) that used to be combined, and overloaded:
     // the actor's Ensayar Solo reused the director's "inspecting" flag, so solo showed the
@@ -142,6 +146,8 @@ public class Bootstrap : MonoBehaviour
             gameObject.AddComponent<VoiceNoteRecorder>();
         if (GetComponent<VoiceNotesPanel>() == null)
             gameObject.AddComponent<VoiceNotesPanel>();
+        if (GetComponent<TakeAudioRecorder>() == null)
+            gameObject.AddComponent<TakeAudioRecorder>();
 
         // Both roles: the director and the actor talking - see VoiceChat.
         if (GetComponent<VoiceChat>() == null)
@@ -211,11 +217,27 @@ public class Bootstrap : MonoBehaviour
 
 #if DIRECTOR_BUILD
         // A take in progress lives only on this device: Guardar or Descartar first, then home.
-        if (RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.FinishAfterConnectionLoss(GoHomeAfterConnectionLoss))
+        if (RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.FinishAfterConnectionLoss(AfterConnectionLossDecision))
             return;
 #endif
         GoHomeAfterConnectionLoss();
     }
+
+#if DIRECTOR_BUILD
+    // Guardar opens the saved take right here for review, as Inspección would; Descartar goes home.
+    static void AfterConnectionLossDecision(int? savedSessionId)
+    {
+        if (!savedSessionId.HasValue || Mode != AppMode.Remote)
+        {
+            GoHomeAfterConnectionLoss();
+            return;
+        }
+
+        SetMode(AppMode.Inspect, "reviewing the take kept after a connection loss");
+        CurrentSessionId = savedSessionId;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+    }
+#endif
 
     static void GoHomeAfterConnectionLoss()
     {

@@ -98,6 +98,24 @@ public class RecordingPlaybackController : MonoBehaviour
 
     PlaybackAvatar playbackAvatar;
 #if DIRECTOR_BUILD
+    // The take's sound: the conversation's two tracks and the notes said at a moment of it, each
+    // playing in step with the replay at 1× (at another speed it would sound distorted, so it's
+    // silent). Each kind can be silenced from the panel.
+    class TimedNote
+    {
+        public float Time;
+        public AudioClip Clip;
+    }
+
+    const float AudioDriftSeconds = 0.15f;
+    const int AudioToggleFontSize = 18;
+    AudioSource directorSource, actorSource, noteSource;
+    readonly List<TimedNote> timedNotes = new List<TimedNote>();
+    bool conversationAudible = true;
+    bool notesAudible = true;
+    Text conversationToggleText, notesToggleText;
+    bool HasConversation => (directorSource != null && directorSource.clip != null) || (actorSource != null && actorSource.clip != null);
+    bool HasAudio => HasConversation || timedNotes.Count > 0;
     const float NoteTickWidth = 6f;
     static readonly Color NoteTickColor = new Color(1f, 0.79f, 0.29f, 1f);
     readonly List<GameObject> noteTicks = new List<GameObject>();
@@ -233,6 +251,13 @@ public class RecordingPlaybackController : MonoBehaviour
 
         if (playbackAvatar != null)
             playbackAvatar.Destroy();
+#if DIRECTOR_BUILD
+        UnloadAudio();
+        conversationAudible = true;
+        notesAudible = true;
+        conversationToggleText = null;
+        notesToggleText = null;
+#endif
         if (panelObject != null)
             Destroy(panelObject);
         if (cameraMarker != null)
@@ -292,6 +317,15 @@ public class RecordingPlaybackController : MonoBehaviour
 
         // The whole scene ("Escena completa", shot 0) plays the scene's full-scene recordings,
         // never a single shot's.
+        // A shot opened to walk the set, without a take: nothing to play.
+        if (Bootstrap.InspectWithoutTake)
+        {
+            Bootstrap.InspectWithoutTake = false;
+            Bootstrap.CurrentSessionId = null;
+            FloatingMessage.ShowLong("Sin toma: recorre el set y deja notas de voz si quieres", 6f);
+            return;
+        }
+
         RecordingSession session;
         if (Bootstrap.CurrentSessionId.HasValue)
         {
@@ -313,6 +347,7 @@ public class RecordingPlaybackController : MonoBehaviour
             Debug.LogWarning(Bootstrap.IsFullScene
                 ? $"[Escena] no full-scene recording found for scene {Bootstrap.CurrentSceneNumber}."
                 : $"RecordingPlaybackController: no recorded session found for shot {shotNumber}.");
+            FloatingMessage.ShowLong("Este shot no tiene tomas: recorre el set y deja notas de voz si quieres", 6f);
             return;
         }
 
@@ -362,6 +397,9 @@ public class RecordingPlaybackController : MonoBehaviour
         monitorEnabled = true;
 
         BuildAvatar(poseFrames, avatarLayout);
+#if DIRECTOR_BUILD
+        LoadAudio();
+#endif
         BuildPanel();
 #if DIRECTOR_BUILD
         RefreshNoteTicks();
@@ -511,6 +549,10 @@ public class RecordingPlaybackController : MonoBehaviour
             buttonCount += 1f; // monitor toggle
 #if DIRECTOR_BUILD
         buttonCount += currentSession != null ? 2f : 1f; // notes + delete (only a saved take)
+        if (HasConversation)
+            buttonCount += 1f; // conversation on/off
+        if (timedNotes.Count > 0)
+            buttonCount += 1f; // notes on/off
 #endif
         float panelWidth = ButtonSize * buttonCount + ButtonSpacing * (buttonCount - 1f) + PanelPadding * 2f;
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
@@ -616,6 +658,17 @@ public class RecordingPlaybackController : MonoBehaviour
             monitorToggleText = CreateIconButton(rowObject.transform, "▣", OnMonitorToggleClicked, ButtonActiveColor);
 
 #if DIRECTOR_BUILD
+        if (HasConversation)
+        {
+            conversationToggleText = CreateIconButton(rowObject.transform, "Conv.", OnConversationToggleClicked, ButtonActiveColor);
+            conversationToggleText.fontSize = AudioToggleFontSize;
+        }
+        if (timedNotes.Count > 0)
+        {
+            notesToggleText = CreateIconButton(rowObject.transform, "Notas", OnNotesAudioToggleClicked, ButtonActiveColor);
+            notesToggleText.fontSize = AudioToggleFontSize;
+        }
+
         Image notesIcon = CreateSpriteIconButton(rowObject.transform, "Notas", OnNotesClicked);
         notesIcon.sprite = UIIcons.Microphone();
         notesIcon.color = TextColor;
@@ -645,6 +698,172 @@ public class RecordingPlaybackController : MonoBehaviour
         int scene = currentSession != null ? currentSession.SceneNumber : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeScene : Bootstrap.CurrentSceneNumber;
         int shot = currentSession != null ? currentSession.ShotNumber : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeShot : Bootstrap.CurrentShotNumber;
         VoiceNotesPanel.Instance.Show(NotesTakeGuid, scene, shot, SeekTo, null);
+    }
+
+    public void JumpTo(float time) => SeekTo(time);
+
+    void OnConversationToggleClicked()
+    {
+        conversationAudible = !conversationAudible;
+        SetToggleColor(conversationToggleText, conversationAudible);
+    }
+
+    void OnNotesAudioToggleClicked()
+    {
+        notesAudible = !notesAudible;
+        SetToggleColor(notesToggleText, notesAudible);
+    }
+
+    void SetToggleColor(Text label, bool on)
+    {
+        Image image = label != null ? label.transform.parent.GetComponent<Image>() : null;
+        if (image != null)
+            image.color = on ? ButtonActiveColor : ButtonColor;
+    }
+
+    void EnsureAudioSources()
+    {
+        if (directorSource != null)
+            return;
+
+        var audioObject = new GameObject("ReplayAudio");
+        audioObject.transform.SetParent(transform, false);
+        directorSource = audioObject.AddComponent<AudioSource>();
+        actorSource = audioObject.AddComponent<AudioSource>();
+        noteSource = audioObject.AddComponent<AudioSource>();
+        foreach (AudioSource source in new[] { directorSource, actorSource, noteSource })
+        {
+            source.playOnAwake = false;
+            source.spatialBlend = 0f;
+        }
+    }
+
+    // A saved take's from its files; an unsaved one's still in TakeAudioRecorder.
+    void LoadAudio()
+    {
+        EnsureAudioSources();
+        UnloadAudio();
+
+        if (currentSession != null)
+        {
+            directorSource.clip = WavFile.Load(TakeAudioRecorder.TrackPath(currentSession.SessionGuid, TakeAudioRecorder.DirectorTrack));
+            actorSource.clip = WavFile.Load(TakeAudioRecorder.TrackPath(currentSession.SessionGuid, TakeAudioRecorder.ActorTrack));
+        }
+        else if (TakeAudioRecorder.Instance != null)
+        {
+            directorSource.clip = TakeAudioRecorder.Instance.PendingClip(TakeAudioRecorder.DirectorTrack);
+            actorSource.clip = TakeAudioRecorder.Instance.PendingClip(TakeAudioRecorder.ActorTrack);
+        }
+
+        LoadTimedNotes();
+        Debug.Log($"[Replay] audio: conversation {(HasConversation ? "yes" : "no")}, {timedNotes.Count} notes at moments");
+    }
+
+    void LoadTimedNotes()
+    {
+        foreach (TimedNote note in timedNotes)
+            Destroy(note.Clip);
+        timedNotes.Clear();
+        if (noteSource != null)
+        {
+            noteSource.Stop();
+            noteSource.clip = null;
+        }
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        string guid = NotesTakeGuid;
+        if (database == null || string.IsNullOrEmpty(guid))
+            return;
+
+        foreach (VoiceNote note in database.GetVoiceNotesOfTake(guid))
+        {
+            if (!note.TakeTime.HasValue)
+                continue;
+            AudioClip clip = WavFile.Load(System.IO.Path.Combine(VoiceNoteRecorder.NotesFolder, note.Archivo));
+            if (clip != null)
+                timedNotes.Add(new TimedNote { Time = note.TakeTime.Value, Clip = clip });
+        }
+    }
+
+    void UnloadAudio()
+    {
+        foreach (AudioSource source in new[] { directorSource, actorSource })
+        {
+            if (source == null)
+                continue;
+            source.Stop();
+            if (source.clip != null)
+                Destroy(source.clip);
+            source.clip = null;
+        }
+        foreach (TimedNote note in timedNotes)
+            Destroy(note.Clip);
+        timedNotes.Clear();
+        if (noteSource != null)
+        {
+            noteSource.Stop();
+            noteSource.clip = null;
+        }
+    }
+
+    // Every frame: each source plays from the replay's moment, or stays silent. A seek, a pause
+    // or a speed change is caught by the same check.
+    void SyncAudio()
+    {
+        if (directorSource == null)
+            return;
+
+        bool audible = isPlaying && samples != null && Mathf.Approximately(PlaybackSpeed, 1f)
+                       && !(VoiceNoteRecorder.Instance != null && VoiceNoteRecorder.Instance.IsRecording);
+        SyncSource(directorSource, audible && conversationAudible, playbackTime);
+        SyncSource(actorSource, audible && conversationAudible, playbackTime);
+
+        TimedNote current = null;
+        if (audible && notesAudible)
+        {
+            foreach (TimedNote note in timedNotes)
+            {
+                if (playbackTime >= note.Time && playbackTime < note.Time + note.Clip.length)
+                {
+                    current = note;
+                    break;
+                }
+            }
+        }
+
+        if (current == null)
+        {
+            if (noteSource.isPlaying)
+                noteSource.Stop();
+            return;
+        }
+
+        float offset = playbackTime - current.Time;
+        if (noteSource.clip != current.Clip || !noteSource.isPlaying || Mathf.Abs(noteSource.time - offset) > AudioDriftSeconds)
+        {
+            noteSource.clip = current.Clip;
+            noteSource.time = offset;
+            noteSource.Play();
+        }
+    }
+
+    static void SyncSource(AudioSource source, bool on, float time)
+    {
+        if (source.clip == null)
+            return;
+
+        if (!on || time >= source.clip.length)
+        {
+            if (source.isPlaying)
+                source.Pause();
+            return;
+        }
+
+        if (!source.isPlaying || Mathf.Abs(source.time - time) > AudioDriftSeconds)
+        {
+            source.time = Mathf.Clamp(time, 0f, source.clip.length - 0.01f);
+            source.Play();
+        }
     }
 
     void SeekTo(float time)
@@ -690,6 +909,9 @@ public class RecordingPlaybackController : MonoBehaviour
         string guid = NotesTakeGuid;
         if (scrubSlider == null || database == null || string.IsNullOrEmpty(guid) || totalDuration <= 0f)
             return;
+
+        // A note said just now during this replay should also be heard in it.
+        LoadTimedNotes();
 
         Transform handleArea = scrubSlider.handleRect.parent; // inset like the handle, so the marks line up
         foreach (VoiceNote note in database.GetVoiceNotesOfTake(guid))
@@ -1007,6 +1229,7 @@ public class RecordingPlaybackController : MonoBehaviour
     void OnSpeedClicked()
     {
         speedIndex = (speedIndex + 1) % Speeds.Length;
+        UpdateTimeText();
         if (speedText != null)
         {
             speedText.text = SpeedLabel();
@@ -1086,6 +1309,9 @@ public class RecordingPlaybackController : MonoBehaviour
                 UpdateSliderAndTimeText();
             }
 
+#if DIRECTOR_BUILD
+            SyncAudio();
+#endif
             yield return null;
         }
     }
@@ -1100,7 +1326,13 @@ public class RecordingPlaybackController : MonoBehaviour
     void UpdateTimeText()
     {
         if (timeText != null)
+        {
             timeText.text = $"{playbackTime:F1}s / {totalDuration:F1}s";
+#if DIRECTOR_BUILD
+            if (HasAudio && !Mathf.Approximately(PlaybackSpeed, 1f))
+                timeText.text += "  ·  audio solo a 1×";
+#endif
+        }
     }
 
     // The single place playback time turns into poses - called from the playback loop, the

@@ -17,9 +17,8 @@ using UnityEngine.UI;
 // - otherwise: the shot in general.
 // Discarding a take keeps its notes, as notes of the shot.
 //
-// The microphone is Normcore's if the voice chat has it open, read directly so a muted voice chat
-// doesn't silence the note too; else its own. 16 kHz mono is plenty for speech and keeps a two
-// minute note under 4 MB, and two minutes is where a forgotten recording stops itself.
+// The microphone through MicrophoneReader (16 kHz mono: plenty for speech, under 4 MB for two
+// minutes, which is where a forgotten recording stops itself).
 public class VoiceNoteRecorder : MonoBehaviour
 {
     public static VoiceNoteRecorder Instance { get; private set; }
@@ -30,7 +29,6 @@ public class VoiceNoteRecorder : MonoBehaviour
 
 #if DIRECTOR_BUILD
     const float MaxSeconds = 120f;
-    const int TargetSampleRate = 16000;
 
     // In the lower-left corner of the view, placeholder position.
     static readonly Vector3 ButtonOffset = new Vector3(-0.42f, -0.30f, 1f);
@@ -48,13 +46,7 @@ public class VoiceNoteRecorder : MonoBehaviour
     Font font;
 
     readonly List<float> samples = new List<float>();
-    float[] readBuffer = new float[0];
-    MicrophoneDevice ownMicrophone;
-    MicrophoneDevice readingFrom;
-    int readHead;
-    int decimationCounter;
-    float decimationSum;
-    int decimation = 1;
+    readonly MicrophoneReader microphone = new MicrophoneReader();
     float recordingStarted;
 
     string noteTakeGuid;
@@ -89,7 +81,7 @@ public class VoiceNoteRecorder : MonoBehaviour
         noteAction.Disable();
         noteAction.Dispose();
         SceneManager.sceneUnloaded -= OnSceneUnloaded;
-        ReleaseMicrophone();
+        microphone.End();
     }
 
     // Leaving the scene mid-note: what was said so far is kept.
@@ -130,14 +122,7 @@ public class VoiceNoteRecorder : MonoBehaviour
             return;
         }
 #endif
-        MicrophoneDevice microphone = OpenSharedMicrophone();
-        if (microphone == null)
-        {
-            ownMicrophone = MicrophoneDevice.Start("");
-            microphone = ownMicrophone;
-        }
-
-        if (microphone == null)
+        if (!microphone.Begin())
         {
             FloatingMessage.Show("No hay micrófono");
             return;
@@ -169,40 +154,23 @@ public class VoiceNoteRecorder : MonoBehaviour
         }
 
         samples.Clear();
-        decimationCounter = 0;
-        decimationSum = 0f;
-        decimation = Mathf.Max(1, microphone.sampleRate / TargetSampleRate);
-        BeginReading(microphone);
         recordingStarted = Time.unscaledTime;
         IsRecording = true;
         if (VoiceChat.Instance != null)
             VoiceChat.Instance.NoteRecording = true;
 
-        Debug.Log($"[Notes] recording a note: scene {noteScene}, shot {noteShot}, take {noteTakeGuid ?? "none"}, at {(noteTakeTime.HasValue ? noteTakeTime.Value.ToString("F1") : "-")} s, mic {microphone.sampleRate} Hz");
-    }
-
-    // The voice chat's microphone, if it's really open: after a disconnect Normcore has closed it,
-    // but sharedMicrophone still points at it. It always opens the default device, "".
-    static MicrophoneDevice OpenSharedMicrophone()
-    {
-        return Microphone.IsRecording("") ? MicrophoneDevice.sharedMicrophone : null;
-    }
-
-    void BeginReading(MicrophoneDevice microphone)
-    {
-        readingFrom = microphone;
-        readHead = microphone.deviceWriteHeadPosition;
+        Debug.Log($"[Notes] recording a note: scene {noteScene}, shot {noteShot}, take {noteTakeGuid ?? "none"}, at {(noteTakeTime.HasValue ? noteTakeTime.Value.ToString("F1") : "-")} s");
     }
 
     void StopNote()
     {
-        ReadMicrophone();
+        microphone.Read(samples);
         IsRecording = false;
         if (VoiceChat.Instance != null)
             VoiceChat.Instance.NoteRecording = false;
-        ReleaseMicrophone();
+        microphone.End();
 
-        int sampleRate = TargetRate();
+        int sampleRate = MicrophoneReader.SampleRate;
         float duration = samples.Count / (float)sampleRate;
         if (samples.Count == 0)
         {
@@ -239,79 +207,11 @@ public class VoiceNoteRecorder : MonoBehaviour
             RecordingPlaybackController.Instance.RefreshNoteTicks();
     }
 
-    int TargetRate() => (readingFrom != null ? readingFrom.sampleRate : TargetSampleRate * decimation) / decimation;
-
-    void ReleaseMicrophone()
-    {
-        if (ownMicrophone != null)
-            ownMicrophone.Dispose();
-        ownMicrophone = null;
-    }
-
-    // The microphone is a ring buffer about a second long: read what's new every frame, down to
-    // one averaged mono sample for each `decimation` of them.
-    void ReadMicrophone()
-    {
-        // The voice chat opened it again, a reconnect: that one is what's live now. Ours isn't
-        // closed, since closing it would close theirs too.
-        MicrophoneDevice shared = OpenSharedMicrophone();
-        if (shared != null && shared != readingFrom)
-        {
-            BeginReading(shared);
-            ownMicrophone = null;
-        }
-        if (readingFrom == null)
-            return;
-
-        int total = readingFrom.deviceBufferSampleCount;
-        int head = readingFrom.deviceWriteHeadPosition;
-        if (total <= 0 || head == readHead)
-            return;
-
-        if (head > readHead)
-        {
-            ReadRange(readHead, head - readHead);
-        }
-        else
-        {
-            ReadRange(readHead, total - readHead);
-            ReadRange(0, head);
-        }
-        readHead = head;
-    }
-
-    void ReadRange(int offset, int count)
-    {
-        if (count <= 0)
-            return;
-
-        int channels = Mathf.Max(1, readingFrom.numberOfChannels);
-        int length = count * channels;
-        if (readBuffer.Length != length)
-            readBuffer = new float[length];
-        if (!readingFrom.GetBufferData(readBuffer, offset))
-            return;
-
-        for (int i = 0; i < length; i += channels)
-        {
-            float mono = 0f;
-            for (int c = 0; c < channels; c++)
-                mono += readBuffer[i + c];
-            decimationSum += mono / channels;
-            if (++decimationCounter < decimation)
-                continue;
-
-            samples.Add(decimationSum / decimation);
-            decimationSum = 0f;
-            decimationCounter = 0;
-        }
-    }
-
     void Update()
     {
         if (IsRecording)
         {
-            ReadMicrophone();
+            microphone.Read(samples);
             if (Time.unscaledTime - recordingStarted >= MaxSeconds)
                 StopNote();
         }

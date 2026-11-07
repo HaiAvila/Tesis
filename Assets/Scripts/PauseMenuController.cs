@@ -128,7 +128,10 @@ public class PauseMenuController : MonoBehaviour
         if (Bootstrap.Mode == Bootstrap.AppMode.Remote)
             menuOptions.Add(new PauseMenuOption { Label = "Calibrar", OnSelected = StartCalibration });
         if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
+        {
+            menuOptions.Add(new PauseMenuOption { Label = "Notas del shot", OnSelected = ShowShotNotes });
             menuOptions.Add(new PauseMenuOption { Label = "Exportar tomas a CSV", OnSelected = ExportTakes });
+        }
 #endif
 
         if (Bootstrap.Mode == Bootstrap.AppMode.Remote && VoiceChat.Instance != null)
@@ -360,6 +363,19 @@ public class PauseMenuController : MonoBehaviour
 
         if (RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SendCommand(SessionCommand.Calibrate);
+    }
+
+    // The open take's notes, if one is open, and the shot's general ones: the only way to them
+    // when the shot has no take.
+    void ShowShotNotes()
+    {
+        if (VoiceNotesPanel.Instance == null)
+            return;
+
+        RecordingPlaybackController playback = RecordingPlaybackController.Instance;
+        RecordingSession session = playback != null && playback.IsPanelOpen ? playback.CurrentSession : null;
+        VoiceNotesPanel.Instance.Show(session?.SessionGuid, Bootstrap.CurrentSceneNumber, Bootstrap.CurrentShotNumber,
+            session != null ? playback.JumpTo : (Action<float>)null, null);
     }
 
     void ExportTakes()

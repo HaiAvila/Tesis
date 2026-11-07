@@ -27,6 +27,10 @@ public class VoiceChat : MonoBehaviour
     // The director's voice note is private: the actor doesn't hear it.
     public bool NoteRecording { get; set; }
 
+    // Whether the other person hears this microphone now. The take's conversation track keeps
+    // only that (TakeAudioRecorder).
+    public bool IsTransmitting => voice != null && !voice.mute;
+
     public bool MicrophoneOn
     {
         get => PlayerPrefs.GetInt(MutedKey, 0) == 0;

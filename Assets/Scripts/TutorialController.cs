@@ -572,7 +572,7 @@ public class TutorialController : MonoBehaviour
     // Director only (VoiceNoteRecorder).
     Step VoiceNoteStep() => new Step
     {
-        Text = $"Para grabar una {Act("nota de voz")}, presiona el {Key("joystick izquierdo")} hacia adentro, o el botón {Key("Nota de voz")} en la esquina. Presiona otra vez para terminar. El actor no te escucha. Para oírla, usa el {Key("micrófono")} del panel de reproducción.",
+        Text = $"Para grabar una {Act("nota de voz")}, presiona el {Key("joystick izquierdo")} hacia adentro, o el botón {Key("Nota de voz")} en la esquina. Presiona otra vez para terminar. El actor no te escucha. Se oyen solas en la reproducción, en su momento. Para verlas todas, usa el {Key("micrófono")} del panel de reproducción o, en Inspección, el menú de pausa → {Key("Notas del shot")}.",
     };
 
     // Ensayo Remoto only: there's no one to talk to otherwise.
@@ -701,7 +701,7 @@ public class TutorialController : MonoBehaviour
             });
             list.Add(new Step
             {
-                Text = $"{Key("↺")} {Act("regresa al inicio")}, {Key("1×")} {Act("cambia la velocidad")} (1.5×, 2×, 0.25×, 0.5×), {Key("∞")} {Act("repite la toma en loop")} y {Key("▣")} {Act("muestra u oculta")} lo que grabó la cámara virtual.",
+                Text = $"{Key("↺")} {Act("regresa al inicio")}, {Key("1×")} {Act("cambia la velocidad")} (1.5×, 2×, 0.25×, 0.5×), {Key("∞")} {Act("repite la toma en loop")}, {Key("Conv.")} y {Key("Notas")} {Act("silencian")} la conversación y las notas de la toma, y {Key("▣")} {Act("muestra u oculta")} lo que grabó la cámara virtual.",
             });
             list.Add(new Step
             {

@@ -107,7 +107,11 @@ public class RehearsalRecorder : MonoBehaviour
     public float RecordingTime => Time.time - recordingStartTime;
 
     // Runs once the pending take is saved or discarded - see FinishAfterConnectionLoss.
-    Action afterDecision;
+    // With the saved session's id, or null after Descartar.
+    Action<int?> afterDecision;
+    bool keptAfterConnectionLoss;
+    const float DecisionTitleHeight = 50f;
+    static readonly Color DecisionHighlightColor = new Color(0.2f, 0.45f, 0.75f, 0.95f);
 #endif
 
     void Awake()
@@ -156,24 +160,31 @@ public class RehearsalRecorder : MonoBehaviour
     // The connection dropped mid-rehearsal: the take is local, so it's kept. Stops recording if it
     // still was, and leaves the director to decide on it; `done` runs after that. False if
     // there's no pending take.
-    public bool FinishAfterConnectionLoss(Action done)
+    public bool FinishAfterConnectionLoss(Action<int?> done)
     {
         if (!HasPendingTake)
             return false;
 
+        // Reconnection attempts can fail again before the decision: once is enough.
+        if (afterDecision != null)
+            return true;
+
         afterDecision = done;
+        keptAfterConnectionLoss = true;
         Debug.Log($"[Connection] connection lost with a take pending ({buffer.Count} samples): keeping it");
-        FloatingMessage.Show("Se perdió la conexión. La toma sigue aquí");
         if (IsRecording)
             StopRecording();
+        else if (IsDecisionPanelOpen)
+            ShowDecisionPanel(); // again, with the notice
         return true;
     }
 
-    void RunAfterDecision()
+    void RunAfterDecision(int? savedSessionId)
     {
-        Action done = afterDecision;
+        Action<int?> done = afterDecision;
         afterDecision = null;
-        done?.Invoke();
+        keptAfterConnectionLoss = false;
+        done?.Invoke(savedSessionId);
     }
 
     void OnRecordingShortcutPressed(InputAction.CallbackContext context)
@@ -374,6 +385,8 @@ public class RehearsalRecorder : MonoBehaviour
 
         float panelWidth = DecisionButtonWidth * 3f + DecisionButtonSpacing * 2f + DecisionPanelPadding * 2f;
         float panelHeight = DecisionCheckboxHeight + DecisionRowSpacing + DecisionButtonHeight + DecisionPanelPadding * 2f;
+        if (keptAfterConnectionLoss)
+            panelHeight += DecisionTitleHeight + DecisionRowSpacing;
 
         RectTransform canvasRect = (RectTransform)decisionPanelObject.transform;
         canvasRect.sizeDelta = new Vector2(panelWidth, panelHeight);
@@ -406,6 +419,21 @@ public class RehearsalRecorder : MonoBehaviour
         rootLayout.childForceExpandWidth = true;
         rootLayout.childForceExpandHeight = false;
 
+        // After a connection loss: say the take is safe, and point at Ver replay.
+        if (keptAfterConnectionLoss)
+        {
+            var titleObject = new GameObject("Title", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+            titleObject.transform.SetParent(rootRect, false);
+            titleObject.GetComponent<LayoutElement>().preferredHeight = DecisionTitleHeight;
+            Text title = titleObject.GetComponent<Text>();
+            title.font = uiFont;
+            title.text = "Se perdió la conexión: la toma está a salvo";
+            title.fontSize = DecisionButtonFontSize;
+            title.fontStyle = FontStyle.Bold;
+            title.color = DecisionTextColor;
+            title.alignment = TextAnchor.MiddleCenter;
+        }
+
         var checkboxRowObject = new GameObject("Checkboxes", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         checkboxRowObject.transform.SetParent(rootRect, false);
         checkboxRowObject.GetComponent<LayoutElement>().preferredHeight = DecisionCheckboxHeight;
@@ -437,7 +465,7 @@ public class RehearsalRecorder : MonoBehaviour
         buttonLayout.childForceExpandWidth = true;
         buttonLayout.childForceExpandHeight = true;
 
-        CreateDecisionButton(buttonRowObject.transform, "Ver replay", OnViewReplayClicked);
+        CreateDecisionButton(buttonRowObject.transform, "Ver replay", OnViewReplayClicked, keptAfterConnectionLoss ? DecisionHighlightColor : (Color?)null);
         CreateDecisionButton(buttonRowObject.transform, "Guardar", OnSaveClicked);
         CreateDecisionButton(buttonRowObject.transform, "Descartar", OnDiscardClicked);
 
@@ -503,11 +531,11 @@ public class RehearsalRecorder : MonoBehaviour
             text.text = (value ? "☑ " : "☐ ") + label;
     }
 
-    void CreateDecisionButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
+    void CreateDecisionButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, Color? color = null)
     {
         var buttonObject = new GameObject($"Button_{label}", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = DecisionButtonColor;
+        buttonObject.GetComponent<Image>().color = color ?? DecisionButtonColor;
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
 
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
@@ -558,19 +586,23 @@ public class RehearsalRecorder : MonoBehaviour
         SendHaptic();
 
         ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        int? savedSessionId = null;
         if (database == null)
             Debug.LogError("RehearsalRecorder: no ShotListDatabase instance found, recording discarded.");
         else
-            database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
+            savedSessionId = database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
                 fullSceneAtStart ? RecordingSession.TipoEscena : RecordingSession.TipoToma, sessionGuidAtStart,
                 recordingStartedAt, pendingDuration, buffer, cameraBuffer,
                 fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita, poseBuffer, avatarLayoutAtStart);
+
+        if (TakeAudioRecorder.Instance != null)
+            TakeAudioRecorder.Instance.Save(sessionGuidAtStart);
 
         buffer.Clear();
         cameraBuffer.Clear();
         poseBuffer.Clear();
         boundaryBuffer.Clear();
-        RunAfterDecision();
+        RunAfterDecision(savedSessionId);
     }
 
     void OnDiscardClicked()
@@ -595,8 +627,10 @@ public class RehearsalRecorder : MonoBehaviour
         ShotListDatabase notes = FindFirstObjectByType<ShotListDatabase>();
         if (notes != null)
             notes.DetachVoiceNotes(sessionGuidAtStart);
+        if (TakeAudioRecorder.Instance != null)
+            TakeAudioRecorder.Instance.Discard();
 
-        RunAfterDecision();
+        RunAfterDecision(null);
     }
 #endif
 

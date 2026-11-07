@@ -4,6 +4,11 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
+// The shot list, grouped by scene. In Inspección and Ensayo Remoto each row also says what's
+// recorded for it (takes, the latest date, a preferida, notes), and in Inspección a shot without
+// takes is dimmed. Choosing a shot in Inspección always shows its takes first - with what each
+// one holds, and a way to delete it - plus "Ver el set sin toma"; a shot without any goes
+// straight into the set.
 public class SceneSelectController : MonoBehaviour
 {
     public static readonly Dictionary<int, string> SceneNameByNumber = new Dictionary<int, string>
@@ -29,6 +34,11 @@ public class SceneSelectController : MonoBehaviour
     const float CanvasDistance = 2f;
 
     static readonly Color ShotButtonColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+    static readonly Color EmptyShotButtonColor = new Color(0.13f, 0.13f, 0.14f, 1f);
+    static readonly Color EmptyTextColor = new Color(0.55f, 0.55f, 0.58f, 1f);
+    static readonly Color InfoTextColor = new Color(0.8f, 0.82f, 0.86f, 1f);
+    static readonly Color DeleteIconColor = new Color(0.9f, 0.45f, 0.45f, 1f);
+    static readonly string[] Months = { "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic" };
     // Set apart from the single shots below it. Placeholder, not tuned.
     static readonly Color FullSceneButtonColor = new Color(0.14f, 0.28f, 0.34f, 1f);
 
@@ -42,6 +52,7 @@ public class SceneSelectController : MonoBehaviour
     RectTransform canvasRect;
     RectTransform contentRect;
     SortedDictionary<int, List<Shot>> shotsByScene;
+    Dictionary<(int scene, int shot), TakeSummary> summaries = new Dictionary<(int, int), TakeSummary>();
 
     void Start()
     {
@@ -168,6 +179,9 @@ public class SceneSelectController : MonoBehaviour
 #else
         bool showFullScene = false;
 #endif
+        bool showInfo = showFullScene; // what's recorded lives on the director's device
+        bool inspecting = Bootstrap.Mode == Bootstrap.AppMode.Inspect;
+        summaries = showInfo ? database.GetTakeSummaries() : new Dictionary<(int, int), TakeSummary>();
 
         foreach (var scene in shotsByScene)
         {
@@ -179,102 +193,143 @@ public class SceneSelectController : MonoBehaviour
             if (shots.Count == 0)
                 continue;
 
-            CreateHeader(content, sceneName);
+            int sceneTakes = 0;
+            foreach (var entry in summaries)
+            {
+                if (entry.Key.scene == scene.Key)
+                    sceneTakes += entry.Value.Takes;
+            }
+            CreateHeader(content, $"Escena {scene.Key} · {sceneName}", showInfo ? Plural(sceneTakes, "toma", "tomas", "Sin tomas") : null);
 
             if (showFullScene)
-                CreateFullSceneButton(content, scene.Key, sceneName, shots);
+                CreateFullSceneButton(content, scene.Key, sceneName, shots, inspecting);
 
             foreach (Shot shot in shots)
-                CreateShotButton(content, shot, sceneName);
+                CreateShotButton(content, shot, sceneName, showInfo, inspecting);
         }
     }
 
-    void CreateFullSceneButton(RectTransform parent, int sceneNumber, string sceneName, List<Shot> shots)
+    void CreateFullSceneButton(RectTransform parent, int sceneNumber, string sceneName, List<Shot> shots, bool inspecting)
     {
         string label = $"Escena completa — shots {shots[0].ShotNumber} a {shots[shots.Count - 1].ShotNumber}, en una sola toma";
-        CreateListButton(parent, $"FullScene_{sceneNumber}", label, FullSceneButtonColor, () => OnFullSceneSelected(sceneNumber, sceneName));
+        TakeSummary summary = Summary(sceneNumber, RehearsalSessionState.FullSceneShot);
+        CreateListButton(parent, $"FullScene_{sceneNumber}", label, FullSceneButtonColor, () => OnFullSceneSelected(sceneNumber, sceneName),
+            InfoText(summary, "grabación", "grabaciones", "Sin grabaciones", false), inspecting && summary.Takes == 0);
     }
+
+    TakeSummary Summary(int scene, int shot) => summaries.TryGetValue((scene, shot), out TakeSummary summary) ? summary : new TakeSummary();
+
+    // "3 tomas ★ · 2 notas · 5 nov", "Sin tomas · 1 nota".
+    static string InfoText(TakeSummary summary, string one, string many, string none, bool star)
+    {
+        string text = Plural(summary.Takes, one, many, none);
+        if (star && summary.HasPreferida)
+            text += " ★";
+        if (summary.Notes > 0)
+            text += " · " + Plural(summary.Notes, "nota", "notas", "");
+        if (summary.Takes > 0 && DateTime.TryParse(summary.Latest, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime latest))
+            text += $" · {latest.Day} {Months[latest.Month - 1]}";
+        return text;
+    }
+
+    static string Plural(int count, string one, string many, string none) =>
+        count == 0 ? none : count == 1 ? $"1 {one}" : $"{count} {many}";
 
     void OnFullSceneSelected(int sceneNumber, string sceneName)
     {
         Debug.Log($"[Escena] Escena completa selected: scene {sceneNumber} ({sceneName}). Loading {sceneName}...");
 
-        // Inspección: same rule as a shot - more than one full-scene recording opens a list,
-        // 0 or 1 loads directly (the most recent one, if any).
-        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect && database.GetSceneSessions(sceneNumber).Count > 1)
+        // Inspección: same rule as a shot - the list when there's any recording, else the set.
+        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
         {
-            ShowSceneSessionList(sceneNumber, sceneName);
+            if (database.GetSceneSessions(sceneNumber).Count > 0)
+                ShowSceneSessionList(sceneNumber, sceneName);
+            else
+                EnterWithoutTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName);
             return;
         }
 
         ProceedToTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName, null);
     }
 
-    void CreateHeader(RectTransform parent, string text)
+    // rightText: a second, right-aligned text, e.g. a scene's take count.
+    void CreateHeader(RectTransform parent, string text, string rightText = null)
     {
-        var headerObject = new GameObject($"Header_{text}", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        var headerObject = new GameObject($"Header_{text}", typeof(RectTransform), typeof(LayoutElement));
         headerObject.transform.SetParent(parent, false);
+        // A shot's description can take two lines.
+        headerObject.GetComponent<LayoutElement>().preferredHeight = text.Length > 50 ? HeaderFontSize * 2 + 32f : HeaderFontSize + 24f;
 
-        Text label = headerObject.GetComponent<Text>();
-        label.font = uiFont;
-        label.text = text;
-        label.fontSize = HeaderFontSize;
+        Text label = CreateText((RectTransform)headerObject.transform, text, HeaderFontSize, Color.white, TextAnchor.MiddleLeft, 0f, rightText != null ? 0.7f : 1f);
         label.fontStyle = FontStyle.Bold;
-        label.color = Color.white;
-        label.alignment = TextAnchor.MiddleLeft;
-
-        headerObject.GetComponent<LayoutElement>().preferredHeight = HeaderFontSize + 24f;
+        if (rightText != null)
+            CreateText((RectTransform)headerObject.transform, rightText, ButtonFontSize, InfoTextColor, TextAnchor.MiddleRight, 0.7f, 1f);
     }
 
-    void CreateShotButton(RectTransform parent, Shot shot, string sceneName)
+    void CreateShotButton(RectTransform parent, Shot shot, string sceneName, bool showInfo, bool inspecting)
     {
         Shot capturedShot = shot;
         string capturedSceneName = sceneName;
-        CreateListButton(parent, $"Shot_{shot.ShotNumber}", shot.Description, ShotButtonColor, () => OnShotSelected(capturedShot, capturedSceneName));
+        TakeSummary summary = Summary(shot.SceneNumber, shot.ShotNumber);
+        CreateListButton(parent, $"Shot_{shot.ShotNumber}", $"Shot {shot.ShotNumber} · {shot.Description}", ShotButtonColor,
+            () => OnShotSelected(capturedShot, capturedSceneName),
+            showInfo ? InfoText(summary, "toma", "tomas", "Sin tomas", true) : null,
+            inspecting && summary.Takes == 0);
     }
 
-    void CreateListButton(RectTransform parent, string objectName, string text, Color color, UnityEngine.Events.UnityAction onClick)
+    // rightText: what's recorded for it, right-aligned. dim: nothing recorded (Inspección).
+    void CreateListButton(RectTransform parent, string objectName, string text, Color color, UnityEngine.Events.UnityAction onClick, string rightText = null, bool dim = false)
     {
         var buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = color;
+        buttonObject.GetComponent<Image>().color = dim ? EmptyShotButtonColor : color;
         buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
 
+        var rect = (RectTransform)buttonObject.transform;
+        CreateText(rect, text, ButtonFontSize, dim ? EmptyTextColor : Color.white, TextAnchor.MiddleLeft, 0f, rightText != null ? 0.68f : 1f);
+        if (rightText != null)
+            CreateText(rect, rightText, ButtonFontSize, dim ? EmptyTextColor : InfoTextColor, TextAnchor.MiddleRight, 0.68f, 1f);
+
+        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+    }
+
+    // A text across part of `parent`'s width (from and to: fractions of it), with a margin.
+    Text CreateText(RectTransform parent, string text, int size, Color color, TextAnchor alignment, float from, float to)
+    {
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(buttonObject.transform, false);
+        textObject.transform.SetParent(parent, false);
         var textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
+        textRect.anchorMin = new Vector2(from, 0f);
+        textRect.anchorMax = new Vector2(to, 1f);
         textRect.offsetMin = new Vector2(16, 4);
         textRect.offsetMax = new Vector2(-16, -4);
 
         Text label = textObject.GetComponent<Text>();
         label.font = uiFont;
         label.text = text;
-        label.fontSize = ButtonFontSize;
-        label.color = Color.white;
-        label.alignment = TextAnchor.MiddleLeft;
+        label.fontSize = size;
+        label.color = color;
+        label.alignment = alignment;
         label.horizontalOverflow = HorizontalWrapMode.Wrap;
         label.verticalOverflow = VerticalWrapMode.Overflow;
-
-        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
+        label.raycastTarget = false;
+        return label;
     }
 
     void OnShotSelected(Shot shot, string sceneName)
     {
         Debug.Log($"Shot selected: scene {shot.SceneNumber} ({sceneName}), shot {shot.ShotNumber} - {shot.Description}. Loading {sceneName}...");
 
-        // Only Inspección de Escenas (or solo actor practice) needs a session picker - a
-        // live rehearsal never has past sessions to choose from. A shot with 0 or 1
-        // sessions keeps loading directly, exactly as before.
+        // Only Inspección de Escenas needs a take picker - a live rehearsal never has past takes
+        // to choose from. Always shown when there's any, so it's clear what opens; without any,
+        // straight into the set.
         if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
         {
-            List<RecordingSession> sessions = database.GetSessionsForShot(shot.ShotNumber);
-            if (sessions.Count > 1)
-            {
+            if (database.GetSessionsForShot(shot.ShotNumber).Count > 0)
                 ShowSessionList(shot, sceneName);
-                return;
-            }
+            else
+                EnterWithoutTake(shot.SceneNumber, shot.ShotNumber, sceneName);
+            return;
         }
 
         ProceedToSession(shot, sceneName, null);
@@ -300,25 +355,43 @@ public class SceneSelectController : MonoBehaviour
         SceneManager.LoadSceneAsync(sceneName);
     }
 
+    // Inspección of a shot (or whole scene) without opening a take: walk the set, leave notes.
+    void EnterWithoutTake(int sceneNumber, int shotNumber, string sceneName)
+    {
+        Bootstrap.InspectWithoutTake = true;
+        ProceedToTake(sceneNumber, shotNumber, sceneName, null);
+    }
+
+    void BackToShotList()
+    {
+        ClearContent();
+        BuildShotList(contentRect, shotsByScene);
+    }
+
     void ShowSessionList(Shot shot, string sceneName)
     {
         List<RecordingSession> sessions = database.GetSessionsForShot(shot.ShotNumber);
+        if (sessions.Count == 0)
+        {
+            BackToShotList();
+            return;
+        }
 
         ClearContent();
-        CreateBackButton(contentRect, () =>
-        {
-            ClearContent();
-            BuildShotList(contentRect, shotsByScene);
-        });
-        CreateHeader(contentRect, $"Shot {shot.ShotNumber}: {shot.Description}");
+        CreateBackButton(contentRect, BackToShotList);
+        CreateHeader(contentRect, $"Shot {shot.ShotNumber}: {shot.Description}", Plural(sessions.Count, "toma", "tomas", "Sin tomas"));
 
         foreach (RecordingSession session in sessions)
         {
             RecordingSession capturedSession = session;
             CreateSessionRow(contentRect, session,
                 () => ProceedToSession(shot, sceneName, capturedSession.Id),
-                () => OnPreferidaToggled(shot, sceneName, capturedSession));
+                () => OnPreferidaToggled(shot, sceneName, capturedSession),
+                () => ShowSessionList(shot, sceneName));
         }
+
+        CreateListButton(contentRect, "WithoutTake", "Ver el set sin toma", FullSceneButtonColor,
+            () => EnterWithoutTake(shot.SceneNumber, shot.ShotNumber, sceneName));
     }
 
     // Inspección: the scene's full-scene recordings, apart from its single-shot takes. Heart
@@ -326,22 +399,27 @@ public class SceneSelectController : MonoBehaviour
     void ShowSceneSessionList(int sceneNumber, string sceneName)
     {
         List<RecordingSession> sessions = database.GetSceneSessions(sceneNumber);
+        if (sessions.Count == 0)
+        {
+            BackToShotList();
+            return;
+        }
 
         ClearContent();
-        CreateBackButton(contentRect, () =>
-        {
-            ClearContent();
-            BuildShotList(contentRect, shotsByScene);
-        });
-        CreateHeader(contentRect, $"{sceneName}: escena completa");
+        CreateBackButton(contentRect, BackToShotList);
+        CreateHeader(contentRect, $"Escena {sceneNumber} completa", Plural(sessions.Count, "grabación", "grabaciones", "Sin grabaciones"));
 
         foreach (RecordingSession session in sessions)
         {
             RecordingSession capturedSession = session;
             CreateSessionRow(contentRect, session,
                 () => ProceedToTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName, capturedSession.Id),
-                null);
+                null,
+                () => ShowSceneSessionList(sceneNumber, sceneName));
         }
+
+        CreateListButton(contentRect, "WithoutTake", "Ver el set sin toma", FullSceneButtonColor,
+            () => EnterWithoutTake(sceneNumber, RehearsalSessionState.FullSceneShot, sceneName));
     }
 
     void ClearContent()
@@ -383,7 +461,8 @@ public class SceneSelectController : MonoBehaviour
     //
     // onPreferida null = no star: a full-scene recording can't be preferida yet (approving it
     // needs slicing it into per-shot references first).
-    void CreateSessionRow(RectTransform parent, RecordingSession session, UnityEngine.Events.UnityAction onOpen, UnityEngine.Events.UnityAction onPreferida)
+    // onDeleted: after a take is deleted from here (the list is built again).
+    void CreateSessionRow(RectTransform parent, RecordingSession session, UnityEngine.Events.UnityAction onOpen, UnityEngine.Events.UnityAction onPreferida, Action onDeleted)
     {
         var rowObject = new GameObject($"Session_{session.Id}", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         rowObject.transform.SetParent(parent, false);
@@ -443,6 +522,21 @@ public class SceneSelectController : MonoBehaviour
             session.EsFavorita ? FavoritaOnColor : FavoritaOffColor,
             out Button favoritaButton);
         favoritaButton.onClick.AddListener(() => OnFavoritaToggled(capturedSession, favoritaIcon));
+
+#if DIRECTOR_BUILD
+        CreateSessionIconButton(rowObject.transform, "Borrar", UIIcons.Trash(), DeleteIconColor, out Button deleteButton);
+        deleteButton.onClick.AddListener(() =>
+        {
+            if (VoiceNotesPanel.Instance == null)
+                return;
+            VoiceNotesPanel.Instance.Confirm($"¿Borrar la toma del {FormatSessionDate(capturedSession)} y sus notas? No se puede deshacer.", () =>
+            {
+                database.DeleteSession(capturedSession);
+                FloatingMessage.Show("Toma borrada");
+                onDeleted?.Invoke();
+            });
+        });
+#endif
     }
 
     Image CreateSessionIconButton(Transform parent, string name, Sprite sprite, Color color, out Button button)
@@ -477,12 +571,23 @@ public class SceneSelectController : MonoBehaviour
         favoritaIcon.color = newValue ? FavoritaOnColor : FavoritaOffColor;
     }
 
-    static string FormatSessionLabel(RecordingSession session)
+    static string FormatSessionDate(RecordingSession session)
     {
-        string when = DateTime.TryParse(session.FechaHora, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsed)
+        return DateTime.TryParse(session.FechaHora, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsed)
             ? parsed.ToString("dd/MM/yyyy HH:mm")
             : session.FechaHora;
+    }
 
-        return $"{when} — {session.Duracion:F1}s";
+    // "05/11/2026 16:20 — 12.4 s · Con cuerpo · Con audio · 2 notas": what opening it will show.
+    string FormatSessionLabel(RecordingSession session)
+    {
+        string label = $"{FormatSessionDate(session)} — {session.Duracion:F1} s · {(session.AvatarLayout != null ? "Con cuerpo" : "Sin cuerpo")}";
+        if (System.IO.File.Exists(TakeAudioRecorder.TrackPath(session.SessionGuid, TakeAudioRecorder.DirectorTrack))
+            || System.IO.File.Exists(TakeAudioRecorder.TrackPath(session.SessionGuid, TakeAudioRecorder.ActorTrack)))
+            label += " · Con audio";
+        int notes = database.GetVoiceNotesOfTake(session.SessionGuid).Count;
+        if (notes > 0)
+            label += " · " + Plural(notes, "nota", "notas", "");
+        return label;
     }
 }

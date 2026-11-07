@@ -15,6 +15,7 @@ using UnityEngine;
 //   cuerpo.csv   t + the avatar's root, head and 16 bones' local rotations, 20 Hz (PoseTrack)
 //   tomas.csv    a full-scene take's shot boundaries
 //   notas.csv    the director's voice notes, and their audio under notas/
+//   conversacion_director.wav, conversacion_actor.wav   what each one said during the take
 //
 // Notes can be added after a take was exported, so those are brought up to date every time.
 // Notes of a shot in general, with no take, go in notas_sin_toma.
@@ -36,6 +37,7 @@ public static class TakeExporter
             {
                 alreadyExported++;
                 ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), folder);
+                ExportConversation(session, folder);
                 continue;
             }
 
@@ -47,6 +49,7 @@ public static class TakeExporter
 
             Export(database, session, temporary);
             ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), temporary);
+            ExportConversation(session, temporary);
             Directory.Move(temporary, folder);
             exported++;
         }
@@ -102,6 +105,17 @@ public static class TakeExporter
             foreach (ShotBoundary b in database.GetBoundariesForSession(session.SessionGuid))
                 rows.Add(Row(b.ShotNumber, b.TIn, b.TOut.HasValue ? (object)b.TOut.Value : "", b.Source));
             WriteFile(folder, "tomas.csv", "shot,t_in,t_out,origen", rows);
+        }
+    }
+
+    static void ExportConversation(RecordingSession session, string folder)
+    {
+        foreach (string track in new[] { TakeAudioRecorder.DirectorTrack, TakeAudioRecorder.ActorTrack })
+        {
+            string source = TakeAudioRecorder.TrackPath(session.SessionGuid, track);
+            string destination = Path.Combine(folder, $"conversacion_{track}.wav");
+            if (File.Exists(source) && !File.Exists(destination))
+                File.Copy(source, destination);
         }
     }
 

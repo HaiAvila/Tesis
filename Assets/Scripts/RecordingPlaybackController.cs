@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -41,8 +42,8 @@ public class RecordingPlaybackController : MonoBehaviour
 
     const int IconFontSize = 36;
     const int TimeLabelFontSize = 16;
-    const float ButtonSize = 60f;
-    const float ButtonSpacing = 10f;
+    const float ButtonSize = 64f;
+    const float ButtonSpacing = 14f;
     const float SliderHeight = 10f;
     const float SliderHandleSize = 18f;
     // Shot boundaries of a full-scene recording: a tick on the slider at each t_in, its shot
@@ -52,7 +53,11 @@ public class RecordingPlaybackController : MonoBehaviour
     const int TickLabelFontSize = 13;
     const float TickLabelWidth = 40f;
     static readonly Color TickColor = new Color(1f, 0.82f, 0.3f, 1f);
-    const float PanelPadding = 14f;
+    const float PanelPadding = 22f;
+    const float PanelCornerRadius = 34f;
+    const float PanelShadowSpread = 30f;
+    const float MonitorGapMeters = 0.025f;
+    const float MonitorCornerRadius = 26f;
     const float RowSpacing = 8f;
     const float PanelWorldScale = 0.0022f;
 
@@ -68,9 +73,9 @@ public class RecordingPlaybackController : MonoBehaviour
     static readonly Color ButtonColor = new Color(0.3f, 0.3f, 0.36f, 0.55f);
     static readonly Color ButtonActiveColor = new Color(0.25f, 0.55f, 0.3f, 0.75f);
     static readonly Color TextColor = new Color(0.95f, 0.95f, 0.98f, 0.95f);
-    static readonly Color SliderBackgroundColor = new Color(0.05f, 0.05f, 0.08f, 0.6f);
-    static readonly Color SliderFillColor = new Color(0.6f, 0.6f, 0.68f, 0.8f);
-    static readonly Color SliderHandleColor = new Color(0.95f, 0.95f, 0.98f, 0.95f);
+    static readonly Color SliderBackgroundColor = GlassUI.TrackColor;
+    static readonly Color SliderFillColor = GlassUI.Accent;
+    static readonly Color SliderHandleColor = Color.white;
 
     // Same star/heart colors as SceneSelectController and FavoritesPanelController - the
     // visual language for preferida/favorita is consistent everywhere it appears.
@@ -113,7 +118,7 @@ public class RecordingPlaybackController : MonoBehaviour
     readonly List<TimedNote> timedNotes = new List<TimedNote>();
     bool conversationAudible = true;
     bool notesAudible = true;
-    Text conversationToggleText, notesToggleText;
+    TMP_Text conversationToggleText, notesToggleText;
     bool HasConversation => (directorSource != null && directorSource.clip != null) || (actorSource != null && actorSource.clip != null);
     bool HasAudio => HasConversation || timedNotes.Count > 0;
     const float NoteTickWidth = 6f;
@@ -121,9 +126,9 @@ public class RecordingPlaybackController : MonoBehaviour
     readonly List<GameObject> noteTicks = new List<GameObject>();
 #endif
     GameObject panelObject;
-    Image playPauseIcon;
-    Text loopText;
-    Text speedText;
+    TMP_Text playPauseIcon;
+    TMP_Text loopText;
+    TMP_Text speedText;
 
     // The speed button cycles through these, from 1×. Slow ones to study a movement, fast ones
     // to get through a long take. Back to 1× for every new replay.
@@ -131,7 +136,7 @@ public class RecordingPlaybackController : MonoBehaviour
     const int SpeedFontSize = 22;
     int speedIndex;
     public float PlaybackSpeed => Speeds[speedIndex];
-    Text timeText;
+    TMP_Text timeText;
     Image preferidaIcon;
     Image favoritaIcon;
     Slider scrubSlider;
@@ -159,7 +164,7 @@ public class RecordingPlaybackController : MonoBehaviour
     GameObject monitorObject;
     RawImage monitorFeed;
     GameObject monitorInactiveMessage;
-    Text monitorToggleText;
+    TMP_Text monitorToggleText;
     bool monitorEnabled;
     bool currentVisorActive;
     float totalDuration;
@@ -499,9 +504,12 @@ public class RecordingPlaybackController : MonoBehaviour
         if (monitorObject == null)
             return;
 
+        // Right above the controls, outside their glass: the picture has nothing behind it to blur.
         Transform panelTransform = panelObject.transform;
+        float panelHalfHeight = ((RectTransform)panelTransform).rect.height * panelTransform.lossyScale.y / 2f;
+        float monitorHalfHeight = MonitorWidthMeters * MonitorTextureHeight / MonitorTextureWidth / 2f;
         monitorObject.transform.SetPositionAndRotation(
-            panelTransform.position + panelTransform.rotation * MonitorOffsetFromPanel,
+            panelTransform.position + panelTransform.rotation * new Vector3(0f, panelHalfHeight + MonitorGapMeters + monitorHalfHeight, 0f),
             panelTransform.rotation);
     }
 
@@ -578,7 +586,10 @@ public class RecordingPlaybackController : MonoBehaviour
         backgroundRect.anchorMax = Vector2.one;
         backgroundRect.offsetMin = Vector2.zero;
         backgroundRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = BackgroundColor;
+        Image backgroundImage = background.GetComponent<Image>();
+        GlassUI.Glass(backgroundImage, PanelCornerRadius);
+        backgroundImage.raycastTarget = false;
+        GlassUI.AddShadow(canvasRect, PanelShadowSpread);
 
         var rootLayoutObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
         rootLayoutObject.transform.SetParent(canvasRect, false);
@@ -626,13 +637,11 @@ public class RecordingPlaybackController : MonoBehaviour
         // (UIIcons), not glyphs - see UIIcons for why.
         // Play/Pause is also on left A (OnPlayPausePressed); both go through SetPlaying, which
         // keeps this icon in sync.
-        playPauseIcon = CreateSpriteIconButton(rowObject.transform, "PlayPause", OnPlayPauseClicked);
-        playPauseIcon.sprite = isPlaying ? UIIcons.Pause() : UIIcons.Play();
-        playPauseIcon.color = TextColor;
-        CreateIconButton(rowObject.transform, "↺", OnRestartClicked, ButtonColor); // ↺
-        speedText = CreateIconButton(rowObject.transform, SpeedLabel(), OnSpeedClicked, ButtonColor);
+        playPauseIcon = CreateIconButton(rowObject.transform, isPlaying ? GlassUI.Icon.Pause : GlassUI.Icon.Play, OnPlayPauseClicked, ButtonColor, "Reproducir / pausa");
+        CreateIconButton(rowObject.transform, GlassUI.Icon.Replay, OnRestartClicked, ButtonColor, "Desde el inicio");
+        speedText = CreateIconButton(rowObject.transform, SpeedLabel(), OnSpeedClicked, ButtonColor, "Velocidad", glyph: false);
         speedText.fontSize = SpeedFontSize;
-        loopText = CreateIconButton(rowObject.transform, "∞", OnLoopToggleClicked, ButtonColor); // ∞ (loop toggle; color indicates on/off)
+        loopText = CreateIconButton(rowObject.transform, GlassUI.Icon.Repeat, OnLoopToggleClicked, ButtonColor, "Repetir");
 
         // Only present for a DB-backed session - an unsaved buffer ("Ver replay" before
         // Guardar/Descartar) has no session row to mark. Same star/heart language as the
@@ -655,35 +664,29 @@ public class RecordingPlaybackController : MonoBehaviour
         // Shows/hides the recorded-camera monitor (on by default; color indicates on/off,
         // same as the loop toggle). Only present when the session has a camera track.
         if (HasCameraTrack)
-            monitorToggleText = CreateIconButton(rowObject.transform, "▣", OnMonitorToggleClicked, ButtonActiveColor);
+            monitorToggleText = CreateIconButton(rowObject.transform, GlassUI.Icon.Camera, OnMonitorToggleClicked, ButtonActiveColor, "Cámara grabada");
 
 #if DIRECTOR_BUILD
         if (HasConversation)
         {
-            conversationToggleText = CreateIconButton(rowObject.transform, "Conv.", OnConversationToggleClicked, ButtonActiveColor);
-            conversationToggleText.fontSize = AudioToggleFontSize;
+            conversationToggleText = CreateIconButton(rowObject.transform, GlassUI.Icon.Conversation, OnConversationToggleClicked, ButtonActiveColor, "Conversación");
         }
         if (timedNotes.Count > 0)
         {
-            notesToggleText = CreateIconButton(rowObject.transform, "Notas", OnNotesAudioToggleClicked, ButtonActiveColor);
-            notesToggleText.fontSize = AudioToggleFontSize;
+            notesToggleText = CreateIconButton(rowObject.transform, GlassUI.Icon.NotesAudio, OnNotesAudioToggleClicked, ButtonActiveColor, "Notas en la toma");
         }
 
-        Image notesIcon = CreateSpriteIconButton(rowObject.transform, "Notas", OnNotesClicked);
-        notesIcon.sprite = UIIcons.Microphone();
-        notesIcon.color = TextColor;
+        CreateIconButton(rowObject.transform, GlassUI.Icon.Mic, OnNotesClicked, ButtonColor, "Notas de voz");
 
         if (currentSession != null)
         {
-            Image deleteIcon = CreateSpriteIconButton(rowObject.transform, "Borrar", OnDeleteClicked);
-            deleteIcon.sprite = UIIcons.Trash();
-            deleteIcon.color = TextColor;
+            CreateIconButton(rowObject.transform, GlassUI.Icon.Delete, OnDeleteClicked, ButtonColor, "Borrar toma").color = GlassUI.Danger;
         }
 #endif
 
         // Only present when reviewing an in-memory buffer (no scene change to exit through).
         if (onManualClose != null)
-            CreateIconButton(rowObject.transform, "✕", OnCloseClicked, ButtonColor);
+            CreateIconButton(rowObject.transform, GlassUI.Icon.Close, OnCloseClicked, ButtonColor, "Cerrar");
     }
 
 #if DIRECTOR_BUILD
@@ -714,12 +717,7 @@ public class RecordingPlaybackController : MonoBehaviour
         SetToggleColor(notesToggleText, notesAudible);
     }
 
-    void SetToggleColor(Text label, bool on)
-    {
-        Image image = label != null ? label.transform.parent.GetComponent<Image>() : null;
-        if (image != null)
-            image.color = on ? ButtonActiveColor : ButtonColor;
-    }
+    void SetToggleColor(TMP_Text label, bool on) => SetActiveLook(label, on);
 
     void EnsureAudioSources()
     {
@@ -947,9 +945,7 @@ public class RecordingPlaybackController : MonoBehaviour
         if (monitorToggleText == null)
             return;
 
-        Image toggleButtonImage = monitorToggleText.transform.parent.GetComponent<Image>();
-        if (toggleButtonImage != null)
-            toggleButtonImage.color = monitorEnabled ? ButtonActiveColor : ButtonColor;
+        SetActiveLook(monitorToggleText, monitorEnabled);
     }
 
     void OnPreferidaClicked()
@@ -1007,45 +1003,37 @@ public class RecordingPlaybackController : MonoBehaviour
         favoritaIcon.color = isFavorita ? FavoritaOnColor : FavoritaOffColor;
     }
 
-    GameObject CreateButtonObject(Transform parent, string name, UnityEngine.Events.UnityAction onClick, Color color)
+    // Round glass buttons (GlassUI), each with its name shown above it while the ray is on it.
+    // A toggle is cyan while on (SetActiveLook).
+    RoundButton CreateButtonObject(Transform parent, string tooltip, UnityEngine.Events.UnityAction onClick, Color color)
     {
-        var buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(parent, false);
-        RectTransform buttonRect = (RectTransform)buttonObject.transform;
-        buttonRect.sizeDelta = new Vector2(ButtonSize, ButtonSize);
-        buttonObject.GetComponent<Image>().color = color;
-        buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
-        return buttonObject;
+        RoundButton button = GlassUI.RoundButton(parent, ButtonSize, null, tooltip, onClick != null ? () => onClick() : (Action)null);
+        button.Active = color == ButtonActiveColor;
+        return button;
     }
 
-    // The sprite and its color are set by the caller.
+    // The sprite (star, heart) and its color are set by the caller.
     Image CreateSpriteIconButton(Transform parent, string name, UnityEngine.Events.UnityAction onClick)
     {
-        GameObject buttonObject = CreateButtonObject(parent, $"Button_{name}", onClick, ButtonColor);
-        return UIIcons.CreateIcon(buttonObject.transform, null, Color.white);
+        RoundButton button = CreateButtonObject(parent, name, onClick, ButtonColor);
+        return UIIcons.CreateIcon(button.transform, null, Color.white, 0.5f);
     }
 
-    Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color)
+    // An icon (GlassUI.Icon) or, with glyph false, a short text like the speed.
+    TMP_Text CreateIconButton(Transform parent, string symbol, UnityEngine.Events.UnityAction onClick, Color color, string tooltip, bool glyph = true)
     {
-        GameObject buttonObject = CreateButtonObject(parent, $"Button_{symbol}", onClick, color);
-
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(buttonObject.transform, false);
-        RectTransform textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = symbol;
-        text.fontSize = IconFontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.color = TextColor;
-        text.alignment = TextAnchor.MiddleCenter;
-
+        RoundButton button = CreateButtonObject(parent, tooltip, onClick, color);
+        TMP_Text text = glyph ? GlassUI.IconLabel(button.transform, symbol, ButtonSize * 0.5f) : GlassUI.Label(button.transform, symbol, IconFontSize * 0.75f, true);
+        GlassUI.Stretch((RectTransform)text.transform);
+        button.Icon = text as TextMeshProUGUI;
         return text;
+    }
+
+    static void SetActiveLook(Component part, bool on)
+    {
+        RoundButton button = part != null ? part.GetComponentInParent<RoundButton>() : null;
+        if (button != null)
+            button.Active = on;
     }
 
     void BuildSlider(RectTransform parent)
@@ -1060,7 +1048,7 @@ public class RecordingPlaybackController : MonoBehaviour
         backgroundRect.anchorMin = new Vector2(0f, 0.5f);
         backgroundRect.anchorMax = new Vector2(1f, 0.5f);
         backgroundRect.sizeDelta = new Vector2(0f, SliderHeight);
-        background.GetComponent<Image>().color = SliderBackgroundColor;
+        GlassUI.Rounded(background.GetComponent<Image>(), SliderHeight / 2f, SliderBackgroundColor);
 
         var fillArea = new GameObject("Fill Area", typeof(RectTransform));
         fillArea.transform.SetParent(sliderObject.transform, false);
@@ -1076,7 +1064,7 @@ public class RecordingPlaybackController : MonoBehaviour
         fillRect.anchorMax = new Vector2(0f, 1f);
         fillRect.offsetMin = Vector2.zero;
         fillRect.offsetMax = Vector2.zero;
-        fill.GetComponent<Image>().color = SliderFillColor;
+        GlassUI.Rounded(fill.GetComponent<Image>(), SliderHeight / 2f, SliderFillColor);
 
         var handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
         handleArea.transform.SetParent(sliderObject.transform, false);
@@ -1190,15 +1178,17 @@ public class RecordingPlaybackController : MonoBehaviour
 
     void BuildTimeText(RectTransform parent)
     {
-        var textObject = new GameObject("TimeText", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        var textObject = new GameObject("TimeText", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
         textObject.transform.SetParent(parent, false);
         textObject.GetComponent<LayoutElement>().preferredHeight = TimeLabelFontSize + 6f;
 
-        timeText = textObject.GetComponent<Text>();
-        timeText.font = uiFont;
-        timeText.fontSize = TimeLabelFontSize;
-        timeText.color = TextColor;
-        timeText.alignment = TextAnchor.MiddleCenter;
+        var tmp = textObject.GetComponent<TextMeshProUGUI>();
+        tmp.font = GlassUI.Regular;
+        tmp.fontSize = TimeLabelFontSize;
+        tmp.color = GlassUI.SubTextColor;
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.raycastTarget = false;
+        timeText = tmp;
     }
 
     void OnPlayPauseClicked()
@@ -1233,9 +1223,7 @@ public class RecordingPlaybackController : MonoBehaviour
         if (speedText != null)
         {
             speedText.text = SpeedLabel();
-            Image speedButtonImage = speedText.transform.parent.GetComponent<Image>();
-            if (speedButtonImage != null)
-                speedButtonImage.color = PlaybackSpeed == 1f ? ButtonColor : ButtonActiveColor;
+            SetActiveLook(speedText, PlaybackSpeed != 1f);
         }
     }
 
@@ -1245,9 +1233,7 @@ public class RecordingPlaybackController : MonoBehaviour
         if (loopText == null)
             return;
 
-        Image loopButtonImage = loopText.transform.parent.GetComponent<Image>();
-        if (loopButtonImage != null)
-            loopButtonImage.color = isLooping ? ButtonActiveColor : ButtonColor;
+        SetActiveLook(loopText, isLooping);
     }
 
     void OnScrubStart()
@@ -1281,7 +1267,7 @@ public class RecordingPlaybackController : MonoBehaviour
         isPlaying = playing;
 
         if (playPauseIcon != null)
-            playPauseIcon.sprite = playing ? UIIcons.Pause() : UIIcons.Play();
+            playPauseIcon.text = playing ? GlassUI.Icon.Pause : GlassUI.Icon.Play;
     }
 
     IEnumerator PlaybackLoop()
@@ -1574,17 +1560,19 @@ public class RecordingPlaybackController : MonoBehaviour
         background.transform.SetParent(canvasRect, false);
         ApplyLayer(background, monitorLayer);
         StretchToParent((RectTransform)background.transform);
-        background.GetComponent<Image>().color = MonitorBackgroundColor;
+        // Rounded corners: the feed and its message are masked by the background.
+        GlassUI.Rounded(background.GetComponent<Image>(), MonitorCornerRadius, MonitorBackgroundColor);
+        background.AddComponent<Mask>().showMaskGraphic = true;
 
         var feedObject = new GameObject("Feed", typeof(RectTransform), typeof(RawImage));
-        feedObject.transform.SetParent(canvasRect, false);
+        feedObject.transform.SetParent(background.transform, false);
         ApplyLayer(feedObject, monitorLayer);
         StretchToParent((RectTransform)feedObject.transform);
         monitorFeed = feedObject.GetComponent<RawImage>();
         monitorFeed.texture = monitorRenderTexture;
 
         monitorInactiveMessage = new GameObject("VisorNoActivo", typeof(RectTransform), typeof(Text));
-        monitorInactiveMessage.transform.SetParent(canvasRect, false);
+        monitorInactiveMessage.transform.SetParent(background.transform, false);
         ApplyLayer(monitorInactiveMessage, monitorLayer);
         StretchToParent((RectTransform)monitorInactiveMessage.transform);
         Text message = monitorInactiveMessage.GetComponent<Text>();

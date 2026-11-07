@@ -27,7 +27,9 @@ public class PauseMenuController : MonoBehaviour
 
     class PauseMenuOption
     {
+        public string Icon;
         public string Label;
+        public string Description;
         public Action OnSelected;
     }
 
@@ -117,31 +119,47 @@ public class PauseMenuController : MonoBehaviour
     // choose shots, so that option is left out of their menu entirely.
     List<PauseMenuOption> BuildOptions()
     {
+        bool remote = Bootstrap.Mode == Bootstrap.AppMode.Remote;
         var menuOptions = new List<PauseMenuOption>
         {
-            new PauseMenuOption { Label = "Menú Principal", OnSelected = GoToMainMenu }
+            new PauseMenuOption { Icon = GlassUI.Icon.Home, Label = "Menú principal",
+#if DIRECTOR_BUILD
+                Description = remote ? "Termina el ensayo, también para el actor, y regresa al inicio." : "Regresa al inicio.",
+#else
+                Description = remote ? "Sales del ensayo y regresas al inicio." : "Regresa al inicio.",
+#endif
+                OnSelected = GoToMainMenu },
         };
 
 #if DIRECTOR_BUILD
-        menuOptions.Add(new PauseMenuOption { Label = "Selección de Escenas", OnSelected = GoToSceneSelect });
-        menuOptions.Add(new PauseMenuOption { Label = "Favoritos", OnSelected = ShowFavorites });
-        if (Bootstrap.Mode == Bootstrap.AppMode.Remote)
-            menuOptions.Add(new PauseMenuOption { Label = "Calibrar", OnSelected = StartCalibration });
+        menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Scenes, Label = "Escenas", Description = "Elige otra escena o toma.", OnSelected = GoToSceneSelect });
+        menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Favorite, Label = "Favoritos", Description = "Las tomas que marcaste con corazón.", OnSelected = ShowFavorites });
+        if (remote)
+            menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Calibrate, Label = "Calibrar", Description = "Calibra el avatar del actor: pose T, sentadilla y palmas juntas.", OnSelected = StartCalibration });
         if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
         {
-            menuOptions.Add(new PauseMenuOption { Label = "Notas del shot", OnSelected = ShowShotNotes });
-            menuOptions.Add(new PauseMenuOption { Label = "Exportar tomas a CSV", OnSelected = ExportTakes });
+            menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Notes, Label = "Notas del shot", Description = "Escucha las notas de voz de este shot.", OnSelected = ShowShotNotes });
+            menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Export, Label = "Exportar CSV", Description = "Guarda las tomas nuevas en archivos para analizarlas.", OnSelected = ExportTakes });
         }
 #endif
 
-        if (Bootstrap.Mode == Bootstrap.AppMode.Remote && VoiceChat.Instance != null)
-            menuOptions.Add(new PauseMenuOption { Label = VoiceChat.Instance.MicrophoneOn ? "Micrófono: encendido" : "Micrófono: apagado", OnSelected = ToggleMicrophone });
+        if (remote && VoiceChat.Instance != null)
+        {
+            bool on = VoiceChat.Instance.MicrophoneOn;
+            menuOptions.Add(new PauseMenuOption
+            {
+                Icon = on ? GlassUI.Icon.Mic : GlassUI.Icon.MicOff,
+                Label = on ? "Micrófono encendido" : "Micrófono apagado",
+                Description = on ? "Te escuchan. Elígelo para apagarlo." : "No te escuchan. Elígelo para encenderlo.",
+                OnSelected = ToggleMicrophone,
+            });
+        }
 
-        menuOptions.Add(new PauseMenuOption { Label = "Estado de pods", OnSelected = ShowPodStatus });
+        menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Pods, Label = "Estado de pods", Description = "Batería y señal de cada pod.", OnSelected = ShowPodStatus });
 
         // Replays the controls tutorial for the current mode - it's only offered
         // automatically the first time.
-        menuOptions.Add(new PauseMenuOption { Label = "Tutorial", OnSelected = ShowTutorial });
+        menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Tutorial, Label = "Tutorial", Description = "Repite el tutorial de los controles.", OnSelected = ShowTutorial });
 
         return menuOptions;
     }
@@ -204,92 +222,18 @@ public class PauseMenuController : MonoBehaviour
             hapticPlayer.SendHapticImpulse(0.5f, 0.1f);
     }
 
+    // A wheel (RadialMenu): icons around, what's pointed at in the middle, which also closes it.
     void BuildPanel(Transform head, List<PauseMenuOption> menuOptions)
     {
-        Vector3 forward = head.forward;
-        forward.y = 0f;
-        if (forward.sqrMagnitude < 0.0001f)
-            forward = Vector3.forward;
-        forward.Normalize();
-
-        Vector3 panelPosition = head.position + forward * PanelDistance;
-        Quaternion panelRotation = Quaternion.LookRotation(forward, Vector3.up);
-
-        panelObject = new GameObject("PauseMenuPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-
-        Canvas canvas = panelObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        canvas.worldCamera = Camera.main;
-
-        float panelHeight = menuOptions.Count * ButtonHeight + (menuOptions.Count - 1) * ButtonSpacing + PanelPadding * 2;
-        float panelWidth = ButtonWidth + PanelPadding * 2;
-
-        RectTransform canvasRect = (RectTransform)panelObject.transform;
-        canvasRect.sizeDelta = new Vector2(panelWidth, panelHeight);
-        canvasRect.position = panelPosition;
-        canvasRect.rotation = panelRotation;
-        canvasRect.localScale = Vector3.one * (menuOptions.Count >= CompactOptionCount ? CompactPanelWorldScale : PanelWorldScale);
-
-        var background = new GameObject("Background", typeof(RectTransform), typeof(Image));
-        background.transform.SetParent(canvasRect, false);
-        RectTransform backgroundRect = (RectTransform)background.transform;
-        backgroundRect.anchorMin = Vector2.zero;
-        backgroundRect.anchorMax = Vector2.one;
-        backgroundRect.offsetMin = Vector2.zero;
-        backgroundRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = BackgroundColor;
-
-        var layoutObject = new GameObject("Options", typeof(RectTransform), typeof(VerticalLayoutGroup));
-        layoutObject.transform.SetParent(canvasRect, false);
-        RectTransform layoutRect = (RectTransform)layoutObject.transform;
-        layoutRect.anchorMin = new Vector2(0.5f, 0.5f);
-        layoutRect.anchorMax = new Vector2(0.5f, 0.5f);
-        layoutRect.pivot = new Vector2(0.5f, 0.5f);
-        layoutRect.sizeDelta = new Vector2(ButtonWidth, panelHeight - PanelPadding * 2);
-
-        VerticalLayoutGroup layout = layoutObject.GetComponent<VerticalLayoutGroup>();
-        layout.spacing = ButtonSpacing;
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = true;
-
+        var items = new List<RadialMenu.Item>();
         foreach (PauseMenuOption option in menuOptions)
-            CreateButton(layoutRect, option);
+        {
+            PauseMenuOption captured = option;
+            items.Add(new RadialMenu.Item { Icon = option.Icon, Label = option.Label, Description = option.Description, OnSelected = () => OnOptionSelected(captured) });
+        }
 
-        XRUISetup.MoveToUILayer(panelObject);
-
-        XRUISetup.EnableRayInteraction(panelObject);
-        XRUISetup.EnsureEventSystem();
-
-        LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
-    }
-
-    void CreateButton(RectTransform parent, PauseMenuOption option)
-    {
-        var buttonObject = new GameObject($"Button_{option.Label}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-        buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = ButtonColor;
-        buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
-
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(buttonObject.transform, false);
-        RectTransform textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = option.Label;
-        text.fontSize = ButtonFontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.color = TextColor;
-        text.alignment = TextAnchor.MiddleCenter;
-
-        buttonObject.GetComponent<Button>().onClick.AddListener(() => OnOptionSelected(option));
+        RadialMenu menu = RadialMenu.Create(head, PanelDistance, items, "Menú", "Apunta a una opción o mueve el joystick izquierdo. Aquí en medio, cierra.", Close);
+        panelObject = menu.gameObject;
     }
 
     void OnOptionSelected(PauseMenuOption option)

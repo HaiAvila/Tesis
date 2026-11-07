@@ -198,6 +198,9 @@ Al cargar una toma, la escena, el shot y su descripción aparecen unos segundos 
 ### Líneas en el piso (director)
 En Ensayo Remoto ves en el piso del set **en rojo el límite real del actor** y **en azul el tuyo**. La roja se mueve cuando el actor presiona **X** o se mueve con el joystick, porque su cuarto real cambia de lugar dentro del set. No salen en la cámara virtual. El actor no ve líneas: el Quest ya le muestra su límite. Si la línea roja está muy chica, el actor todavía no ha creado su límite grande.
 
+### Menú de pausa (rueda)
+**Script:** `RadialMenu.cs`. Una rueda de vidrio con un ícono por opción. Al apuntar con el rayo, o al empujar el **joystick izquierdo** hacia una opción, se ilumina en cian y en el centro aparecen su nombre y qué hace. Se elige con el **gatillo** (rayo) o con el **clic del joystick izquierdo**. Presionar el **centro** o el botón **Menu** la cierra. Las opciones son las mismas de antes, según el modo.
+
 ### Voz
 **Script:** `VoiceChat.cs` (usa la voz de Normcore). El director y el actor se escuchan durante Ensayo Remoto, también mientras esperan en el menú. La primera vez, el Quest pide permiso para usar el micrófono: sin él, no te escuchan, pero tú sí los escuchas. No se graba.
 **Si están en el mismo cuarto:** apaga un micrófono desde el menú de pausa, o habrá eco. La voz no se usa en Ensayar Solo ni en Inspección de Escenas.

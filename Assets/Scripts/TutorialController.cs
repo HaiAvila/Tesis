@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -98,13 +99,13 @@ public class TutorialController : MonoBehaviour
     Coroutine promptCoroutine;
 
     GameObject panelObject;
-    Text titleText;
-    Text hintText;
-    Text simulatorHintText;
+    TMP_Text titleText;
+    TMP_Text hintText;
+    TMP_Text simulatorHintText;
     GameObject primaryButton;
-    Text primaryButtonLabel;
+    TMP_Text primaryButtonLabel;
     GameObject secondaryButton;
-    Text secondaryButtonLabel;
+    TMP_Text secondaryButtonLabel;
     Action onPrimary;
     Action onSecondary;
 
@@ -748,7 +749,7 @@ public class TutorialController : MonoBehaviour
 
         // Background doesn't catch the ray - only the buttons do.
         Image background = panelObject.GetComponent<Image>();
-        background.color = BackgroundColor;
+        GlassUI.Glass(background, 30f);
         background.raycastTarget = false;
 
         VerticalLayoutGroup layout = panelObject.GetComponent<VerticalLayoutGroup>();
@@ -763,9 +764,9 @@ public class TutorialController : MonoBehaviour
 
         panelObject.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        titleText = CreateText(canvasRect, "Title", TitleFontSize, FontStyle.Bold, SubTextColor);
-        hintText = CreateText(canvasRect, "Hint", HintFontSize, FontStyle.Normal, TextColor);
-        simulatorHintText = CreateText(canvasRect, "SimulatorHint", SimulatorHintFontSize, FontStyle.Italic, SubTextColor);
+        titleText = CreateText(canvasRect, "Title", TitleFontSize, FontStyles.Bold, SubTextColor);
+        hintText = CreateText(canvasRect, "Hint", HintFontSize, FontStyles.Normal, TextColor);
+        simulatorHintText = CreateText(canvasRect, "SimulatorHint", SimulatorHintFontSize, FontStyles.Italic, SubTextColor);
         BuildButtonRow(canvasRect);
 
         XRUISetup.MoveToUILayer(panelObject);
@@ -775,19 +776,19 @@ public class TutorialController : MonoBehaviour
         return true;
     }
 
-    Text CreateText(Transform parent, string name, int fontSize, FontStyle style, Color color)
+    TMP_Text CreateText(Transform parent, string name, int fontSize, FontStyles style, Color color)
     {
-        var textObject = new GameObject(name, typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(parent, false);
 
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
+        TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = GlassUI.Regular;
         text.fontSize = fontSize;
         text.fontStyle = style;
         text.color = color;
-        text.alignment = TextAnchor.MiddleLeft;
-        text.horizontalOverflow = HorizontalWrapMode.Wrap;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.alignment = TextAlignmentOptions.Left;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = false;
         return text;
     }
@@ -811,7 +812,7 @@ public class TutorialController : MonoBehaviour
         primaryButton = CreateButton(rowObject.transform, "Primary", PrimaryButtonColor, () => onPrimary?.Invoke(), out primaryButtonLabel);
     }
 
-    GameObject CreateButton(Transform parent, string name, Color color, UnityEngine.Events.UnityAction onClick, out Text label)
+    GameObject CreateButton(Transform parent, string name, Color color, UnityEngine.Events.UnityAction onClick, out TMP_Text label)
     {
         var buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
@@ -819,7 +820,7 @@ public class TutorialController : MonoBehaviour
         buttonObject.GetComponent<LayoutElement>().preferredWidth = ButtonWidth;
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(buttonObject.transform, false);
         RectTransform textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -827,13 +828,14 @@ public class TutorialController : MonoBehaviour
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
 
-        label = textObject.GetComponent<Text>();
-        label.font = uiFont;
+        label = textObject.GetComponent<TextMeshProUGUI>();
+        label.font = GlassUI.Regular;
         label.fontSize = ButtonFontSize;
-        label.fontStyle = FontStyle.Bold;
+        label.fontStyle = FontStyles.Bold;
         label.color = TextColor;
-        label.alignment = TextAnchor.MiddleCenter;
+        label.alignment = TextAlignmentOptions.Center;
         label.raycastTarget = false;
+        GlassUI.SkinButton(buttonObject, ButtonHeight / 2f, color == PrimaryButtonColor ? GlassUI.ButtonStyle.Primary : GlassUI.ButtonStyle.Normal);
         return buttonObject;
     }
 

@@ -31,18 +31,17 @@ public class VoiceNoteRecorder : MonoBehaviour
     const float MaxSeconds = 120f;
 
     // In the lower-left corner of the view, placeholder position.
-    static readonly Vector3 ButtonOffset = new Vector3(-0.42f, -0.30f, 1f);
+    static readonly Vector3 ButtonOffset = new Vector3(RecordingIndicator.ChipOffset.x, -0.12f, RecordingIndicator.ChipOffset.z);
     const float ButtonScale = 0.001f;
     static readonly Vector2 ButtonSize = new Vector2(250f, 76f);
     const int ButtonFontSize = 34;
 
     static readonly Color IdleColor = new Color(0.16f, 0.16f, 0.2f, 0.9f);
-    static readonly Color RecordingColor = new Color(0.75f, 0.1f, 0.1f, 0.95f);
+    static readonly Color RecordingColor = new Color(0.95f, 0.22f, 0.22f, 1f);
 
     InputAction noteAction;
     GameObject buttonObject;
-    Image buttonImage;
-    Text buttonLabel;
+    HudChip buttonChip;
     Font font;
 
     readonly List<float> samples = new List<float>();
@@ -238,54 +237,29 @@ public class VoiceNoteRecorder : MonoBehaviour
         if (IsRecording)
         {
             int seconds = Mathf.FloorToInt(Time.unscaledTime - recordingStarted);
-            buttonLabel.text = $"● {seconds / 60}:{seconds % 60:00}  Parar";
-            buttonImage.color = RecordingColor;
+            buttonChip.SetText($"{seconds / 60}:{seconds % 60:00} · Parar");
+            buttonChip.Icon.color = RecordingColor;
         }
         else
         {
-            buttonLabel.text = "● Nota de voz";
-            buttonImage.color = IdleColor;
+            buttonChip.SetText("Nota de voz");
+            buttonChip.Icon.color = GlassUI.TextColor;
         }
     }
 
+    // A glass chip in the lower-left corner of the view, which the ray can press too.
     bool BuildButton()
     {
         Camera head = Camera.main;
         if (head == null)
             return false;
 
-        buttonObject = new GameObject("VoiceNoteButton", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(head.transform, false);
-        Canvas canvas = buttonObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        canvas.worldCamera = head;
+        buttonChip = GlassUI.HudChip(head.transform, "VoiceNoteButton", ButtonOffset, GlassUI.Icon.Mic, "Nota de voz", GlassUI.TextColor, 0f);
+        buttonObject = buttonChip.gameObject;
+        buttonObject.AddComponent<CanvasScaler>();
+        buttonObject.GetComponent<Image>().raycastTarget = true;
+        buttonObject.AddComponent<Button>().onClick.AddListener(Toggle);
 
-        var rect = (RectTransform)buttonObject.transform;
-        rect.sizeDelta = ButtonSize;
-        rect.localPosition = ButtonOffset;
-        rect.localRotation = Quaternion.identity;
-        rect.localScale = Vector3.one * ButtonScale;
-
-        buttonImage = buttonObject.GetComponent<Image>();
-        buttonObject.GetComponent<Button>().onClick.AddListener(Toggle);
-
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(rect, false);
-        var textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        buttonLabel = textObject.GetComponent<Text>();
-        buttonLabel.font = font;
-        buttonLabel.fontSize = ButtonFontSize;
-        buttonLabel.fontStyle = FontStyle.Bold;
-        buttonLabel.color = Color.white;
-        buttonLabel.alignment = TextAnchor.MiddleCenter;
-        buttonLabel.raycastTarget = false;
-
-        XRUISetup.MoveToUILayer(buttonObject);
         XRUISetup.EnableRayInteraction(buttonObject);
         XRUISetup.EnsureEventSystem();
         PanelFocusManager.RegisterPersistent(buttonObject, "Nota de voz");

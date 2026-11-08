@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -401,7 +402,7 @@ public class RehearsalRecorder : MonoBehaviour
         backgroundRect.anchorMax = Vector2.one;
         backgroundRect.offsetMin = Vector2.zero;
         backgroundRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = DecisionBackgroundColor;
+        GlassUI.SkinPanel(background.GetComponent<Image>(), 34f);
 
         var rootLayoutObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
         rootLayoutObject.transform.SetParent(canvasRect, false);
@@ -422,16 +423,16 @@ public class RehearsalRecorder : MonoBehaviour
         // After a connection loss: say the take is safe, and point at Ver replay.
         if (keptAfterConnectionLoss)
         {
-            var titleObject = new GameObject("Title", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+            var titleObject = new GameObject("Title", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
             titleObject.transform.SetParent(rootRect, false);
             titleObject.GetComponent<LayoutElement>().preferredHeight = DecisionTitleHeight;
-            Text title = titleObject.GetComponent<Text>();
-            title.font = uiFont;
+            TMP_Text title = titleObject.GetComponent<TextMeshProUGUI>();
+            title.font = GlassUI.Regular;
             title.text = "Se perdió la conexión: la toma está a salvo";
             title.fontSize = DecisionButtonFontSize;
-            title.fontStyle = FontStyle.Bold;
+            title.fontStyle = FontStyles.Bold;
             title.color = DecisionTextColor;
-            title.alignment = TextAnchor.MiddleCenter;
+            title.alignment = TextAlignmentOptions.Center;
         }
 
         var checkboxRowObject = new GameObject("Checkboxes", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
@@ -486,10 +487,9 @@ public class RehearsalRecorder : MonoBehaviour
         var checkboxObject = new GameObject($"Checkbox_{label}", typeof(RectTransform), typeof(Image), typeof(Button));
         checkboxObject.transform.SetParent(parent, false);
         Image image = checkboxObject.GetComponent<Image>();
-        image.color = initialValue ? DecisionCheckboxOnColor : DecisionCheckboxOffColor;
         checkboxObject.GetComponent<Button>().onClick.AddListener(onClick);
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(checkboxObject.transform, false);
         RectTransform textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -497,12 +497,22 @@ public class RehearsalRecorder : MonoBehaviour
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
 
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
-        text.text = (initialValue ? "☑ " : "☐ ") + label;
+        TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = GlassUI.Regular;
+        text.text = label;
         text.fontSize = DecisionCheckboxFontSize;
         text.color = DecisionTextColor;
-        text.alignment = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignmentOptions.Center;
+        textRect.offsetMin = new Vector2(44f, 0f);
+
+        // A toggle chip: its icon, and cyan while on.
+        TMP_Text icon = GlassUI.IconLabel(checkboxObject.transform, label.Contains("preferida") ? GlassUI.Icon.Star : GlassUI.Icon.Favorite, DecisionCheckboxFontSize * 1.2f);
+        var iconRect = (RectTransform)icon.transform;
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 0.5f);
+        iconRect.pivot = new Vector2(0f, 0.5f);
+        iconRect.anchoredPosition = new Vector2(24f, 0f);
+        iconRect.sizeDelta = new Vector2(40f, 40f);
+        GlassUI.SkinButton(checkboxObject, DecisionCheckboxHeight / 2f).Active = initialValue;
 
         return image;
     }
@@ -524,21 +534,19 @@ public class RehearsalRecorder : MonoBehaviour
         if (checkboxImage == null)
             return;
 
-        checkboxImage.color = value ? DecisionCheckboxOnColor : DecisionCheckboxOffColor;
-
-        Text text = checkboxImage.GetComponentInChildren<Text>();
-        if (text != null)
-            text.text = (value ? "☑ " : "☐ ") + label;
+        RoundButton toggle = checkboxImage.GetComponent<RoundButton>();
+        if (toggle != null)
+            toggle.Active = value;
     }
 
     void CreateDecisionButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, Color? color = null)
     {
         var buttonObject = new GameObject($"Button_{label}", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = color ?? DecisionButtonColor;
+        GlassUI.ButtonStyle style = color.HasValue ? GlassUI.ButtonStyle.Primary : label == "Descartar" ? GlassUI.ButtonStyle.Danger : GlassUI.ButtonStyle.Normal;
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(buttonObject.transform, false);
         RectTransform textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -546,13 +554,23 @@ public class RehearsalRecorder : MonoBehaviour
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
 
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
+        TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = GlassUI.Regular;
         text.text = label;
         text.fontSize = DecisionButtonFontSize;
-        text.fontStyle = FontStyle.Bold;
+        text.fontStyle = FontStyles.Bold;
         text.color = DecisionTextColor;
-        text.alignment = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignmentOptions.Center;
+        textRect.offsetMin = new Vector2(40f, 0f);
+
+        string glyph = label == "Ver replay" ? GlassUI.Icon.PlayCircle : label == "Guardar" ? GlassUI.Icon.Save : GlassUI.Icon.Delete;
+        TMP_Text icon = GlassUI.IconLabel(buttonObject.transform, glyph, DecisionButtonFontSize * 1.25f);
+        var iconRect = (RectTransform)icon.transform;
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 0.5f);
+        iconRect.pivot = new Vector2(0f, 0.5f);
+        iconRect.anchoredPosition = new Vector2(28f, 0f);
+        iconRect.sizeDelta = new Vector2(44f, 44f);
+        GlassUI.SkinButton(buttonObject, DecisionButtonHeight / 2f, style);
     }
 
     void DestroyDecisionPanel()

@@ -145,7 +145,8 @@ abajo).
 - Paneles con rayo: home de actor, home de director, Selección de Escenas, menú de pausa, panel de reproducción, popup de detener grabación y Favoritos. Sin rayo (solo muestran, no tienen botones): el visor, el monitor de la cámara grabada y el indicador REC.
 - **Selección de Escenas** antes era Screen Space Overlay (no se ve en el headset) y su escena no tenía rig XR. Ahora se carga encima de `MenuBackdrop` (como los home menus, vía `Bootstrap.LoadSceneSelect()`) y es World Space, a 2 m delante de la cabeza.
 - **Capas:** el rayo solo detecta UI en las capas de su raycast mask (Default + UI en el rig). Los paneles con botones están en esas capas. Los rayos visuales están en `ControllerRayVisual`, excluida de la cámara del visor y de la que reproduce el track grabado.
-- **Íconos:** la estrella, el corazón y ▶/❚❚ son imágenes generadas en código (`UIIcons.cs`), no caracteres de la fuente: con la fuente, el ♥ relleno no aparecía y el ❚❚ se veía como un solo bloque.
+- **Íconos:** casi todos son de la fuente **Material Symbols Rounded** (`GlassUI.Icon`); el texto es **Inter**. El corazón relleno de Favoritos sigue siendo una imagen generada en código (`UIIcons.cs`).
+- **Indicadores en las esquinas** (fijos a la vista, chips de vidrio pequeños): arriba a la izquierda **REC** (director) o **Grabando** (actor) con un punto rojo que late, y debajo **Pods 9/9**; arriba a la derecha, para el actor, la toma ("Escena 1 · Shot 3"); abajo a la izquierda **Nota de voz**; arriba al centro, solo si se pierde la conexión, "Sin conexión con el servidor". Posiciones provisionales: revísalas en el visor.
 
 ### Escena completa (director) — ensayar y grabar toda la escena en una sola toma
 **Scripts:** `SceneSelectController.cs`, `RehearsalSessionSync.cs` / `RehearsalSessionState.cs`, `Bootstrap.SelectTake`.
@@ -172,7 +173,7 @@ abajo).
 
 ### Notas de voz (director)
 **Scripts:** `VoiceNoteRecorder.cs`, `VoiceNotesPanel.cs`, `WavFile.cs`. Para no escribir en el visor: hablas y queda guardado.
-**Grabar:** presiona el **joystick izquierdo hacia adentro**, o el botón **Nota de voz** en la esquina inferior izquierda de la vista (siempre visible en Ensayo Remoto e Inspección de Escenas; posición provisoria, sin ajustar). Mientras graba, el botón se pone rojo con el tiempo. Vuelve a presionar para terminar. Se detiene sola a los 2 minutos. **El actor no te escucha** mientras grabas. Con el panel de Guardar y Descartar abierto, el botón se oculta, pero el joystick funciona.
+**Grabar:** presiona el **joystick izquierdo hacia adentro**, o el botón **Nota de voz** en la esquina inferior izquierda de la vista (siempre visible en Ensayo Remoto e Inspección de Escenas; posición provisional, sin ajustar). Mientras graba, el ícono se pone rojo y el botón muestra el tiempo y "Parar". Vuelve a presionar para terminar. Se detiene sola a los 2 minutos. **El actor no te escucha** mientras grabas. Con el panel de Guardar y Descartar abierto, el botón se oculta, pero el joystick funciona.
 **A qué queda ligada:** a la toma que se está grabando, o a la que acabas de grabar y aún no decides, o a la que estás viendo, con el momento exacto. Si no hay ninguna, queda como nota general del shot. Si descartas una toma, sus notas se quedan como notas del shot.
 **En la reproducción** cada nota dicha en un momento de la toma se oye sola en ese momento, a 1× (botón **Notas** para silenciarlas). **Notas del shot** (menú de pausa en Inspección) muestra las notas del shot aunque no tenga tomas. **Escuchar:** en el panel de reproducción, el botón del **micrófono** abre la lista: reproducir, **Ir** (salta a ese momento de la toma) y **Borrar**. Las notas con momento también se ven como marcas ámbar en la barra.
 También funciona sin conexión. **Exportar:** van con cada toma (`notas.csv` y la carpeta `notas`, en WAV). Las notas generales van en `notas_sin_toma`.
@@ -193,7 +194,7 @@ En el panel de reproducción, el botón del **bote de basura** (solo tomas guard
 **Si se pierde el actor (director):** aparece "Se perdió la conexión con el actor". La grabación sigue, pero el actor se queda quieto en ella hasta que regrese.
 
 ### Qué toma es (actor)
-Al cargar una toma, la escena, el shot y su descripción aparecen unos segundos frente a ti. Después se queda "Escena 1 · Shot 3" chico arriba a la derecha. Posición provisoria, sin ajustar.
+Al cargar una toma, la escena, el shot y su descripción aparecen unos segundos frente a ti. Después se queda "Escena 1 · Shot 3" chico arriba a la derecha. Posición provisional, sin ajustar.
 
 ### Líneas en el piso (director)
 En Ensayo Remoto ves en el piso del set **en rojo el límite real del actor** y **en azul el tuyo**. La roja se mueve cuando el actor presiona **X** o se mueve con el joystick, porque su cuarto real cambia de lugar dentro del set. No salen en la cámara virtual. El actor no ve líneas: el Quest ya le muestra su límite. Si la línea roja está muy chica, el actor todavía no ha creado su límite grande.
@@ -206,7 +207,7 @@ En Ensayo Remoto ves en el piso del set **en rojo el límite real del actor** y 
 **Si están en el mismo cuarto:** apaga un micrófono desde el menú de pausa, o habrá eco. La voz no se usa en Ensayar Solo ni en Inspección de Escenas.
 
 ### "Grabando" en el actor
-Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la palabra "Grabando" arriba a la izquierda. Posición provisoria, sin ajustar.
+Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la palabra "Grabando" arriba a la izquierda. Posición provisional, sin ajustar.
 
 ### Exportar tomas
 **Script:** `TakeExporter.cs`. En Inspección de Escenas, menú de pausa → **Exportar tomas a CSV**. Cada toma queda en su propia carpeta, y las que ya se exportaron no se repiten: `sesion.csv` (escena, shot, fecha, duración…), `cabeza.csv`, `camara.csv`, `cuerpo.csv` (raíz, cabeza y 16 huesos, con rotaciones locales) y, en escena completa, `tomas.csv`.
@@ -216,7 +217,7 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 **Scripts:** `PodStatusController.cs`, `PodStatus.cs`, `AvatarPoseSync.cs`. Los datos los manda la máquina que tiene los pods; si ninguna los tiene, no aparece el indicador.
 **Pantalla (menú de pausa → Estado de pods):** una fila por pod, con su parte del cuerpo, la batería en % ("baja" en ámbar, "Cargando" mientras carga) y la señal (buena, regular o mala). "Sin conexión" en rojo si no se oye, "Sin sensor" en ámbar si está conectado pero su sensor no reporta. El % es una estimación: sube mientras carga y baja durante una vibración.
 **Actor:** el panel "Antes de ensayar" avisa si falta un pod o si alguno tiene batería baja (menos de 3.6 V). Durante la toma no aparece nada, para no sacarlo de la escena. En Ensayar Solo, si se perdió un pod, se lo dice al terminar la toma.
-**Director (Ensayo Remoto):** "Pods 9/9" abajo del punto de REC: normal si todo está bien, ámbar con batería baja, rojo si falta un pod. No sale en el visor. Si se pierde un pod aparece un mensaje, "Se perdió el pod 3". Se puede grabar con pods faltantes: solo avisa, "Grabando con 8 de 9 pods". Posición provisoria, sin ajustar.
+**Director (Ensayo Remoto):** "Pods 9/9" abajo del punto de REC: normal si todo está bien, ámbar con batería baja, rojo si falta un pod. No sale en el visor. Si se pierde un pod aparece un mensaje, "Se perdió el pod 3". Se puede grabar con pods faltantes: solo avisa, "Grabando con 8 de 9 pods". Posición provisional, sin ajustar.
 
 ### El avatar en las reproducciones
 **Scripts:** `PlaybackAvatar.cs`, `RecordingPlaybackController.cs`, `RehearsalRecorder.cs`.
@@ -235,7 +236,7 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 - **Actor — Ensayar Solo (9):** rayo + gatillo · consejo de los joysticks · el límite (y cómo crear uno más grande) · X para fijar el inicio · la marca de cinta en el piso · B para iniciar · B para detener · Menu (y Estado de pods) · Y para calibrar (solo lo explica, no lo pide).
 **Consejo de los joysticks:** solo informa que puedes moverte con el izquierdo y girar con el derecho; no pide hacerlo, porque caminar y voltear la cabeza no hace falta enseñarlo.
 **Texto:** en español de México (tú). En cada paso, el control que hay que presionar está resaltado en **ámbar** y lo que hace en **celeste** (negritas).
-**Panel:** arriba a la izquierda de la vista, sigue a la cabeza con retraso (como el panel de reproducción). Nunca queda encima de otro panel con botones (menú de pausa, panel de fin de grabación, Favoritos, panel de reproducción): si lo taparía, se mueve a la izquierda o arriba de ese panel, lo que implique moverse menos (arriba solo si no queda más alto de ~22°, porque mirar hacia arriba cansa más). En la práctica, el panel de fin de grabación (ancho y bajo) lo manda arriba y el menú de pausa (alto) lo manda a la izquierda. Al cerrarse ese panel, vuelve a su lugar. Solo sus botones atrapan el rayo (fondo y texto no). Está en la capa `UI`, así que no aparece en el feed del visor. Posición provisoria, sin ajustar.
+**Panel:** arriba a la izquierda de la vista, sigue a la cabeza con retraso (como el panel de reproducción). Nunca queda encima de otro panel con botones (menú de pausa, panel de fin de grabación, Favoritos, panel de reproducción): si lo taparía, se mueve a la izquierda o arriba de ese panel, lo que implique moverse menos (arriba solo si no queda más alto de ~22°, porque mirar hacia arriba cansa más). En la práctica, el panel de fin de grabación (ancho y bajo) lo manda arriba y el menú de pausa (alto) lo manda a la izquierda. Al cerrarse ese panel, vuelve a su lugar. Solo sus botones atrapan el rayo (fondo y texto no). Está en la capa `UI`, así que no aparece en el feed del visor. Posición provisional, sin ajustar.
 **Para volver a ver la pregunta en el Editor:** borrar esas claves de `PlayerPrefs` (Edit → Clear All PlayerPrefs borra todas).
 
 ---

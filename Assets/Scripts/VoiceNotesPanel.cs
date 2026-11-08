@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -138,11 +139,11 @@ public class VoiceNotesPanel : MonoBehaviour
         float height = Padding * 2f + TitleHeight + RowsPerPage * (RowHeight + RowSpacing) + FooterHeight;
         RectTransform rect = BuildCanvas("VoiceNotesPanel", new Vector2(PanelWidth, height), position, rotation, head, out panelObject);
 
-        Label(rect, $"Notas de voz ({notes.Count})", TitleFontSize, TextAnchor.MiddleLeft, new Rect(Padding, Padding, PanelWidth - Padding * 2f, TitleHeight));
+        Label(rect, $"Notas de voz ({notes.Count})", TitleFontSize, TextAlignmentOptions.Left, new Rect(Padding, Padding, PanelWidth - Padding * 2f, TitleHeight));
 
         float y = Padding + TitleHeight;
         if (notes.Count == 0)
-            Label(rect, "Todavía no hay notas. Graba una con el botón Nota de voz o con el clic del joystick izquierdo.", RowFontSize, TextAnchor.UpperLeft, new Rect(Padding, y, PanelWidth - Padding * 2f, RowHeight * 2f), wrap: true);
+            Label(rect, "Todavía no hay notas. Graba una con el botón Nota de voz o con el clic del joystick izquierdo.", RowFontSize, TextAlignmentOptions.TopLeft, new Rect(Padding, y, PanelWidth - Padding * 2f, RowHeight * 2f), wrap: true);
 
         int first = page * RowsPerPage;
         for (int i = first; i < Mathf.Min(first + RowsPerPage, notes.Count); i++)
@@ -157,7 +158,7 @@ public class VoiceNotesPanel : MonoBehaviour
         {
             int pages = Mathf.CeilToInt(notes.Count / (float)RowsPerPage);
             Button(rect, "<", ButtonColor, new Rect(Padding, footerY, footerButton, FooterHeight - 10f), () => { page = Mathf.Max(0, page - 1); Rebuild(); });
-            Label(rect, $"{page + 1} / {pages}", RowFontSize, TextAnchor.MiddleCenter, new Rect(Padding + footerButton, footerY, footerButton, FooterHeight - 10f));
+            Label(rect, $"{page + 1} / {pages}", RowFontSize, TextAlignmentOptions.Center, new Rect(Padding + footerButton, footerY, footerButton, FooterHeight - 10f));
             Button(rect, ">", ButtonColor, new Rect(Padding + footerButton * 2f, footerY, footerButton, FooterHeight - 10f), () => { page = Mathf.Min(pages - 1, page + 1); Rebuild(); });
         }
         Button(rect, "Cerrar", ButtonColor, new Rect(PanelWidth - Padding - 220f, footerY, 220f, FooterHeight - 10f), Close);
@@ -171,11 +172,12 @@ public class VoiceNotesPanel : MonoBehaviour
         bool playing = note.Id == playingId;
 
         GameObject play = Button(parent, "", playing ? PlayingColor : ButtonColor, new Rect(x, y, 80f, RowHeight), () => TogglePlay(note));
-        UIIcons.CreateIcon(play.transform, playing ? UIIcons.Pause() : UIIcons.Play(), TextColor, 0.5f);
+        TMP_Text playIcon = GlassUI.IconLabel(play.transform, playing ? GlassUI.Icon.Pause : GlassUI.Icon.Play, RowHeight * 0.5f);
+        GlassUI.Stretch((RectTransform)playIcon.transform);
         x += 96f;
 
         string when = note.TakeTime.HasValue ? $"En {Clock(note.TakeTime.Value)}" : note.SessionGuid == null ? "Del shot" : "De la toma";
-        Label(parent, $"{when}  ·  {Mathf.Max(1, Mathf.RoundToInt(note.Duracion))} s", RowFontSize, TextAnchor.MiddleLeft, new Rect(x, y, 400f, RowHeight));
+        Label(parent, $"{when}  ·  {Mathf.Max(1, Mathf.RoundToInt(note.Duracion))} s", RowFontSize, TextAlignmentOptions.Left, new Rect(x, y, 400f, RowHeight));
 
         float right = PanelWidth - Padding;
         Button(parent, "Borrar", DangerColor, new Rect(right - 130f, y, 130f, RowHeight), () => Confirm("¿Borrar esta nota?", () =>
@@ -241,7 +243,7 @@ public class VoiceNotesPanel : MonoBehaviour
         position -= rotation * Vector3.forward * 0.1f; // in front of the panel it's asking about
         RectTransform rect = BuildCanvas("ConfirmPanel", new Vector2(760f, 260f), position, rotation, head, out confirmObject);
 
-        Label(rect, question, TitleFontSize, TextAnchor.MiddleCenter, new Rect(Padding, Padding - 10f, 760f - Padding * 2f, 90f), wrap: true);
+        Label(rect, question, TitleFontSize, TextAlignmentOptions.Center, new Rect(Padding, Padding - 10f, 760f - Padding * 2f, 90f), wrap: true);
         Button(rect, "Cancelar", ButtonColor, new Rect(Padding, 150f, 320f, 76f), CloseConfirm);
         Button(rect, "Borrar", DangerColor, new Rect(760f - Padding - 320f, 150f, 320f, 76f), () =>
         {
@@ -284,7 +286,8 @@ public class VoiceNotesPanel : MonoBehaviour
         rect.localScale = Vector3.one * PanelWorldScale;
 
         Image background = root.GetComponent<Image>();
-        background.color = BackgroundColor;
+        GlassUI.Glass(background, 34f);
+        GlassUI.AddShadow(rect, 30f);
         background.raycastTarget = false;
         return rect;
     }
@@ -306,12 +309,12 @@ public class VoiceNotesPanel : MonoBehaviour
         rect.sizeDelta = new Vector2(area.width, area.height);
     }
 
-    void Label(RectTransform parent, string text, int size, TextAnchor alignment, Rect area, bool wrap = false)
+    void Label(RectTransform parent, string text, int size, TextAlignmentOptions alignment, Rect area, bool wrap = false)
     {
-        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         labelObject.transform.SetParent(parent, false);
         Place((RectTransform)labelObject.transform, area);
-        SetupText(labelObject.GetComponent<Text>(), text, size, alignment, wrap);
+        SetupText(labelObject.GetComponent<TextMeshProUGUI>(), text, size, alignment, wrap);
     }
 
     GameObject Button(RectTransform parent, string text, Color color, Rect area, UnityEngine.Events.UnityAction onClick)
@@ -319,32 +322,33 @@ public class VoiceNotesPanel : MonoBehaviour
         var buttonObject = new GameObject($"Button_{text}", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
         Place((RectTransform)buttonObject.transform, area);
-        buttonObject.GetComponent<Image>().color = color;
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
 
         if (text.Length > 0)
         {
-            var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+            var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
             textObject.transform.SetParent(buttonObject.transform, false);
             var textRect = (RectTransform)textObject.transform;
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
             textRect.offsetMin = Vector2.zero;
             textRect.offsetMax = Vector2.zero;
-            SetupText(textObject.GetComponent<Text>(), text, ButtonFontSize, TextAnchor.MiddleCenter, false);
+            SetupText(textObject.GetComponent<TextMeshProUGUI>(), text, ButtonFontSize, TextAlignmentOptions.Center, false);
         }
+        GlassUI.SkinButton(buttonObject, area.height / 2f,
+            color == DangerColor ? GlassUI.ButtonStyle.Danger : color == PlayingColor ? GlassUI.ButtonStyle.Primary : GlassUI.ButtonStyle.Normal);
         return buttonObject;
     }
 
-    void SetupText(Text label, string text, int size, TextAnchor alignment, bool wrap)
+    void SetupText(TMP_Text label, string text, int size, TextAlignmentOptions alignment, bool wrap)
     {
-        label.font = font;
+        label.font = GlassUI.Regular;
         label.text = text;
         label.fontSize = size;
         label.color = TextColor;
         label.alignment = alignment;
-        label.horizontalOverflow = wrap ? HorizontalWrapMode.Wrap : HorizontalWrapMode.Overflow;
-        label.verticalOverflow = VerticalWrapMode.Overflow;
+        label.enableWordWrapping = wrap;
+        label.overflowMode = TextOverflowModes.Overflow;
         label.raycastTarget = false;
     }
 #endif

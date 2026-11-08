@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -12,17 +13,15 @@ public static class FloatingMessage
     const float HoldSeconds = 0.5f;
     const float FadeSeconds = 1f;
     const float WorldScale = 0.002f;
-    const int FontSize = 64;
+    const int FontSize = 46;
     const float MinWidth = 620f;
-    const float Height = 140f;
+    const float Height = 110f;
     const float HorizontalPadding = 50f;
     const float LongWidth = 1100f;
     const float LongDrop = 0.25f;
-    const int LongFontSize = 42;
+    const int LongFontSize = 34;
     static readonly Color TextColor = new Color(1f, 1f, 1f, 1f);
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.12f, 0.75f);
-
-    static Font font;
 
     public static void Show(string text) => Show(text, HoldSeconds, 0f, 0f);
 
@@ -34,9 +33,6 @@ public static class FloatingMessage
         Camera head = Camera.main;
         if (head == null)
             return;
-
-        if (font == null)
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
         Vector3 forward = head.transform.forward;
         forward.y = 0f;
@@ -57,10 +53,10 @@ public static class FloatingMessage
         rect.localScale = Vector3.one * WorldScale;
 
         Image background = messageObject.GetComponent<Image>();
-        background.color = BackgroundColor;
+        GlassUI.Glass(background, Height / 2f);
         background.raycastTarget = false;
 
-        var textObject = new GameObject("Text", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(rect, false);
         var textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -68,24 +64,24 @@ public static class FloatingMessage
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
 
-        Text label = textObject.GetComponent<Text>();
-        label.font = font;
+        TMP_Text label = textObject.GetComponent<TextMeshProUGUI>();
+        label.font = GlassUI.Regular;
         label.text = text;
         label.fontSize = wrapWidth > 0f ? LongFontSize : FontSize;
-        label.fontStyle = FontStyle.Bold;
+        label.fontStyle = FontStyles.Bold;
         label.color = TextColor;
-        label.alignment = TextAnchor.MiddleCenter;
+        label.alignment = TextAlignmentOptions.Center;
         label.raycastTarget = false;
 
         // One line, and the box grows to fit it: a fixed width cut longer messages ("Te
         // regresamos al inicio") down to their first line.
-        label.horizontalOverflow = HorizontalWrapMode.Overflow;
-        label.verticalOverflow = VerticalWrapMode.Overflow;
+        label.enableWordWrapping = false;
+        label.overflowMode = TextOverflowModes.Overflow;
         rect.sizeDelta = new Vector2(Mathf.Max(MinWidth, label.preferredWidth + HorizontalPadding * 2f), Height);
 
         if (wrapWidth > 0f)
         {
-            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.enableWordWrapping = true;
             rect.sizeDelta = new Vector2(wrapWidth, Height);
             textRect.offsetMin = new Vector2(HorizontalPadding, 0f);
             textRect.offsetMax = new Vector2(-HorizontalPadding, 0f);

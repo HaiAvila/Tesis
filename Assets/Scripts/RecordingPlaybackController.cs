@@ -1143,23 +1143,23 @@ public class RecordingPlaybackController : MonoBehaviour
             tickImage.color = TickColor;
             tickImage.raycastTarget = false;
 
-            var label = new GameObject($"TickLabel_{boundary.ShotNumber}", typeof(RectTransform), typeof(Text));
+            var label = new GameObject($"TickLabel_{boundary.ShotNumber}", typeof(RectTransform), typeof(TextMeshProUGUI));
             label.transform.SetParent(labelArea, false);
             RectTransform labelRect = (RectTransform)label.transform;
             labelRect.anchorMin = new Vector2(x, 0f);
             labelRect.anchorMax = new Vector2(x, 1f);
             labelRect.sizeDelta = new Vector2(TickLabelWidth, 0f);
-            Text labelText = label.GetComponent<Text>();
-            labelText.font = uiFont;
+            TMP_Text labelText = label.GetComponent<TextMeshProUGUI>();
+            labelText.font = GlassUI.Regular;
             labelText.text = $"T{boundary.ShotNumber}";
             labelText.fontSize = TickLabelFontSize;
-            labelText.fontStyle = FontStyle.Bold;
+            labelText.fontStyle = FontStyles.Bold;
             labelText.color = TickColor;
-            labelText.alignment = TextAnchor.UpperCenter;
+            labelText.alignment = TextAlignmentOptions.Top;
             // A legacy Text truncated to its rect draws nothing when the line is taller than
             // the row - let it overflow instead.
-            labelText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            labelText.verticalOverflow = VerticalWrapMode.Overflow;
+            labelText.enableWordWrapping = false;
+            labelText.overflowMode = TextOverflowModes.Overflow;
             labelText.raycastTarget = false;
         }
     }
@@ -1571,17 +1571,17 @@ public class RecordingPlaybackController : MonoBehaviour
         monitorFeed = feedObject.GetComponent<RawImage>();
         monitorFeed.texture = monitorRenderTexture;
 
-        monitorInactiveMessage = new GameObject("VisorNoActivo", typeof(RectTransform), typeof(Text));
+        monitorInactiveMessage = new GameObject("VisorNoActivo", typeof(RectTransform), typeof(TextMeshProUGUI));
         monitorInactiveMessage.transform.SetParent(background.transform, false);
         ApplyLayer(monitorInactiveMessage, monitorLayer);
         StretchToParent((RectTransform)monitorInactiveMessage.transform);
-        Text message = monitorInactiveMessage.GetComponent<Text>();
-        message.font = uiFont;
+        TMP_Text message = monitorInactiveMessage.GetComponent<TextMeshProUGUI>();
+        message.font = GlassUI.Regular;
         message.text = "Visor no activo";
         message.fontSize = MonitorMessageFontSize;
-        message.fontStyle = FontStyle.Bold;
+        message.fontStyle = FontStyles.Bold;
         message.color = TextColor;
-        message.alignment = TextAnchor.MiddleCenter;
+        message.alignment = TextAlignmentOptions.Center;
 
         UpdateMonitorPose();
         RefreshMonitorState();

@@ -16,6 +16,8 @@ public static class GlassUI
     public static readonly Color TextColor = new Color(0.96f, 0.97f, 0.99f, 1f);
     public static readonly Color SubTextColor = new Color(0.72f, 0.77f, 0.85f, 1f);
     public static readonly Color Danger = new Color(0.95f, 0.38f, 0.38f, 1f);
+    // Text on a red (Danger) button: light, so it reads on the red.
+    public static readonly Color DangerText = new Color(1f, 0.86f, 0.86f, 1f);
     public static readonly Color TrackColor = new Color(1f, 1f, 1f, 0.16f);
 
     // Material Symbols Rounded, by codepoint.
@@ -24,12 +26,27 @@ public static class GlassUI
         public const string Play = "", Pause = "", Replay = "", Repeat = "", Camera = "",
             Close = "", Conversation = "", NotesAudio = "", Delete = "", Mic = "",
             MicOff = "", Home = "", Scenes = "", Favorite = "", Calibrate = "",
-            Notes = "", Export = "", Pods = "", Tutorial = "", Speed = "";
+            Notes = "", Export = "", Pods = "", Tutorial = "", Speed = "",
+            Record = "", WifiOff = "", Movie = "", Save = "", PlayCircle = "",
+            Check = "", Back = "", Previous = "", Next = "", Star = "";
     }
 
     static TMP_FontAsset regular, semiBold, icons;
-    public static TMP_FontAsset Regular => regular != null ? regular : regular = Resources.Load<TMP_FontAsset>("UI/Inter-Regular SDF");
-    public static TMP_FontAsset SemiBold => semiBold != null ? semiBold : semiBold = Resources.Load<TMP_FontAsset>("UI/Inter-SemiBold SDF");
+    public static TMP_FontAsset Regular => regular != null ? regular : regular = WithIcons(Resources.Load<TMP_FontAsset>("UI/Inter-Regular SDF"));
+    public static TMP_FontAsset SemiBold => semiBold != null ? semiBold : semiBold = WithIcons(Resources.Load<TMP_FontAsset>("UI/Inter-SemiBold SDF"));
+
+    // Inter falls back to the icon font, so an icon's codepoint can sit inside ordinary text
+    // (the preferred take's star in Scene Select).
+    static TMP_FontAsset WithIcons(TMP_FontAsset font)
+    {
+        if (font == null || Icons == null)
+            return font;
+        if (font.fallbackFontAssetTable == null)
+            font.fallbackFontAssetTable = new System.Collections.Generic.List<TMP_FontAsset>();
+        if (!font.fallbackFontAssetTable.Contains(Icons))
+            font.fallbackFontAssetTable.Add(Icons);
+        return font;
+    }
     public static TMP_FontAsset Icons => icons != null ? icons : icons = Resources.Load<TMP_FontAsset>("UI/MaterialSymbolsRounded SDF");
 
     // --- generated shapes --------------------------------------------------------------------------
@@ -195,6 +212,99 @@ public static class GlassUI
         rect.offsetMax = new Vector2(-inset, -inset);
     }
 
+    public enum ButtonStyle { Normal, Primary, Danger, Row, RowAccent, RowEmpty }
+
+    static Color StyleTint(ButtonStyle style)
+    {
+        switch (style)
+        {
+            case ButtonStyle.Primary: return new Color(Accent.r, Accent.g, Accent.b, 0.92f);
+            case ButtonStyle.Danger: return new Color(0.9f, 0.25f, 0.25f, 0.45f);
+            case ButtonStyle.Row: return new Color(1f, 1f, 1f, 0.07f);
+            case ButtonStyle.RowAccent: return new Color(Accent.r, Accent.g, Accent.b, 0.22f);
+            case ButtonStyle.RowEmpty: return new Color(1f, 1f, 1f, 0.025f);
+            default: return new Color(1f, 1f, 1f, 0.1f);
+        }
+    }
+
+    // A panel's background: glass with rounded corners and a soft shadow under it.
+    public static void SkinPanel(Image background, float radius, float shadowSpread = 30f)
+    {
+        Glass(background, radius);
+        background.raycastTarget = false;
+        AddShadow((RectTransform)background.transform.parent, shadowSpread);
+    }
+
+    // An existing Button (with its Image) restyled: a rounded, softly tinted shape, a cyan tint
+    // under the ray, and no Unity color transition. Returns its RoundButton (Active = cyan).
+    public static RoundButton SkinButton(GameObject buttonObject, float radius, ButtonStyle style = ButtonStyle.Normal)
+    {
+        Image image = buttonObject.GetComponent<Image>();
+        Rounded(image, radius, StyleTint(style));
+        Button button = buttonObject.GetComponent<Button>();
+        if (button != null)
+            button.transition = Selectable.Transition.None;
+
+        RoundButton round = buttonObject.GetComponent<RoundButton>();
+        if (round != null)
+            return round;
+
+        var overlayObject = new GameObject("State", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        overlayObject.transform.SetParent(buttonObject.transform, false);
+        overlayObject.transform.SetAsFirstSibling();
+        overlayObject.GetComponent<LayoutElement>().ignoreLayout = true;
+        Stretch((RectTransform)overlayObject.transform);
+        Image overlay = overlayObject.GetComponent<Image>();
+        Rounded(overlay, radius, Color.clear);
+        overlay.raycastTarget = false;
+
+        round = buttonObject.AddComponent<RoundButton>();
+        round.Init(overlay, null, false, 0f);
+        round.HoverScale = 1.02f;
+        foreach (TMP_Text text in buttonObject.GetComponentsInChildren<TMP_Text>(true))
+        {
+            if (style == ButtonStyle.Danger)
+                text.color = DangerText;
+            if (style == ButtonStyle.Primary)
+                text.fontStyle |= FontStyles.Bold;
+        }
+        return round;
+    }
+
+    // A small glass chip fixed in the view (head-locked) at `offset` from the eyes, for the
+    // things that stay up while you work: REC, the pods, the take, the connection. Its text and
+    // icon can be changed afterwards. pivotX: 0 grows to the right of offset, 1 to the left.
+    public const float ChipScale = 0.00032f;
+    const float ChipHeight = 64f;
+    // From one chip's centre to the next one's, stacked in a corner.
+    public const float ChipSpacing = ChipHeight * ChipScale + 0.005f;
+
+    public static HudChip HudChip(Transform head, string name, Vector3 offset, string glyph, string text, Color iconColor, float pivotX)
+    {
+        const float scale = ChipScale;   // 1 unit = 0.32 mm, at offset.z (0.5 m) from the eyes
+        const float height = ChipHeight;
+        const float iconSize = 34f;
+        const float fontSize = 28f;
+        const float padding = 20f;
+
+        var root = new GameObject(name, typeof(RectTransform), typeof(Canvas), typeof(Image));
+        root.transform.SetParent(head, false);
+        root.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        var rect = (RectTransform)root.transform;
+        rect.pivot = new Vector2(pivotX, 0.5f);
+        rect.localPosition = offset;
+        rect.localRotation = Quaternion.identity;
+        rect.localScale = Vector3.one * scale;
+        Image background = root.GetComponent<Image>();
+        Glass(background, height / 2f);
+        background.raycastTarget = false;
+
+        HudChip chip = root.AddComponent<HudChip>();
+        chip.Init(rect, glyph != null ? IconLabel(rect, glyph, iconSize, iconColor) : null, Label(rect, text, fontSize, true), height, padding, iconSize);
+        XRUISetup.MoveToUILayer(root);
+        return chip;
+    }
+
     // A round glass button with an icon (a glyph, or a sprite for the star and heart) and a label
     // that appears on hover, above or below it.
     public static RoundButton RoundButton(Transform parent, float size, string glyph, string tooltip, Action onClick, bool tooltipBelow = false)
@@ -246,6 +356,8 @@ public class RoundButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHand
     GameObject tooltip;
     bool hovered;
     bool active;
+
+    public float HoverScale { get; set; } = 1.06f;
 
     public TextMeshProUGUI Icon { get; set; }
     public Image SpriteIcon { get; set; }
@@ -313,6 +425,53 @@ public class RoundButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHand
             overlay.color = active ? GlassUI.Accent : hovered ? GlassUI.AccentHover : Color.clear;
         if (tooltip != null)
             tooltip.SetActive(hovered && isActiveAndEnabled);
-        transform.localScale = Vector3.one * (hovered ? 1.06f : 1f);
+        transform.localScale = Vector3.one * (hovered ? HoverScale : 1f);
+    }
+}
+
+// A GlassUI.HudChip: sizes itself to its text.
+public class HudChip : MonoBehaviour
+{
+    RectTransform rect;
+    TextMeshProUGUI icon, label;
+    float height, padding, iconSize;
+
+    public TextMeshProUGUI Icon => icon;
+    public TextMeshProUGUI Label => label;
+
+    public void Init(RectTransform chipRect, TextMeshProUGUI iconLabel, TextMeshProUGUI textLabel, float chipHeight, float chipPadding, float chipIconSize)
+    {
+        rect = chipRect;
+        icon = iconLabel;
+        label = textLabel;
+        height = chipHeight;
+        padding = chipPadding;
+        iconSize = chipIconSize;
+        label.enableWordWrapping = false;
+        label.alignment = TextAlignmentOptions.Left;
+        SetText(label.text);
+    }
+
+    public void SetText(string text)
+    {
+        label.text = text;
+        float iconWidth = icon != null ? iconSize + 10f : 0f;
+        float width = padding * 2f + iconWidth + label.GetPreferredValues(text).x;
+        rect.sizeDelta = new Vector2(width, height);
+
+        var labelRect = (RectTransform)label.transform;
+        labelRect.anchorMin = new Vector2(0f, 0f);
+        labelRect.anchorMax = new Vector2(1f, 1f);
+        labelRect.offsetMin = new Vector2(padding + iconWidth, 0f);
+        labelRect.offsetMax = new Vector2(-padding, 0f);
+
+        if (icon != null)
+        {
+            var iconRect = (RectTransform)icon.transform;
+            iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.pivot = new Vector2(0f, 0.5f);
+            iconRect.sizeDelta = new Vector2(iconSize, iconSize);
+            iconRect.anchoredPosition = new Vector2(padding, 0f);
+        }
     }
 }

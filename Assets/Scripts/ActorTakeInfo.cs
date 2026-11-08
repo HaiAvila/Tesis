@@ -12,7 +12,7 @@ public class ActorTakeInfo : MonoBehaviour
     const float SecondsBeforeMessage = 1f;
     const float MessageSeconds = 7f;
 
-    static readonly Vector3 LabelOffset = new Vector3(0.195f, 0.12f, 0.5f);
+    static readonly Vector3 LabelOffset = new Vector3(-RecordingIndicator.ChipOffset.x, RecordingIndicator.ChipOffset.y, RecordingIndicator.ChipOffset.z);
     const float LabelScale = 0.0003f;
     const int LabelFontSize = 48;
     static readonly Vector2 LabelSize = new Vector2(620f, 76f);
@@ -73,40 +73,8 @@ public class ActorTakeInfo : MonoBehaviour
         if (head == null)
             return;
 
-        labelObject = new GameObject("TakeLabel", typeof(RectTransform), typeof(Canvas), typeof(Image));
-        labelObject.transform.SetParent(head.transform, false);
-        labelObject.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
-
-        var rect = (RectTransform)labelObject.transform;
-        rect.sizeDelta = LabelSize;
-        rect.pivot = new Vector2(1f, 0.5f);
-        rect.localPosition = LabelOffset;
-        rect.localRotation = Quaternion.identity;
-        rect.localScale = Vector3.one * LabelScale;
-
-        Image background = labelObject.GetComponent<Image>();
-        background.color = LabelBackground;
-        background.raycastTarget = false;
-
-        var textObject = new GameObject("Text", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(rect, false);
-        var textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        Text label = textObject.GetComponent<Text>();
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.text = text;
-        label.fontSize = LabelFontSize;
-        label.fontStyle = FontStyle.Bold;
-        label.color = Color.white;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.horizontalOverflow = HorizontalWrapMode.Overflow;
-        label.raycastTarget = false;
-
-        XRUISetup.MoveToUILayer(labelObject);
+        // Upper right, mirroring REC on the left.
+        labelObject = GlassUI.HudChip(head.transform, "TakeLabel", LabelOffset, GlassUI.Icon.Movie, text, GlassUI.Accent, 1f).gameObject;
     }
 #endif
 }

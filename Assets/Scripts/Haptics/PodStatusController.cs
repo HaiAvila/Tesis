@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -37,7 +38,7 @@ public class PodStatusController : MonoBehaviour
     const int ButtonFontSize = 30;
 
     // Under the REC dot (RecordingIndicator.LocalOffset), head-locked like it.
-    static readonly Vector3 IndicatorOffset = new Vector3(-0.157f, 0.095f, 0.5f);
+    static readonly Vector3 IndicatorOffset = RecordingIndicator.ChipOffset + new Vector3(0f, -GlassUI.ChipSpacing, 0f);
     const float IndicatorScale = 0.0003f;
     const int IndicatorFontSize = 56;
     static readonly Vector2 IndicatorSize = new Vector2(280f, 76f);
@@ -62,8 +63,8 @@ public class PodStatusController : MonoBehaviour
     Font font;
 
     GameObject panelObject;
-    Text panelTitle;
-    Text[] rowNames, rowBatteries, rowSignals;
+    TMP_Text panelTitle;
+    TMP_Text[] rowNames, rowBatteries, rowSignals;
 
     public bool HasData { get; private set; }
     public int ConnectedCount { get; private set; }
@@ -212,7 +213,7 @@ public class PodStatusController : MonoBehaviour
 
 #if DIRECTOR_BUILD
     GameObject indicatorObject;
-    Text indicatorText;
+    HudChip indicatorChip;
 
     void Start()
     {
@@ -241,36 +242,21 @@ public class PodStatusController : MonoBehaviour
         if (indicatorObject == null && !BuildIndicator())
             return;
 
-        indicatorText.text = $"Pods {ConnectedCount}/{TotalCount}";
-        indicatorText.color = ConnectedCount < TotalCount ? ProblemColor : lowPods.Count > 0 ? WarningColor : TextColor;
+        Color color = ConnectedCount < TotalCount ? ProblemColor : lowPods.Count > 0 ? WarningColor : GlassUI.Accent;
+        indicatorChip.SetText($"Pods {ConnectedCount}/{TotalCount}");
+        indicatorChip.Icon.color = color;
+        indicatorChip.Label.color = ConnectedCount < TotalCount ? ProblemColor : lowPods.Count > 0 ? WarningColor : TextColor;
     }
 
+    // A glass chip under the REC chip, in the upper-left corner of the view.
     bool BuildIndicator()
     {
         Camera head = Camera.main;
         if (head == null)
             return false;
 
-        indicatorObject = new GameObject("PodStatusIndicator", typeof(RectTransform), typeof(Canvas), typeof(Image));
-        indicatorObject.transform.SetParent(head.transform, false);
-        indicatorObject.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
-
-        var rect = (RectTransform)indicatorObject.transform;
-        rect.sizeDelta = IndicatorSize;
-        rect.pivot = new Vector2(0f, 0.5f);
-        rect.localPosition = IndicatorOffset;
-        rect.localRotation = Quaternion.identity;
-        rect.localScale = Vector3.one * IndicatorScale;
-
-        Image background = indicatorObject.GetComponent<Image>();
-        background.color = IndicatorBackground;
-        background.raycastTarget = false;
-
-        indicatorText = CreateText(rect, "Text", IndicatorFontSize, FontStyle.Bold, TextColor, TextAnchor.MiddleCenter);
-        Stretch((RectTransform)indicatorText.transform, Vector2.zero, Vector2.one);
-
-        // Head-locked, so the viewfinder camera mustn't film it.
-        XRUISetup.MoveToUILayer(indicatorObject);
+        indicatorChip = GlassUI.HudChip(head.transform, "PodStatusIndicator", IndicatorOffset, GlassUI.Icon.Pods, "Pods", GlassUI.Accent, 0f);
+        indicatorObject = indicatorChip.gameObject;
         return true;
     }
 #endif
@@ -304,22 +290,23 @@ public class PodStatusController : MonoBehaviour
         rect.localScale = Vector3.one * PanelWorldScale;
 
         Image background = panelObject.GetComponent<Image>();
-        background.color = BackgroundColor;
+        GlassUI.Glass(background, 34f);
+        GlassUI.AddShadow(rect, 30f);
         background.raycastTarget = false;
 
         float y = -PanelPadding;
-        panelTitle = CreateText(rect, "Title", TitleFontSize, FontStyle.Bold, TextColor, TextAnchor.MiddleLeft);
+        panelTitle = CreateText(rect, "Title", TitleFontSize, FontStyles.Bold, TextColor, TextAlignmentOptions.Left);
         PlaceRow((RectTransform)panelTitle.transform, y, TitleHeight, 0f, 1f);
         y -= TitleHeight;
 
-        rowNames = new Text[rows];
-        rowBatteries = new Text[rows];
-        rowSignals = new Text[rows];
+        rowNames = new TMP_Text[rows];
+        rowBatteries = new TMP_Text[rows];
+        rowSignals = new TMP_Text[rows];
         for (int i = 0; i < rows; i++)
         {
-            rowNames[i] = CreateText(rect, $"Name{i}", RowFontSize, FontStyle.Normal, TextColor, TextAnchor.MiddleLeft);
-            rowBatteries[i] = CreateText(rect, $"Battery{i}", RowFontSize, FontStyle.Normal, TextColor, TextAnchor.MiddleLeft);
-            rowSignals[i] = CreateText(rect, $"Signal{i}", RowFontSize, FontStyle.Normal, SubTextColor, TextAnchor.MiddleLeft);
+            rowNames[i] = CreateText(rect, $"Name{i}", RowFontSize, FontStyles.Normal, TextColor, TextAlignmentOptions.Left);
+            rowBatteries[i] = CreateText(rect, $"Battery{i}", RowFontSize, FontStyles.Normal, TextColor, TextAlignmentOptions.Left);
+            rowSignals[i] = CreateText(rect, $"Signal{i}", RowFontSize, FontStyles.Normal, SubTextColor, TextAlignmentOptions.Left);
             PlaceRow((RectTransform)rowNames[i].transform, y, RowHeight, 0f, 0.48f);
             PlaceRow((RectTransform)rowBatteries[i].transform, y, RowHeight, 0.48f, 0.76f);
             PlaceRow((RectTransform)rowSignals[i].transform, y, RowHeight, 0.76f, 1f);
@@ -404,7 +391,6 @@ public class PodStatusController : MonoBehaviour
     {
         var buttonObject = new GameObject("Close", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = ButtonColor;
         buttonObject.GetComponent<Button>().onClick.AddListener(ClosePanel);
 
         var rect = (RectTransform)buttonObject.transform;
@@ -413,23 +399,24 @@ public class PodStatusController : MonoBehaviour
         rect.anchoredPosition = new Vector2(0f, PanelPadding);
         rect.sizeDelta = new Vector2(CloseButtonWidth, CloseButtonHeight);
 
-        Text label = CreateText(rect, "Label", ButtonFontSize, FontStyle.Bold, TextColor, TextAnchor.MiddleCenter);
+        TMP_Text label = CreateText(rect, "Label", ButtonFontSize, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
         label.text = "Cerrar";
         Stretch((RectTransform)label.transform, Vector2.zero, Vector2.one);
+        GlassUI.SkinButton(buttonObject, CloseButtonHeight / 2f);
     }
 
-    Text CreateText(Transform parent, string name, int size, FontStyle style, Color color, TextAnchor alignment)
+    TMP_Text CreateText(Transform parent, string name, int size, FontStyles style, Color color, TextAlignmentOptions alignment)
     {
-        var textObject = new GameObject(name, typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(parent, false);
-        Text text = textObject.GetComponent<Text>();
-        text.font = font;
+        TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = GlassUI.Regular;
         text.fontSize = size;
         text.fontStyle = style;
         text.color = color;
         text.alignment = alignment;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = false;
         return text;
     }

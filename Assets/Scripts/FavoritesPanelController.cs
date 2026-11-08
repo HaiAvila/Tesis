@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -103,7 +104,7 @@ public class FavoritesPanelController : MonoBehaviour
         backgroundRect.anchorMax = Vector2.one;
         backgroundRect.offsetMin = Vector2.zero;
         backgroundRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = BackgroundColor;
+        GlassUI.SkinPanel(background.GetComponent<Image>(), 34f);
 
         var rootObject = new GameObject("Root", typeof(RectTransform), typeof(VerticalLayoutGroup));
         rootObject.transform.SetParent(canvasRect, false);
@@ -142,7 +143,11 @@ public class FavoritesPanelController : MonoBehaviour
     {
         var rowObject = new GameObject("Header", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         rowObject.transform.SetParent(parent, false);
-        rowObject.GetComponent<LayoutElement>().preferredHeight = HeaderFontSize + 20f;
+        // flexibleHeight 0: childForceExpandHeight below would otherwise make the header share
+        // the panel's spare height with the list.
+        LayoutElement headerLayout = rowObject.GetComponent<LayoutElement>();
+        headerLayout.preferredHeight = HeaderFontSize + 20f;
+        headerLayout.flexibleHeight = 0f;
 
         HorizontalLayoutGroup layout = rowObject.GetComponent<HorizontalLayoutGroup>();
         layout.childAlignment = TextAnchor.MiddleLeft;
@@ -151,26 +156,26 @@ public class FavoritesPanelController : MonoBehaviour
         layout.childForceExpandWidth = false;
         layout.childForceExpandHeight = true;
 
-        var titleObject = new GameObject("Title", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        var titleObject = new GameObject("Title", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
         titleObject.transform.SetParent(rowObject.transform, false);
         titleObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
 
-        Text title = titleObject.GetComponent<Text>();
-        title.font = uiFont;
+        TMP_Text title = titleObject.GetComponent<TextMeshProUGUI>();
+        title.font = GlassUI.Regular;
         title.text = "Favoritos";
         title.fontSize = HeaderFontSize;
-        title.fontStyle = FontStyle.Bold;
+        title.fontStyle = FontStyles.Bold;
         title.color = TextColor;
-        title.alignment = TextAnchor.MiddleLeft;
+        title.alignment = TextAlignmentOptions.Left;
 
         var closeButtonObject = new GameObject("CloseButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         closeButtonObject.transform.SetParent(rowObject.transform, false);
-        closeButtonObject.GetComponent<Image>().color = ButtonColor;
+        GlassUI.SkinButton(closeButtonObject, (HeaderFontSize + 20f) / 2f);
         LayoutElement closeLayout = closeButtonObject.GetComponent<LayoutElement>();
         closeLayout.preferredWidth = HeaderFontSize + 20f;
         closeLayout.preferredHeight = HeaderFontSize + 20f;
 
-        var closeTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var closeTextObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         closeTextObject.transform.SetParent(closeButtonObject.transform, false);
         RectTransform closeTextRect = (RectTransform)closeTextObject.transform;
         closeTextRect.anchorMin = Vector2.zero;
@@ -178,13 +183,13 @@ public class FavoritesPanelController : MonoBehaviour
         closeTextRect.offsetMin = Vector2.zero;
         closeTextRect.offsetMax = Vector2.zero;
 
-        Text closeText = closeTextObject.GetComponent<Text>();
-        closeText.font = uiFont;
-        closeText.text = "✕";
+        TMP_Text closeText = closeTextObject.GetComponent<TextMeshProUGUI>();
+        closeText.font = GlassUI.Icons;
+        closeText.text = GlassUI.Icon.Close;
         closeText.fontSize = HeaderFontSize;
-        closeText.fontStyle = FontStyle.Bold;
+        closeText.fontStyle = FontStyles.Bold;
         closeText.color = TextColor;
-        closeText.alignment = TextAnchor.MiddleCenter;
+        closeText.alignment = TextAlignmentOptions.Center;
 
         closeButtonObject.GetComponent<Button>().onClick.AddListener(Close);
     }
@@ -193,7 +198,7 @@ public class FavoritesPanelController : MonoBehaviour
     {
         var scrollObject = new GameObject("ScrollView", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
         scrollObject.transform.SetParent(parent, false);
-        scrollObject.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.07f, 1f);
+        scrollObject.GetComponent<Image>().color = Color.clear;
         scrollObject.GetComponent<LayoutElement>().flexibleHeight = 1f;
 
         var viewportObject = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(Mask));
@@ -235,16 +240,16 @@ public class FavoritesPanelController : MonoBehaviour
 
     void CreateEmptyMessage(RectTransform parent)
     {
-        var textObject = new GameObject("EmptyMessage", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        var textObject = new GameObject("EmptyMessage", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
         textObject.transform.SetParent(parent, false);
         textObject.GetComponent<LayoutElement>().preferredHeight = RowHeight;
 
-        Text text = textObject.GetComponent<Text>();
-        text.font = uiFont;
+        TMP_Text text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = GlassUI.Regular;
         text.text = "Aún no tienes favoritos.";
         text.fontSize = RowFontSize;
         text.color = TextColor;
-        text.alignment = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignmentOptions.Center;
     }
 
     void CreateFavoriteRow(RectTransform parent, ShotListDatabase database, RecordingSession session)
@@ -256,41 +261,50 @@ public class FavoritesPanelController : MonoBehaviour
             : shot != null ? $"Shot {shot.ShotNumber}: {shot.Description}" : $"Shot {session.ShotNumber}";
         string when = FormatSessionDateTime(session.FechaHora);
 
-        var rowObject = new GameObject($"Favorite_{session.Id}", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+        var rowObject = new GameObject($"Favorite_{session.Id}", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         rowObject.transform.SetParent(parent, false);
-        rowObject.GetComponent<Image>().color = RowColor;
-        rowObject.GetComponent<LayoutElement>().preferredHeight = RowHeight;
+        // The rounded background is a child outside the layout: on the row itself, its sliced
+        // sprite's own size would set the row's height.
+        var rowBackground = new GameObject("Background", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        rowBackground.transform.SetParent(rowObject.transform, false);
+        rowBackground.GetComponent<LayoutElement>().ignoreLayout = true;
+        GlassUI.Stretch((RectTransform)rowBackground.transform);
+        GlassUI.Rounded(rowBackground.GetComponent<Image>(), 18f, new Color(1f, 1f, 1f, 0.07f));
+        rowBackground.GetComponent<Image>().raycastTarget = false;
+        // At least RowHeight, taller when a long description wraps.
+        rowObject.GetComponent<LayoutElement>().minHeight = RowHeight;
 
         HorizontalLayoutGroup rowLayout = rowObject.GetComponent<HorizontalLayoutGroup>();
         rowLayout.spacing = Spacing;
-        rowLayout.padding = new RectOffset(16, 16, 4, 4);
+        rowLayout.padding = new RectOffset(16, 16, 8, 8);
         rowLayout.childAlignment = TextAnchor.MiddleLeft;
         rowLayout.childControlWidth = true;
         rowLayout.childControlHeight = true;
         rowLayout.childForceExpandWidth = false;
-        rowLayout.childForceExpandHeight = true;
+        rowLayout.childForceExpandHeight = false;
 
-        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        var labelObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
         labelObject.transform.SetParent(rowObject.transform, false);
         labelObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
 
-        Text label = labelObject.GetComponent<Text>();
-        label.font = uiFont;
+        TMP_Text label = labelObject.GetComponent<TextMeshProUGUI>();
+        label.font = GlassUI.Regular;
         label.text = $"{sceneLabel} — {shotLabel}\n{when}";
         label.fontSize = RowFontSize;
         label.color = TextColor;
-        label.alignment = TextAnchor.MiddleLeft;
-        label.horizontalOverflow = HorizontalWrapMode.Wrap;
-        label.verticalOverflow = VerticalWrapMode.Overflow;
+        label.alignment = TextAlignmentOptions.Left;
+        label.enableWordWrapping = true;
+        label.overflowMode = TextOverflowModes.Overflow;
 
         var jumpButtonObject = new GameObject("JumpButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         jumpButtonObject.transform.SetParent(rowObject.transform, false);
-        jumpButtonObject.GetComponent<Image>().color = ButtonColor;
+        GlassUI.SkinButton(jumpButtonObject, (RowHeight - 12f) / 2f, GlassUI.ButtonStyle.Primary);
         LayoutElement jumpLayout = jumpButtonObject.GetComponent<LayoutElement>();
         jumpLayout.preferredWidth = JumpButtonWidth;
+        jumpLayout.minWidth = JumpButtonWidth;   // a long label must not squeeze the buttons
         jumpLayout.preferredHeight = RowHeight - 12f;
 
-        var jumpTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var jumpTextObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         jumpTextObject.transform.SetParent(jumpButtonObject.transform, false);
         RectTransform jumpTextRect = (RectTransform)jumpTextObject.transform;
         jumpTextRect.anchorMin = Vector2.zero;
@@ -298,19 +312,20 @@ public class FavoritesPanelController : MonoBehaviour
         jumpTextRect.offsetMin = Vector2.zero;
         jumpTextRect.offsetMax = Vector2.zero;
 
-        Text jumpText = jumpTextObject.GetComponent<Text>();
-        jumpText.font = uiFont;
+        TMP_Text jumpText = jumpTextObject.GetComponent<TextMeshProUGUI>();
+        jumpText.font = GlassUI.Regular;
         jumpText.text = "Ver";
         jumpText.fontSize = RowFontSize;
-        jumpText.fontStyle = FontStyle.Bold;
+        jumpText.fontStyle = FontStyles.Bold;
         jumpText.color = TextColor;
-        jumpText.alignment = TextAnchor.MiddleCenter;
+        jumpText.alignment = TextAlignmentOptions.Center;
 
         var unfavoriteButtonObject = new GameObject("UnfavoriteButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         unfavoriteButtonObject.transform.SetParent(rowObject.transform, false);
-        unfavoriteButtonObject.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 1f);
+        GlassUI.SkinButton(unfavoriteButtonObject, (RowHeight - 12f) / 2f);
         LayoutElement unfavoriteLayout = unfavoriteButtonObject.GetComponent<LayoutElement>();
         unfavoriteLayout.preferredWidth = UnfavoriteButtonWidth;
+        unfavoriteLayout.minWidth = UnfavoriteButtonWidth;
         unfavoriteLayout.preferredHeight = RowHeight - 12f;
 
         // Filled heart - every row here is already a favorite, clicking removes it. A sprite,

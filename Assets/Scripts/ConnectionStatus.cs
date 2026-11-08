@@ -16,10 +16,11 @@ public class ConnectionStatus : MonoBehaviour
 
     // Top center, head-locked. Placeholder position.
     static readonly Vector3 BannerOffset = new Vector3(0f, 0.15f, 0.5f);
+    // A red icon on the glass: urgent, without a slab of red over the view.
     const float BannerScale = 0.0003f;
     const int BannerFontSize = 48;
     static readonly Vector2 BannerSize = new Vector2(1000f, 84f);
-    static readonly Color BannerColor = new Color(0.6f, 0.12f, 0.12f, 0.9f);
+    static readonly Color BannerColor = new Color(0.95f, 0.38f, 0.38f, 1f);
 
     Realtime realtime;
     GameObject banner;
@@ -88,38 +89,7 @@ public class ConnectionStatus : MonoBehaviour
         if (head == null)
             return;
 
-        banner = new GameObject("ConnectionBanner", typeof(RectTransform), typeof(Canvas), typeof(Image));
-        banner.transform.SetParent(head.transform, false);
-        banner.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
-
-        var rect = (RectTransform)banner.transform;
-        rect.sizeDelta = BannerSize;
-        rect.localPosition = BannerOffset;
-        rect.localRotation = Quaternion.identity;
-        rect.localScale = Vector3.one * BannerScale;
-
-        Image background = banner.GetComponent<Image>();
-        background.color = BannerColor;
-        background.raycastTarget = false;
-
-        var textObject = new GameObject("Text", typeof(RectTransform), typeof(Text));
-        textObject.transform.SetParent(rect, false);
-        var textRect = (RectTransform)textObject.transform;
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-
-        Text label = textObject.GetComponent<Text>();
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.text = "Sin conexión con el servidor. Reintentando…";
-        label.fontSize = BannerFontSize;
-        label.fontStyle = FontStyle.Bold;
-        label.color = Color.white;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.horizontalOverflow = HorizontalWrapMode.Overflow;
-        label.raycastTarget = false;
-
-        XRUISetup.MoveToUILayer(banner);
+        banner = GlassUI.HudChip(head.transform, "ConnectionBanner", BannerOffset, GlassUI.Icon.WifiOff,
+            "Sin conexión con el servidor. Reintentando…", BannerColor, 0.5f).gameObject;
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -125,7 +126,8 @@ public class SceneSelectController : MonoBehaviour
         scrollRect.anchorMax = Vector2.one;
         scrollRect.offsetMin = Vector2.zero;
         scrollRect.offsetMax = Vector2.zero;
-        scrollObject.GetComponent<Image>().color = new Color(0.08f, 0.08f, 0.08f, 1f);
+        GlassUI.Glass(scrollObject.GetComponent<Image>(), 40f);
+        GlassUI.AddShadow(canvasRect, 40f);
 
         var viewportObject = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(Mask));
         viewportObject.transform.SetParent(scrollObject.transform, false);
@@ -224,7 +226,7 @@ public class SceneSelectController : MonoBehaviour
     {
         string text = Plural(summary.Takes, one, many, none);
         if (star && summary.HasPreferida)
-            text += " ★";
+            text += " " + GlassUI.Icon.Star;
         if (summary.Notes > 0)
             text += " · " + Plural(summary.Notes, "nota", "notas", "");
         if (summary.Takes > 0 && DateTime.TryParse(summary.Latest, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime latest))
@@ -260,10 +262,10 @@ public class SceneSelectController : MonoBehaviour
         // A shot's description can take two lines.
         headerObject.GetComponent<LayoutElement>().preferredHeight = text.Length > 50 ? HeaderFontSize * 2 + 32f : HeaderFontSize + 24f;
 
-        Text label = CreateText((RectTransform)headerObject.transform, text, HeaderFontSize, Color.white, TextAnchor.MiddleLeft, 0f, rightText != null ? 0.7f : 1f);
-        label.fontStyle = FontStyle.Bold;
+        TMP_Text label = CreateText((RectTransform)headerObject.transform, text, HeaderFontSize, Color.white, TextAlignmentOptions.Left, 0f, rightText != null ? 0.7f : 1f);
+        label.fontStyle = FontStyles.Bold;
         if (rightText != null)
-            CreateText((RectTransform)headerObject.transform, rightText, ButtonFontSize, InfoTextColor, TextAnchor.MiddleRight, 0.7f, 1f);
+            CreateText((RectTransform)headerObject.transform, rightText, ButtonFontSize, InfoTextColor, TextAlignmentOptions.Right, 0.7f, 1f);
     }
 
     void CreateShotButton(RectTransform parent, Shot shot, string sceneName, bool showInfo, bool inspecting)
@@ -282,21 +284,21 @@ public class SceneSelectController : MonoBehaviour
     {
         var buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = dim ? EmptyShotButtonColor : color;
+        GlassUI.SkinButton(buttonObject, 18f, dim ? GlassUI.ButtonStyle.RowEmpty : color == FullSceneButtonColor ? GlassUI.ButtonStyle.RowAccent : GlassUI.ButtonStyle.Row);
         buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
 
         var rect = (RectTransform)buttonObject.transform;
-        CreateText(rect, text, ButtonFontSize, dim ? EmptyTextColor : Color.white, TextAnchor.MiddleLeft, 0f, rightText != null ? 0.68f : 1f);
+        CreateText(rect, text, ButtonFontSize, dim ? EmptyTextColor : Color.white, TextAlignmentOptions.Left, 0f, rightText != null ? 0.68f : 1f);
         if (rightText != null)
-            CreateText(rect, rightText, ButtonFontSize, dim ? EmptyTextColor : InfoTextColor, TextAnchor.MiddleRight, 0.68f, 1f);
+            CreateText(rect, rightText, ButtonFontSize, dim ? EmptyTextColor : InfoTextColor, TextAlignmentOptions.Right, 0.68f, 1f);
 
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
     }
 
     // A text across part of `parent`'s width (from and to: fractions of it), with a margin.
-    Text CreateText(RectTransform parent, string text, int size, Color color, TextAnchor alignment, float from, float to)
+    TMP_Text CreateText(RectTransform parent, string text, int size, Color color, TextAlignmentOptions alignment, float from, float to)
     {
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(parent, false);
         var textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = new Vector2(from, 0f);
@@ -304,14 +306,14 @@ public class SceneSelectController : MonoBehaviour
         textRect.offsetMin = new Vector2(16, 4);
         textRect.offsetMax = new Vector2(-16, -4);
 
-        Text label = textObject.GetComponent<Text>();
-        label.font = uiFont;
+        TMP_Text label = textObject.GetComponent<TextMeshProUGUI>();
+        label.font = GlassUI.Regular;
         label.text = text;
         label.fontSize = size;
         label.color = color;
         label.alignment = alignment;
-        label.horizontalOverflow = HorizontalWrapMode.Wrap;
-        label.verticalOverflow = VerticalWrapMode.Overflow;
+        label.enableWordWrapping = true;
+        label.overflowMode = TextOverflowModes.Overflow;
         label.raycastTarget = false;
         return label;
     }
@@ -432,10 +434,10 @@ public class SceneSelectController : MonoBehaviour
     {
         var buttonObject = new GameObject("BackButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        GlassUI.SkinButton(buttonObject, 18f, GlassUI.ButtonStyle.Row);
         buttonObject.GetComponent<LayoutElement>().preferredHeight = ButtonHeight;
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(buttonObject.transform, false);
         var textRect = (RectTransform)textObject.transform;
         textRect.anchorMin = Vector2.zero;
@@ -443,12 +445,12 @@ public class SceneSelectController : MonoBehaviour
         textRect.offsetMin = new Vector2(16, 4);
         textRect.offsetMax = new Vector2(-16, -4);
 
-        Text label = textObject.GetComponent<Text>();
-        label.font = uiFont;
-        label.text = "← Volver";
+        TMP_Text label = textObject.GetComponent<TextMeshProUGUI>();
+        label.font = GlassUI.Regular;
+        label.text = "Volver";
         label.fontSize = ButtonFontSize;
         label.color = Color.white;
-        label.alignment = TextAnchor.MiddleLeft;
+        label.alignment = TextAlignmentOptions.Left;
 
         buttonObject.GetComponent<Button>().onClick.AddListener(onClick);
     }
@@ -480,12 +482,12 @@ public class SceneSelectController : MonoBehaviour
 
         var infoButtonObject = new GameObject("Info", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         infoButtonObject.transform.SetParent(rowObject.transform, false);
-        infoButtonObject.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        GlassUI.SkinButton(infoButtonObject, 18f, GlassUI.ButtonStyle.Row);
         LayoutElement infoLayoutElement = infoButtonObject.GetComponent<LayoutElement>();
         infoLayoutElement.flexibleWidth = 1f;
         infoLayoutElement.preferredHeight = ButtonHeight;
 
-        var infoTextObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        var infoTextObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
         infoTextObject.transform.SetParent(infoButtonObject.transform, false);
         var infoTextRect = (RectTransform)infoTextObject.transform;
         infoTextRect.anchorMin = Vector2.zero;
@@ -493,8 +495,8 @@ public class SceneSelectController : MonoBehaviour
         infoTextRect.offsetMin = new Vector2(16, 4);
         infoTextRect.offsetMax = new Vector2(-16, -4);
 
-        Text infoText = infoTextObject.GetComponent<Text>();
-        infoText.font = uiFont;
+        TMP_Text infoText = infoTextObject.GetComponent<TextMeshProUGUI>();
+        infoText.font = GlassUI.Regular;
         infoText.text = FormatSessionLabel(session);
         if (session.IsScene)
         {
@@ -503,7 +505,7 @@ public class SceneSelectController : MonoBehaviour
         }
         infoText.fontSize = ButtonFontSize;
         infoText.color = Color.white;
-        infoText.alignment = TextAnchor.MiddleLeft;
+        infoText.alignment = TextAlignmentOptions.Left;
 
         infoButtonObject.GetComponent<Button>().onClick.AddListener(onOpen);
 
@@ -543,7 +545,7 @@ public class SceneSelectController : MonoBehaviour
     {
         var buttonObject = new GameObject($"Icon_{name}", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
         buttonObject.transform.SetParent(parent, false);
-        buttonObject.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 1f);
+        GlassUI.SkinButton(buttonObject, SessionIconWidth / 2f);
         LayoutElement layoutElement = buttonObject.GetComponent<LayoutElement>();
         layoutElement.preferredWidth = SessionIconWidth;
         layoutElement.preferredHeight = ButtonHeight;

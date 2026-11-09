@@ -649,7 +649,7 @@ public class TutorialController : MonoBehaviour
         });
         list.Add(new Step
         {
-            Text = $"Presiona {Key("B")} (control derecho) para {Act("empezar a grabar")} la toma. Primero hay una cuenta regresiva de 10 segundos con pitidos (para ponerte el visor si también actúas); la grabación empieza en "¡Acción!". En el visor verás REC.",
+            Text = $"Presiona {Key("B")} (control derecho) para {Act("empezar a grabar")} la toma. Primero hay una cuenta regresiva de 10 segundos con pitidos (para ponerte el visor si también actúas); la grabación empieza en {Act("¡Acción!")}. En el visor verás REC.",
             SimulatorHint = "Simulador: mantén Y + N.",
             IsDone = () => recorder != null && recorder.IsRecording,
         });

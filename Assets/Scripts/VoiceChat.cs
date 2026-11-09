@@ -90,7 +90,53 @@ public class VoiceChat : MonoBehaviour
     {
         if (voice != null)
             voice.mute = !MicrophoneOn || NoteRecording || Bootstrap.Mode != Bootstrap.AppMode.Remote;
+#if DIRECTOR_BUILD
+        HushOthersDuringReplay();
+#endif
     }
+
+#if DIRECTOR_BUILD
+    // While the director has a replay open, the actor's live voice is silenced here, so only the
+    // take's recorded conversation and notes are heard. The actor still hears the director.
+    // Never while a take is recording: its conversation track is taken from that voice.
+    const float VoiceScanSeconds = 1f;
+    readonly System.Collections.Generic.List<AudioSource> otherVoices = new System.Collections.Generic.List<AudioSource>();
+    float nextVoiceScan;
+    bool hushed;
+
+    void HushOthersDuringReplay()
+    {
+        bool hush = RecordingPlaybackController.Instance != null && RecordingPlaybackController.Instance.IsPanelOpen
+                    && !(TakeAudioRecorder.Instance != null && TakeAudioRecorder.Instance.IsRecording);
+
+        if (hush && Time.unscaledTime >= nextVoiceScan)
+        {
+            nextVoiceScan = Time.unscaledTime + VoiceScanSeconds;
+            otherVoices.Clear();
+            foreach (RealtimeAvatarVoice other in FindObjectsByType<RealtimeAvatarVoice>(FindObjectsSortMode.None))
+            {
+                if (other.isOwnedLocallyInHierarchy)
+                    continue;
+                AudioSource source = other.GetComponent<AudioSource>();
+                if (source != null)
+                    otherVoices.Add(source);
+            }
+        }
+
+        if (hush != hushed)
+        {
+            hushed = hush;
+            nextVoiceScan = 0f;
+            Debug.Log($"[Voice] the actor's live voice {(hush ? "silenced for the replay" : "back")}");
+        }
+
+        otherVoices.RemoveAll(source => source == null);
+        foreach (AudioSource source in otherVoices)
+            source.mute = hush;
+        if (!hush)
+            otherVoices.Clear();
+    }
+#endif
 
     void OnDestroy()
     {

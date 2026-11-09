@@ -112,7 +112,15 @@ public class RecordingPlaybackController : MonoBehaviour
         public AudioClip Clip;
     }
 
-    const float AudioDriftSeconds = 0.15f;
+    // The audio runs on its own clock and is only put back in step on a seek, a resume, or real
+    // drift (with a cooldown, since AudioSource.time can lag what's heard on the Quest). Each
+    // correction used to call Play() on a playing source, which restarts the clip from the
+    // start - on the Quest that repeated, so the conversation looped like stuck game audio.
+    const float AudioDriftSeconds = 0.4f;
+    const float AudioResyncCooldownSeconds = 1.5f;
+    const float AudioJumpSeconds = 0.25f;
+    readonly Dictionary<AudioSource, float> lastAudioSeek = new Dictionary<AudioSource, float>();
+    float lastSyncedPlaybackTime;
     const int AudioToggleFontSize = 18;
     AudioSource directorSource, actorSource, noteSource;
     readonly List<TimedNote> timedNotes = new List<TimedNote>();
@@ -813,8 +821,14 @@ public class RecordingPlaybackController : MonoBehaviour
 
         bool audible = isPlaying && samples != null && Mathf.Approximately(PlaybackSpeed, 1f)
                        && !(VoiceNoteRecorder.Instance != null && VoiceNoteRecorder.Instance.IsRecording);
-        SyncSource(directorSource, audible && conversationAudible, playbackTime);
-        SyncSource(actorSource, audible && conversationAudible, playbackTime);
+
+        // A seek, a loop back to the start: the replay's time moved other than by playing.
+        float expected = lastSyncedPlaybackTime + (isPlaying ? Time.deltaTime * PlaybackSpeed : 0f);
+        bool jumped = Mathf.Abs(playbackTime - expected) > AudioJumpSeconds;
+        lastSyncedPlaybackTime = playbackTime;
+
+        SyncSource(directorSource, audible && conversationAudible, playbackTime, jumped);
+        SyncSource(actorSource, audible && conversationAudible, playbackTime, jumped);
 
         TimedNote current = null;
         if (audible && notesAudible)
@@ -837,15 +851,26 @@ public class RecordingPlaybackController : MonoBehaviour
         }
 
         float offset = playbackTime - current.Time;
-        if (noteSource.clip != current.Clip || !noteSource.isPlaying || Mathf.Abs(noteSource.time - offset) > AudioDriftSeconds)
+        if (noteSource.clip != current.Clip)
         {
+            noteSource.Stop();
             noteSource.clip = current.Clip;
-            noteSource.time = offset;
-            noteSource.Play();
         }
+        if (!noteSource.isPlaying || jumped || Drifted(noteSource, offset))
+            PlayFrom(noteSource, offset);
     }
 
-    static void SyncSource(AudioSource source, bool on, float time)
+    // Play() on a source that's already playing restarts its clip from the start and drops the
+    // time set before it - so: Play first if needed, then the time.
+    void PlayFrom(AudioSource source, float time)
+    {
+        if (!source.isPlaying)
+            source.Play();
+        source.time = Mathf.Clamp(time, 0f, source.clip.length - 0.01f);
+        lastAudioSeek[source] = Time.unscaledTime;
+    }
+
+    void SyncSource(AudioSource source, bool on, float time, bool jumped)
     {
         if (source.clip == null)
             return;
@@ -857,11 +882,21 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        if (!source.isPlaying || Mathf.Abs(source.time - time) > AudioDriftSeconds)
-        {
-            source.time = Mathf.Clamp(time, 0f, source.clip.length - 0.01f);
-            source.Play();
-        }
+        if (!source.isPlaying || jumped || Drifted(source, time))
+            PlayFrom(source, time);
+    }
+
+    // Real drift, not the platform's reporting lag: well past the threshold, and not again
+    // right after a seek (AudioSource.time takes a moment to catch up after Play).
+    bool Drifted(AudioSource source, float time)
+    {
+        if (lastAudioSeek.TryGetValue(source, out float seekedAt) && Time.unscaledTime - seekedAt < AudioResyncCooldownSeconds)
+            return false;
+        if (Mathf.Abs(source.time - time) <= AudioDriftSeconds)
+            return false;
+
+        Debug.Log($"[Replay] audio resync: {source.time:F2} s heard vs {time:F2} s in the replay");
+        return true;
     }
 
     void SeekTo(float time)

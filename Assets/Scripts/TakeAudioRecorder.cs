@@ -47,6 +47,7 @@ public class TakeAudioRecorder : MonoBehaviour
     int actorSummed;
 
     public bool HasPending => director.Count > 0 || actor.Count > 0;
+    public bool IsRecording => recording;
 
     void Awake()
     {

@@ -179,7 +179,7 @@ abajo).
 También funciona sin conexión. **Exportar:** van con cada toma (`notas.csv` y la carpeta `notas`, en WAV). Las notas generales van en `notas_sin_toma`.
 
 ### Audio de la toma
-Mientras el director graba, se guarda también **la conversación**: lo que dice el director (solo cuando el actor lo escucha; las notas de voz no) y lo que dice el actor, en dos pistas. Se guarda con **Guardar** y se borra con **Descartar**. En la reproducción se oye en su momento, solo a **1×**: a otra velocidad se silencia y el tiempo dice "audio solo a 1×". **Conv.** la silencia. Se exporta como `conversacion_director.wav` y `conversacion_actor.wav`. El actor debe saber que la conversación se graba (ve "Grabando").
+Mientras el director graba, se guarda también **la conversación**: lo que dice el director (solo cuando el actor lo escucha; las notas de voz no) y lo que dice el actor, en dos pistas. Se guarda con **Guardar** y se borra con **Descartar**. Mientras tienes una reproducción abierta, **la voz en vivo del actor se silencia** (solo de tu lado; el actor te sigue escuchando) para que oigas solo lo grabado, y vuelve al cerrarla. En la reproducción se oye en su momento, solo a **1×**: a otra velocidad se silencia y el tiempo dice "audio solo a 1×". **Conv.** la silencia. Se exporta como `conversacion_director.wav` y `conversacion_actor.wav`. El actor debe saber que la conversación se graba (ve "Grabando").
 
 ### Selección de Escenas: qué tiene cada shot
 **En Inspección y en Ensayo Remoto**, cada escena dice cuántas tomas tiene y cada shot, a la derecha: tomas, ★ si una es preferida, notas y la fecha de la última ("3 tomas ★ · 2 notas · 7 nov"). **En Inspección**, los shots sin tomas se ven apagados.

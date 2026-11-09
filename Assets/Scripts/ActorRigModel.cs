@@ -12,6 +12,8 @@ using UnityEngine;
 // calibrateCounter: how many times the actor pressed Y to calibrate, for the machine with the
 //   pods. Not in the session model's command channel: that model's ownership is how the actor
 //   detects that the director left, so only the director may own it.
+// takeCounter: how many times the actor pressed B to start or stop the take (an actor who is
+//   their own director); the director's recorder acts on it.
 [RealtimeModel(createMetaModel: true)]
 public partial class ActorRigModel
 {
@@ -20,4 +22,5 @@ public partial class ActorRigModel
     [RealtimeProperty(3, true, true)] private int _calibrateCounter;
     [RealtimeProperty(4, true, true)] private Vector3 _rigPosition;
     [RealtimeProperty(5, true, true)] private byte[] _limitPoints;
+    [RealtimeProperty(6, true, true)] private int _takeCounter;
 }

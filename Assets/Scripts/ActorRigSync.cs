@@ -2,6 +2,7 @@ using System;
 using Normal.Realtime;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 // Next to ActorPositionSync: that one syncs the actor's head in the set, this one how the rig
 // under it is turned. AvatarPoseSync needs both to keep the body facing the same way as the
@@ -16,6 +17,10 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
 
     // The actor pressed Y. Raised on every machine; only the one with the pods acts on it.
     public static event Action CalibrationRequested;
+
+    // The actor pressed B in Ensayo Remoto: start (countdown) or stop the take. Raised on the
+    // director's machine, which owns the recording.
+    public static event Action TakeToggleRequested;
 
     const float MinYawChange = 0.05f;
     const float MinPositionChange = 0.01f;
@@ -48,6 +53,7 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
             previousModel.calibrateCounterDidChange -= OnCalibrateCounterDidChange;
 #if DIRECTOR_BUILD
             previousModel.startSetCounterDidChange -= OnStartSetCounterDidChange;
+            previousModel.takeCounterDidChange -= OnTakeCounterDidChange;
 #endif
         }
 
@@ -56,6 +62,7 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
             currentModel.calibrateCounterDidChange += OnCalibrateCounterDidChange;
 #if DIRECTOR_BUILD
             currentModel.startSetCounterDidChange += OnStartSetCounterDidChange;
+            currentModel.takeCounterDidChange += OnTakeCounterDidChange;
 #endif
         }
     }
@@ -70,8 +77,54 @@ public class ActorRigSync : RealtimeComponent<ActorRigModel>
     {
         FloatingMessage.Show("El actor fijó su inicio");
     }
+
+    void OnTakeCounterDidChange(ActorRigModel changedModel, int counter)
+    {
+        TakeToggleRequested?.Invoke();
+    }
 #else
     int sentLimitVersion = -1;
+    InputAction takeAction;
+
+    // B (right controller) in Ensayo Remoto: start or stop the take from the headset. Free there:
+    // B is Iniciar/Parar only in Ensayar Solo.
+    void Start()
+    {
+        takeAction = new InputAction("ActorTake", InputActionType.Button);
+        takeAction.AddBinding("<XRController>{RightHand}/{secondaryButton}");
+        takeAction.AddBinding("<XRSimulatedController>{RightHand}/secondaryButton");
+        takeAction.performed += OnTakePressed;
+        takeAction.Enable();
+    }
+
+    void OnDisable()
+    {
+        if (takeAction == null)
+            return;
+        takeAction.performed -= OnTakePressed;
+        takeAction.Disable();
+        takeAction.Dispose();
+        takeAction = null;
+    }
+
+    void OnTakePressed(InputAction.CallbackContext context)
+    {
+        if (Bootstrap.Mode != Bootstrap.AppMode.Remote || !Bootstrap.IsContentScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name))
+            return;
+        if (PauseMenuController.Instance != null && PauseMenuController.Instance.IsOpen)
+            return;
+        if (!Online)
+        {
+            FloatingMessage.Show("Sin conexión con el director");
+            return;
+        }
+
+        model.RequestOwnership();
+        model.takeCounter++;
+        bool recording = RehearsalSessionSync.Instance != null && RehearsalSessionSync.Instance.IsRecording;
+        FloatingMessage.Show(recording ? "Corte" : "Toma: cuenta regresiva en la computadora del director");
+        Debug.Log($"[RigSync] actor pressed B: {(recording ? "stop" : "start")} the take");
+    }
 
     void Update()
     {

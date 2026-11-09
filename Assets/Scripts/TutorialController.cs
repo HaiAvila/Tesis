@@ -514,6 +514,7 @@ public class TutorialController : MonoBehaviour
                 list.Add(SetStartStep());
                 list.Add(TapeMarkStep());
                 list.Add(new Step { Text = $"El director elige la toma: cuando la cambie, {Act("pasarás a esa escena")} automáticamente. Mientras graba, verás {Key("Grabando")} arriba a la izquierda. Si termina el ensayo, {Act("regresas al menú principal")}." });
+                list.Add(new Step { Text = $"Si ensayas sin nadie en la computadora, presiona {Key("B")} (control derecho) para {Act("iniciar la toma")}: hay 10 segundos de cuenta regresiva y la grabación empieza en {Act("¡Acción!")}. Presiona {Key("B")} otra vez para {Act("cortar")}. Después guarda o descarta la toma en la computadora." });
                 list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te saca del ensayo")} y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
                 list.Add(ActorCalibrationStep());
                 break;

@@ -145,6 +145,7 @@ public class RehearsalRecorder : MonoBehaviour
         nextShotAction.AddBinding("<XRSimulatedController>{LeftHand}/secondaryButton");
         nextShotAction.performed += OnNextShotPressed;
         nextShotAction.Enable();
+        ActorRigSync.TakeToggleRequested += OnActorTakeToggle;
 #endif
     }
 
@@ -165,6 +166,7 @@ public class RehearsalRecorder : MonoBehaviour
         recordingShortcutAction.Disable();
         recordingShortcutAction.Dispose();
 
+        ActorRigSync.TakeToggleRequested -= OnActorTakeToggle;
         nextShotAction.performed -= OnNextShotPressed;
         nextShotAction.Disable();
         nextShotAction.Dispose();
@@ -271,12 +273,32 @@ public class RehearsalRecorder : MonoBehaviour
         done?.Invoke(savedSessionId);
     }
 
-    void OnRecordingShortcutPressed(InputAction.CallbackContext context)
+    void OnRecordingShortcutPressed(InputAction.CallbackContext context) => ToggleTake("director's B");
+
+    // The actor's B (ActorRigSync), for an actor who is their own director. Off = only the
+    // director starts and stops takes.
+    [Tooltip("The actor's B on the Quest can start (countdown) and stop the take.")]
+    public bool actorCanStartTakes = true;
+
+    void OnActorTakeToggle()
+    {
+        if (!actorCanStartTakes)
+            return;
+        if (IsDecisionPanelOpen)
+        {
+            FloatingMessage.Show("El actor pidió otra toma: guarda o descarta esta primero");
+            return;
+        }
+        ToggleTake("actor's B");
+    }
+
+    void ToggleTake(string who)
     {
         // Ensayo Remoto only - Inspección de Escenas has no live actor to record.
         if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
             return;
 
+        Debug.Log($"[Recorder] take toggled by the {who}");
         if (IsRecording)
             StopRecording();
         else if (countdown != null)

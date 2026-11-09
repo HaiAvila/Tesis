@@ -56,6 +56,9 @@ public class CueEngine : MonoBehaviour
 
     public bool IsPlaying => playing;
 
+    // Acción on the machine with the pods (whether or not the shot has cues).
+    public static event System.Action TakeStarted;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Create()
     {
@@ -172,6 +175,7 @@ public class CueEngine : MonoBehaviour
             return;
         }
 
+        TakeStarted?.Invoke();
         queue.Clear();
         sceneShots.Clear();
         cutPlayed = false;

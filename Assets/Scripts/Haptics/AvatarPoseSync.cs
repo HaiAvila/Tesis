@@ -107,6 +107,19 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
     float localRootYaw;
     bool localHasRootYaw;
 
+    // Re-anchoring the body's facing to the headset. The facing is the T-pose's, relative to the
+    // rig, plus how the rig turned since - which breaks when the Quest re-centers its tracking
+    // (taking the headset off can do it): the app turns the rig back so the view faces the mark,
+    // and the avatar turned with it although the actor didn't (seen Nov 9: 120° off for three
+    // takes). So the facing is put back under the head at each Acción - the actor stands on
+    // the mark, head and body together - and whenever body and head stay further apart than a
+    // neck can turn. Sending machine only; the corrected facing is synced as rootYaw.
+    const float ImpossibleTwist = 100f;
+    const float ImpossibleSeconds = 1f;
+    Vector3 hipsRestForward = Vector3.forward;
+    float impossibleSince = -1f;
+    bool reanchorAtAccion;
+
     // Both
     bool shown;
     bool localPhaseMessage, remotePhaseMessage;
@@ -193,6 +206,8 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         rightFoot = avatar.GetBoneTransform(HumanBodyBones.RightFoot);
         headRest = Quaternion.Inverse(root.rotation) * head.rotation;
         headRestLocal = head.localRotation;
+        if (synced[0] != null)
+            hipsRestForward = Quaternion.Inverse(synced[0].rotation) * root.forward;
 
         // Before anything is resized, posed or hidden: what a replay's avatar starts from.
         playbackTemplate = Instantiate(avatar.gameObject, transform);
@@ -214,6 +229,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
         RehearsalSessionState.CommandSentLocally += OnCommand;
         ActorRigSync.CalibrationRequested += OnCalibrationRequested;
+        CueEngine.TakeStarted += OnTakeStarted;
 
 #if !DIRECTOR_BUILD
         // Left secondary (Y on a Quest): free on the actor. Simulator: T + N.
@@ -238,6 +254,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
             Instance = null;
         RehearsalSessionState.CommandSentLocally -= OnCommand;
         ActorRigSync.CalibrationRequested -= OnCalibrationRequested;
+        CueEngine.TakeStarted -= OnTakeStarted;
         if (sessionState != null)
             sessionState.OnCommand -= OnCommand;
 
@@ -596,6 +613,9 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
             }
         }
 
+        if (IsSending)
+            Reanchor();
+
         if (IsSending || IsReceiving)
             Place();
 
@@ -667,6 +687,50 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
         Vector3 shift = new Vector3(target.x - head.position.x, floorY - sole, target.z - head.position.z);
         root.position += shift;
     }
+
+    void OnTakeStarted() => reanchorAtAccion = true;
+
+    void Reanchor()
+    {
+        bool atAccion = reanchorAtAccion;
+        reanchorAtAccion = false;
+
+        ActorPositionSync actorHead = ActorPositionSync.Instance;
+        if (!localHasRootYaw || actorHead == null || !actorHead.IsLive || synced[0] == null)
+        {
+            impossibleSince = -1f;
+            return;
+        }
+
+        float headYaw = FlatYaw(actorHead.transform.forward);
+        float bodyYaw = FlatYaw(synced[0].rotation * hipsRestForward);
+        float error = Mathf.DeltaAngle(bodyYaw, headYaw);
+
+        if (Mathf.Abs(error) > ImpossibleTwist)
+        {
+            if (impossibleSince < 0f)
+                impossibleSince = Time.time;
+        }
+        else
+        {
+            impossibleSince = -1f;
+        }
+
+        bool impossible = impossibleSince >= 0f && Time.time - impossibleSince >= ImpossibleSeconds;
+        if (!atAccion && !impossible)
+            return;
+
+        localRootYaw += error;
+        impossibleSince = -1f;
+        Debug.Log($"[AvatarSync] facing re-anchored to the headset ({(atAccion ? "Acción" : "body and head too far apart")}): {error:+0;-0}°");
+        if (Online)
+        {
+            model.RequestOwnership();
+            model.rootYaw = localRootYaw;
+        }
+    }
+
+    static float FlatYaw(Vector3 forward) => Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
 
     static float CurrentRigYaw => ActorRigSync.Instance != null ? ActorRigSync.Instance.RigYaw : 0f;
 

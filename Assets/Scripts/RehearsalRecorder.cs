@@ -194,6 +194,75 @@ public class RehearsalRecorder : MonoBehaviour
         return true;
     }
 
+    // A countdown before Acción, for an actor who is also their own director: press B, put the
+    // headset on, and recording - t = 0 of the take, so the cues and the set's action line up -
+    // starts when it ends. A beep each second, higher for the last three and for Acción. B
+    // again cancels it. 0 = record right away.
+    [Tooltip("Seconds between pressing B and Acción (recording starts then). 0 = right away.")]
+    public float countdownSeconds = 10f;
+    Coroutine countdown;
+    AudioSource beepSource;
+    AudioClip lowBeep, highBeep, actionBeep;
+
+    System.Collections.IEnumerator CountdownThenRecord()
+    {
+        string scene = SceneManager.GetActiveScene().name;
+        Debug.Log($"[Recorder] countdown {countdownSeconds:F0} s before Acción");
+        for (int left = Mathf.CeilToInt(countdownSeconds); left > 0; left--)
+        {
+            Beep(left <= 3 ? highBeep : lowBeep);
+            FloatingMessage.Show($"Acción en {left}");
+            yield return new WaitForSeconds(1f);
+            if (SceneManager.GetActiveScene().name != scene || Bootstrap.Mode != Bootstrap.AppMode.Remote)
+            {
+                CancelCountdown("left the take");
+                yield break;
+            }
+        }
+        countdown = null;
+        Beep(actionBeep);
+        FloatingMessage.Show("¡Acción!");
+        StartRecording();
+    }
+
+    void CancelCountdown(string reason)
+    {
+        if (countdown != null)
+            StopCoroutine(countdown);
+        countdown = null;
+        FloatingMessage.Show("Cuenta regresiva cancelada");
+        Debug.Log($"[Recorder] countdown cancelled ({reason})");
+    }
+
+    void Beep(AudioClip clip)
+    {
+        if (beepSource == null)
+        {
+            beepSource = gameObject.AddComponent<AudioSource>();
+            beepSource.playOnAwake = false;
+            beepSource.spatialBlend = 0f;
+            lowBeep = Tone("BeepLow", 660f, 0.12f);
+            highBeep = Tone("BeepHigh", 990f, 0.12f);
+            actionBeep = Tone("BeepAction", 1320f, 0.45f);
+        }
+        beepSource.PlayOneShot(clip, 0.8f);
+    }
+
+    static AudioClip Tone(string name, float hz, float seconds)
+    {
+        const int rate = 44100;
+        int n = Mathf.RoundToInt(rate * seconds);
+        var data = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float envelope = Mathf.Min(1f, i / (rate * 0.005f)) * Mathf.Min(1f, (n - i) / (rate * 0.02f));
+            data[i] = 0.5f * envelope * Mathf.Sin(2f * Mathf.PI * hz * i / rate);
+        }
+        AudioClip clip = AudioClip.Create(name, n, 1, rate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
     void RunAfterDecision(int? savedSessionId)
     {
         Action<int?> done = afterDecision;
@@ -210,6 +279,10 @@ public class RehearsalRecorder : MonoBehaviour
 
         if (IsRecording)
             StopRecording();
+        else if (countdown != null)
+            CancelCountdown("B pressed again");
+        else if (countdownSeconds > 0f)
+            countdown = StartCoroutine(CountdownThenRecord());
         else
             StartRecording();
 

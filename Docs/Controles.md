@@ -76,6 +76,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 **Binding real:** `<XRController>{RightHand}/{secondaryButton}`
 **Binding en el Simulador:** `<XRSimulatedController>{RightHand}/secondaryButton`
 **Contexto:** `#if DIRECTOR_BUILD` (solo existe en el build de director) y `Bootstrap.IsContentScene(...)`.
+**Cuenta regresiva:** al presionar B no se graba de inmediato: hay **10 segundos** de cuenta regresiva con un pitido por segundo en la computadora del director (más agudo en los últimos 3) y "Acción en N" en pantalla; la grabación empieza en **"¡Acción!"**, que es el segundo 0 de la toma (ahí suenan las pistas de Acción y arranca el dron). Sirve cuando el actor es su propio director: presiona B y se pone el visor. **B otra vez durante la cuenta la cancela.** Se cambia en el inspector de `RehearsalRecorder` (`Countdown Seconds`; 0 = grabar al instante).
 **Solo Ensayo Remoto:** el gate revisa que sea una escena de contenido **y** que el modo sea `Remote` (`Bootstrap.Mode`). Antes solo revisaba lo primero, así que B también "grababa" en Inspección de Escenas, donde no hay un actor en vivo.
 **Escena completa:** B graba igual, pero la sesión se guarda como `tipo = "escena"` (shot `0`, con su escena), separada de los shots sueltos (`tipo = "toma"`). Toda sesión nueva lleva un `session_id` (GUID) creado al empezar a grabar. En el panel de fin de grabación de una escena completa **no aparece "Marcar como preferida"**: aprobar una escena necesita cortarla en referencias por shot, y eso viene después. "Marcar como favorita" sí.
 

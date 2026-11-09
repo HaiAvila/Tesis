@@ -25,6 +25,7 @@
 //      C,0,<cue>,<param>         id 0 = broadcast to every pod
 //
 //      cue: 0 STOP  1 CLICK  2 PULSE  3 TRIPLE  4 LONG  5 DOUBLE  6 DONE  7 FAIL
+//           8 STEP  9 RISE (pod v5) - forwarded as is, the receiver doesn't check the id
 //
 //  Try it by hand in the Serial Monitor (line ending = Newline):
 //      C,0,3,0      -> every pod plays the camera-start triple

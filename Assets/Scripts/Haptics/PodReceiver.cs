@@ -24,7 +24,8 @@ using Debug = UnityEngine.Debug;
 /// </remarks>
 public class PodReceiver : MonoBehaviour
 {
-    public enum Cue { Stop = 0, Click = 1, Pulse = 2, Triple = 3, Long = 4, Double = 5, Done = 6, Fail = 7 }
+    // Step (8, param = total ms/10) and Rise (9): pod firmware v5; older pods ignore them.
+    public enum Cue { Stop = 0, Click = 1, Pulse = 2, Triple = 3, Long = 4, Double = 5, Done = 6, Fail = 7, Step = 8, Rise = 9 }
 
     /// <summary>A pod's latest H line: its battery and charge status (read on the pod) and
     /// its signal (as the receiver sees it).</summary>

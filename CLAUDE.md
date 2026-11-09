@@ -21,7 +21,7 @@ The wider point of the system is **remote rehearsal** — actor and director can
 - **LRA haptic motor**: Vybronics VG0832013D, 8mm, 235Hz resonance, 1.8VAC rated, 1G (weak output) — one per band, across **9 pods**: sternum (pod 9, replaces the waist), biceps x2, wrists x2, quads x2, shins x2. **No hip pod**: the hips follow pod 9's yaw plus the headset's position. Which pod ID sits where, its humanoid bone and which way its USB end points: [`Docs/pod-map.md`](Docs/pod-map.md).
 - **IMU**: BNO085, **UNIT Electronics module** (not the Adafruit breakout — the I²C address is **0x4B**, not 0x4A). 9DOF, SH-2 sensor fusion. ICM-20948 as fallback/backup.
 - **Microcontroller**: Seeed XIAO nRF52840 (**non-Sense**), per pod, BLE. **Pods and receiver use different Arduino cores, on purpose:**
-  - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02; v4, 2026-11-04, adds the battery; v5, 2026-11-09, tunes and auto-calibrates the DRV2605L to the motor at power-up - first on pod 7 only). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
+  - **Pods: the mbed-enabled core** ("Seeed nRF52 mbed-enabled Boards" → "Seeed XIAO nRF52840 Sense"), with **ArduinoBLE** as a peripheral (firmware v3, 2026-11-02; v4, 2026-11-04, adds the battery; v5, 2026-11-09, tunes and auto-calibrates the DRV2605L to the motor at power-up, loop gain high, overdrive clamp ~3.5 V, and adds cues 8 STEP and 9 RISE - older pods ignore them). The classic core's `Wire` doesn't work with the BNO085 — a plain IMU sketch with no BLE and no DRV prints nothing on it — which is why every pod sample used to be `0,0,0,1`.
   - **Receiver: the classic "Seeed nRF52 Boards" core** (Adafruit's Bluefruit stack), because ArduinoBLE holds only one central connection and can't take 9 pods.
   - The two stacks interoperate. Don't move either one to the other core.
 - **Haptic driver**: DRV2605L, **UNIT Electronics DevLab module (UE0065)**, drives the LRA from the microcontroller.
@@ -73,6 +73,8 @@ H,<id>,<battery_mV>,<charging>,<rssi>   every 2 s per connected pod
 | 5 | DOUBLE | — | confirmations |
 | 6 | DONE | — | a pod calibrated |
 | 7 | FAIL | — | a pod failed to calibrate |
+| 8 | STEP | total ms ÷ 10 (0 = 360) | footstep: buzz, silence, buzz (150:60:150), ≥ 200 ms (v5) |
+| 9 | RISE | — | anticipation: 4 buzzes rising 40→100 % (v5) |
 
 Patterns run **on the pod**, not on the server: one BLE write plays a whole pattern, so timing survives radio contention and costs one packet instead of three. The calibration countdown is not firmware: `PodAvatar` is the clock and sends CLICK at 3, 2, 1 s before each capture, DOUBLE when a pose is captured, then DONE or FAIL per pod.
 

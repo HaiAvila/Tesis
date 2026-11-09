@@ -20,9 +20,9 @@ using UnityEngine;
 // says what a cue means:
 //   Acción  TRIPLE, every pod          Corte  LONG 500 ms, every pod
 //   Giro    CLICK, that side's wrist    Marca  DOUBLE, sternum
-//   Pasos   a 200 ms buzz (LONG 20) on the shins, alternating left/right, at the walk's cadence
-//   Aviso   clicks on the sternum that speed up (the firmware has no ascending pattern)
-//   Pasos from a body: one 200 ms buzz per real step, on that leg's shin
+//   Pasos   STEP on the shins (buzz, silence, buzz), alternating left/right, at the walk's cadence
+//   Aviso   RISE on the sternum: four buzzes rising 40-100% (firmware v5)
+//   Pasos from a body: one STEP per real step, on that leg's shin, as long as the gap allows
 //   Proximidad (the hand)  CLICKs on that wrist closer and closer over the reach, DOUBLE there
 //   Contacto  overlapping LONG pulses on that wrist for the whole hold (a sustained buzz)
 //   Sostener  LONG 600 ms on that wrist at the start of the hold, DOUBLE when it ends
@@ -31,16 +31,21 @@ public class CueEngine : MonoBehaviour
     public static CueEngine Instance { get; private set; }
 
     const int CutParam = 50;                       // LONG 500 ms
-    static readonly float[] AnticipationClicks = { 0f, 0.4f, 0.7f, 0.9f, 1.05f };
     const float ProximityFirstGap = 0.45f;         // s between clicks as the reach starts...
     const float ProximityLastGap = 0.1f;           // ...and as it arrives
     const float ContactRepeat = 1f;                // a new long pulse every second...
     const float ContactPulse = 1.2f;               // ...each 1.2 s, so they overlap
     const int HoldPulseParam = 60;                 // LONG 600 ms: "hold it there"
-    // A step: a 200 ms buzz. A CLICK (10-20 ms) is barely felt on a moving shin; tried by hand
-    // with cue.py on Nov 9 (CLICK, DOUBLE, 80, 120, 200 ms): 200 ms was the one felt walking.
-    const PodReceiver.Cue StepCue = PodReceiver.Cue.Long;
-    const int StepParam = 20;
+    // A step: the pods' STEP pattern (firmware v5): buzz, silence, buzz, 150:60:150, 360 ms at
+    // most, and never more than 65% of the time to the next step so fast walking doesn't blur
+    // them (200 ms at least). Chosen by feel on Nov 9 over CLICK, DOUBLE and single buzzes,
+    // which are barely felt on a moving shin.
+    const float StepMaxSeconds = 0.36f;
+    const float StepMinSeconds = 0.2f;
+    const float StepShareOfInterval = 0.65f;
+
+    static int StepParam(float secondsToNextStep) =>
+        Mathf.RoundToInt(Mathf.Clamp(secondsToNextStep * StepShareOfInterval, StepMinSeconds, StepMaxSeconds) * 100f);
 
     [Tooltip("Off only for testing without pods: plays (and logs) the timeline anyway.")]
     public bool requirePods = true;
@@ -289,12 +294,11 @@ public class CueEngine : MonoBehaviour
                     Add(at, cue.Pod != PodIds.All ? cue.Pod : PodIds.Sternum, PodReceiver.Cue.Double, 0, HapticCues.Name(cue.Kind));
                     break;
                 case CueKind.Anticipation:
-                    foreach (float offset in AnticipationClicks)
-                        Add(at + offset, PodIds.Sternum, PodReceiver.Cue.Click, 0, "Aviso");
+                    Add(at, PodIds.Sternum, PodReceiver.Cue.Rise, 0, "Aviso");
                     break;
                 case CueKind.Timing when cue.Dur <= 0f:
                     // A real step from the reference's body: that leg's shin, at that moment.
-                    Add(at, cue.Pod, StepCue, StepParam, "Paso");
+                    Add(at, cue.Pod, PodReceiver.Cue.Step, StepParam(NextStepAfter(cues, cue.T) - cue.T), "Paso");
                     break;
                 case CueKind.Proximity:
                     // The hand nearing its point: clicks closer and closer, then a double there.
@@ -318,7 +322,7 @@ public class CueEngine : MonoBehaviour
                     float step = 1f / Mathf.Max(cue.Param, 0.5f);
                     int n = 0;
                     for (float s = 0f; s < cue.Dur; s += step, n++)
-                        Add(at + s, n % 2 == 0 ? PodIds.LeftShin : PodIds.RightShin, StepCue, StepParam, "Paso");
+                        Add(at + s, n % 2 == 0 ? PodIds.LeftShin : PodIds.RightShin, PodReceiver.Cue.Step, StepParam(step), "Paso");
                     break;
                 default:
                     Debug.Log($"[CueEngine] {cue.Kind} not playable in timeline mode yet");
@@ -328,6 +332,16 @@ public class CueEngine : MonoBehaviour
         }
         queue.Sort((a, b) => a.At.CompareTo(b.At));
         Debug.Log($"[CueEngine] shot {shot}: {count} cues, {queue.Count} sends scheduled");
+    }
+
+    // When the next real step of the reference comes (either leg); far off if none.
+    static float NextStepAfter(List<CueEvent> cues, float t)
+    {
+        float next = float.MaxValue;
+        foreach (CueEvent c in cues)
+            if (c.Kind == CueKind.Timing && c.Dur <= 0f && c.T > t + 0.01f && c.T < next)
+                next = c.T;
+        return next == float.MaxValue ? t + 10f : next;
     }
 
     void Add(float at, int pod, PodReceiver.Cue cue, int param, string label) =>

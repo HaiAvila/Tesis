@@ -88,8 +88,11 @@ writes, before the chip's auto-calibration at every power-up (~1.2 s of buzzing)
 RATED_VOLTAGE 70 (= 1.8 V rms closed loop at 235 Hz, datasheet Eq. 5), DRIVE_TIME 16
 (2.1 ms, half of 235 Hz; Table 24), OD_CLAMP left at the default 0x8C (~3 V peak), FEEDBACK
 LRA with default brake/loop/back-EMF gains, AUTO_CAL_TIME 3. The serial port prints
-"DRV calibrated: comp=… bemf=… feedback=…" or "DRV calibration FAILED". First flashed on
-pod 7 only, to compare with pod 8 (v4) using the same cue (`7 4 20` vs `8 4 20`).
+"DRV calibrated: comp=… bemf=… feedback=…" or "DRV calibration FAILED". Tried first on
+pod 7 against pod 8 (v4), same cue (`7 4 20` vs `8 4 20`): pod 7 felt stronger. The final
+v5 also sets LOOP_GAIN high (full strength sooner in short pulses) and OD_CLAMP 0xA5
+(~3.5 V peak, only at a pulse's start and braking; the steady state stays at 1.8 V rms),
+and adds cues 8 STEP and 9 RISE.
 
 **Effect 118 does NOT run until stopped.** Despite being named "long buzz for
 programmatic stopping," it self-terminates after roughly 10 s. Verified on
@@ -487,6 +490,8 @@ still accepts v3's 16 bytes.
 | 5 | DOUBLE | — | confirmations |
 | 6 | DONE | — | calibrated OK: tick, click, strong buzz, rising |
 | 7 | FAIL | — | this pod failed: two heavy pulsing buzzes |
+| 8 | STEP | total ms ÷ 10 (0 = 360 ms, min 200) | v5. A footstep: effect 118 buzz, silence, buzz in 150:60:150 proportions. Chosen by feel (Nov 9) over CLICK, DOUBLE and single buzzes, barely felt on a moving shin; Unity shortens it to 65 % of the time to the next step |
+| 9 | RISE | — | v5. Anticipation: 4 buzzes of 150 ms, 50 ms apart, at 40/60/80/100 % in real-time playback (RTP) mode, then back to the internal library |
 
 **Patterns execute on the pod**, not the server: one BLE write plays a whole
 pattern, so timing survives radio contention and costs one packet instead of
@@ -535,8 +540,8 @@ virtual surface texture
 - [x] Avatar over Normcore (AvatarModel) — built; receiving on a second machine still to try
 - [x] **End-to-end latency** — measured 2026-11-09 (Unity `LatencyTest` scene, microphone):
       median 55 ms, p90 93 ms, preliminary; to repeat with all 9 pods connected
-- [ ] **Firmware v5** (DRV tuned + auto-calibrated at power-up): on pod 7 for an A/B
-      against pod 8, then all 9 if it's stronger
+- [ ] **Firmware v5** (DRV tuned + auto-calibrated at power-up, STEP and RISE): A/B on
+      pod 7 felt stronger (Nov 9); to flash on all 9
 - [ ] Walker Tape under sustained vibration + sweat, full session
 - [ ] The five MVP cues driven by scene state
 - [ ] Rehearsal workflow: scene selection, take approval

@@ -22,7 +22,8 @@ to wait in between:
 
 Cues: 0 STOP   1 CLICK   2 PULSE(param = ms/10)   3 TRIPLE
       4 LONG(param = ms/10, 0 = 500 ms)           5 DOUBLE
-      6 DONE   7 FAIL
+      6 DONE   7 FAIL   8 STEP(param = total ms/10, 0 = 360 ms)   9 RISE
+      (8 and 9: pod firmware v5)
 
 Pod id 0 means broadcast to every connected pod.
 """
@@ -33,7 +34,7 @@ import time
 HOST, PORT = "127.0.0.1", 5006
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-NAMES = {0: "STOP", 1: "CLICK", 2: "PULSE", 3: "TRIPLE", 4: "LONG", 5: "DOUBLE", 6: "DONE", 7: "FAIL"}
+NAMES = {0: "STOP", 1: "CLICK", 2: "PULSE", 3: "TRIPLE", 4: "LONG", 5: "DOUBLE", 6: "DONE", 7: "FAIL", 8: "STEP", 9: "RISE"}
 
 print(__doc__)
 

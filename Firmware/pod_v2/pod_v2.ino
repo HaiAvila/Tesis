@@ -13,13 +13,19 @@
 //      + cues 6 DONE and 7 FAIL. Everything else unchanged.
 // v5 = v4 + the DRV2605L tuned to this motor at every power-up (calibrateDRV):
 //      rated voltage, drive time for 235 Hz and the chip's auto-calibration, instead
-//      of factory defaults meant for another motor. Cues and BLE unchanged.
+//      of factory defaults meant for another motor; loop gain high and overdrive
+//      clamp ~3.5 V so short pulses hit full strength at once
+//      + cue 8 STEP (two buzzes with a silence, length from param) and
+//        cue 9 RISE (four buzzes rising 40-100%, real-time playback). BLE unchanged.
 //
 // Cue packet = 2 bytes: [cueId, param]
 //   0 STOP   1 CLICK   2 PULSE(param=ms/10)   3 TRIPLE
 //   4 LONG(param=ms/10, 0=500ms)              5 DOUBLE
 //   6 DONE  (calibration complete / all good: tick-click-buzz, rising)
 //   7 FAIL  (this pod failed: two heavy pulsing buzzes)
+//   8 STEP  (a footstep: buzz, silence, buzz in 150:60:150 proportions;
+//            param = total ms/10, 0 = 360 ms, never under 200 ms)
+//   9 RISE  (anticipation: 4 buzzes of 150 ms at 40/60/80/100 %, 50 ms apart)
 //
 // Quaternion notify = 19 bytes every 50 ms:
 //   0-15  four floats i, j, k, real (all four zero = no IMU reading)
@@ -39,7 +45,7 @@
 // not through the core's pin numbers, so there is no Arduino-pin-number mapping
 // that could point at the wrong pin.
 
-#define POD_ID  2
+#define POD_ID 7
 
 #include <ArduinoBLE.h>
 #include <Wire.h>
@@ -190,14 +196,32 @@ void serviceBattery() {
 
 // --- cue engine -----------------------------------------------------------
 enum { CUE_STOP = 0, CUE_CLICK, CUE_PULSE, CUE_TRIPLE, CUE_LONG, CUE_DOUBLE,
-       CUE_DONE, CUE_FAIL };
+       CUE_DONE, CUE_FAIL, CUE_STEP, CUE_RISE };
 
 volatile uint8_t pendingCue = 255, pendingParam = 0;
 uint8_t  curCue = CUE_STOP, curParam = 0, cueStep = 0;
 unsigned long cueT = 0;
 
+// RISE drives the motor in real-time playback (an amplitude written directly); every
+// other cue uses the internal library, so leaving RTP comes first.
+bool rtpActive = false;
+
+void endRtp() {
+  if (!drvOK || !rtpActive) return;
+  drv.setRealtimeValue(0);
+  drv.setMode(DRV2605_MODE_INTTRIG);
+  rtpActive = false;
+}
+
+void rtpLevel(uint8_t level) {     // 0..127 = 0..100 % of the rated voltage
+  if (!drvOK) return;
+  if (!rtpActive) { drv.setMode(DRV2605_MODE_REALTIME); rtpActive = true; }
+  drv.setRealtimeValue(level);
+}
+
 void fireEffect(uint8_t e) {
   if (!drvOK) return;
+  endRtp();
   drv.setWaveform(0, e);
   drv.setWaveform(1, 0);
   drv.go();
@@ -208,6 +232,7 @@ void fireEffect(uint8_t e) {
 // (value & 0x7F) x 10 ms.
 void fireSequence(const uint8_t* seq, uint8_t n) {
   if (!drvOK) return;
+  endRtp();
   uint8_t i = 0;
   for (; i < n && i < 7; i++) drv.setWaveform(i, seq[i]);
   drv.setWaveform(i, 0);           // end of sequence
@@ -222,7 +247,19 @@ const uint8_t SEQ_DONE[] = { 24, WAIT_MS(80), 1, WAIT_MS(80), 14 };
 // unlike TRIPLE / DOUBLE (short clicks) and LONG (one smooth buzz).
 const uint8_t SEQ_FAIL[] = { 52, WAIT_MS(100), 52 };
 
-void stopEffect() { if (drvOK) drv.stop(); }
+void stopEffect() {
+  if (!drvOK) return;
+  endRtp();
+  drv.stop();
+}
+
+// STEP: buzz - silence - buzz in 150:60:150 proportions of the total.
+const unsigned long STEP_DEFAULT_MS = 360, STEP_MIN_MS = 200;
+unsigned long stepBurstMs = 150, stepGapMs = 60;
+
+// RISE: 4 buzzes of 150 ms, 50 ms apart, rising 40/60/80/100 %.
+const uint8_t RISE_LEVELS[] = { 51, 76, 102, 127 };
+const unsigned long RISE_ON_MS = 150, RISE_OFF_MS = 50;
 
 // --- DRV2605L tuned to the LRA -------------------------------------------------
 // Vybronics VG0832013D: 1.8 V rms rated, 235 Hz resonance. The Adafruit library only
@@ -232,18 +269,19 @@ void stopEffect() { if (drvOK) drv.stop(); }
 //   RATED_VOLTAGE  Eq. 5, LRA closed loop:
 //                  V_rms = 20.7 mV x RATED / sqrt(1 - (4 x t_sample + 300 us) x f)
 //                  t_sample 300 us (SAMPLE_TIME 3), f 235 Hz -> RATED = 70 for 1.8 V rms
-//   OD_CLAMP       left at the chip's default (0x8C, about 3 V peak): overdrive is no
-//                  stronger than before
+//   OD_CLAMP       0xA5, about 3.5 V peak (default 0x8C, about 3 V): only the overdrive
+//                  at a pulse's start and the braking at its end may reach it, so short
+//                  pulses get to full strength at once; the steady state stays at RATED
 //   DRIVE_TIME     Table 24: drive time = DRIVE_TIME x 0.1 ms + 0.5 ms, about half the
 //                  period; 235 Hz -> 2.13 ms -> 16 (default 19 = ~208 Hz)
-//   FEEDBACK       LRA, brake factor 3x, loop gain medium, back-EMF gain 2 (defaults
-//                  apart from the LRA bit; the calibration sets the gain itself)
+//   FEEDBACK       LRA, brake factor 4x (default), loop gain HIGH (faster to full
+//                  strength), back-EMF gain 2 (the calibration sets it itself)
 //   CONTROL4       AUTO_CAL_TIME 3 (1-1.2 s), as the datasheet suggests
 // The calibration (section 8.5.6) runs ~1.2 s with the motor buzzing, every power-up,
 // and fills A_CAL_COMP, A_CAL_BEMF and BEMF_GAIN. DIAG_RESULT set = it failed: the
 // tuned voltage and drive time stay, with the default compensation.
 const uint8_t DRV_RATED_VOLTAGE = 70;
-const uint8_t DRV_OD_CLAMP      = 0x8C;
+const uint8_t DRV_OD_CLAMP      = 0xA5;
 const uint8_t DRV_DRIVE_TIME    = 16;
 
 bool drvCalibrated = false;
@@ -252,7 +290,7 @@ void calibrateDRV() {
   drv.writeRegister8(DRV2605_REG_MODE, DRV2605_MODE_AUTOCAL);
   drv.writeRegister8(DRV2605_REG_RATEDV, DRV_RATED_VOLTAGE);
   drv.writeRegister8(DRV2605_REG_CLAMPV, DRV_OD_CLAMP);
-  drv.writeRegister8(DRV2605_REG_FEEDBACK, 0x80 | (3 << 4) | (1 << 2) | 2);
+  drv.writeRegister8(DRV2605_REG_FEEDBACK, 0x80 | (3 << 4) | (2 << 2) | 2);
   drv.writeRegister8(DRV2605_REG_CONTROL1, 0x80 | DRV_DRIVE_TIME);   // + STARTUP_BOOST
   drv.writeRegister8(DRV2605_REG_CONTROL2, 0xF5);                    // defaults: sample 300 us
   drv.writeRegister8(DRV2605_REG_CONTROL4, 0x30);                    // AUTO_CAL_TIME 3
@@ -283,6 +321,15 @@ void startCue(uint8_t id, uint8_t param) {
     case CUE_DOUBLE: fireEffect(1); cueStep = 1; break;
     case CUE_DONE:   fireSequence(SEQ_DONE, sizeof(SEQ_DONE)); curCue = CUE_STOP; break;
     case CUE_FAIL:   fireSequence(SEQ_FAIL, sizeof(SEQ_FAIL)); curCue = CUE_STOP; break;
+    case CUE_STEP: {
+      unsigned long total = param ? param * 10UL : STEP_DEFAULT_MS;
+      if (total < STEP_MIN_MS) total = STEP_MIN_MS;
+      stepBurstMs = total * 150 / 360;
+      stepGapMs   = total - 2 * stepBurstMs;
+      fireEffect(118); cueStep = 1;               // 1 first buzz, 2 silence, 3 second
+      break;
+    }
+    case CUE_RISE:   rtpLevel(RISE_LEVELS[0]); cueStep = 0; break;   // even = on, odd = off
     default:         curCue = CUE_STOP; break;     // unknown cue: ignore
   }
 }
@@ -312,6 +359,22 @@ void serviceCue() {
         if (cueStep < 2) { fireEffect(1); cueStep++; } else curCue = CUE_STOP;
       }
       break;
+    case CUE_STEP:
+      if (cueStep == 1 && now - cueT >= stepBurstMs)      { stopEffect(); cueT = now; cueStep = 2; }
+      else if (cueStep == 2 && now - cueT >= stepGapMs)   { fireEffect(118); cueT = now; cueStep = 3; }
+      else if (cueStep == 3 && now - cueT >= stepBurstMs) { stopEffect(); curCue = CUE_STOP; }
+      break;
+    case CUE_RISE: {
+      bool on = (cueStep % 2) == 0;
+      if (now - cueT < (on ? RISE_ON_MS : RISE_OFF_MS)) break;
+      cueT = now;
+      cueStep++;
+      uint8_t level = cueStep / 2;
+      if (cueStep >= 2 * sizeof(RISE_LEVELS) - 1) { stopEffect(); curCue = CUE_STOP; }
+      else if (cueStep % 2 == 0) rtpLevel(RISE_LEVELS[level]);
+      else rtpLevel(0);
+      break;
+    }
   }
 }
 

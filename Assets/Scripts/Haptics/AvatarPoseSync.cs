@@ -299,7 +299,7 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
         if (!PodsAvailable)
         {
-            FloatingMessage.Show("No hay pods conectados");
+            FloatingMessage.Show("No hay pods: abre la app en la computadora con los pods y el receptor");
             return;
         }
 

@@ -31,6 +31,29 @@ public class ShotListDatabase : MonoBehaviour
         }
 
         GenerateMissingCueTracks();
+        StartCoroutine(RegenerateIfGeneratorChanged());
+    }
+
+    const string GeneratorVersionKey = "CueGenerator.Version";
+
+    // A newer CueGenerator makes every preferida's auto cues again - a moment after start, so
+    // AvatarPoseSync (the avatar the body is read with) is up.
+    System.Collections.IEnumerator RegenerateIfGeneratorChanged()
+    {
+        if (PlayerPrefs.GetInt(GeneratorVersionKey, 0) == CueGenerator.Version)
+            yield break;
+        for (int i = 0; i < 30 && AvatarPoseSync.Instance == null; i++)
+            yield return null;
+        yield return null;
+
+        List<RecordingSession> preferidas;
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            preferidas = connection.Query<RecordingSession>("SELECT * FROM Sesiones WHERE es_preferida = 1 AND tipo = ?;", RecordingSession.TipoToma);
+        Debug.Log($"[Cues] generator version {CueGenerator.Version}: regenerating {preferidas.Count} preferidas");
+        foreach (RecordingSession session in preferidas)
+            RegenerateAutoCues(session);
+        PlayerPrefs.SetInt(GeneratorVersionKey, CueGenerator.Version);
+        PlayerPrefs.Save();
     }
 
     // Each shot's haptic cue timeline (CueKind, pod, time). source "auto" rows come from the
@@ -104,7 +127,10 @@ public class ShotListDatabase : MonoBehaviour
         if (session == null || session.IsScene)
             return 0;
 
-        List<CueEvent> cues = CueGenerator.Generate(GetMetricsForSession(session.Id), session.Duracion);
+        Shot shot = GetShot(session.ShotNumber);
+        CueGenerator.ShotPlan plan = CueGenerator.ShotPlan.FromNotes(shot != null ? shot.Notes : null);
+        BodyTrack body = BodyTrack.FromTake(GetPoseTrackForSession(session.Id), session.AvatarLayout);
+        List<CueEvent> cues = CueGenerator.Generate(GetMetricsForSession(session.Id), session.Duracion, plan, body);
         foreach (CueEvent cue in cues)
         {
             cue.SceneNumber = session.SceneNumber;
@@ -122,7 +148,7 @@ public class ShotListDatabase : MonoBehaviour
             });
         }
 
-        Debug.Log($"[Cues] shot {session.ShotNumber}: {cues.Count} automatic cues from take {session.Id} ({session.SessionGuid})");
+        Debug.Log($"[Cues] shot {session.ShotNumber}: {cues.Count} automatic cues from take {session.Id} ({session.SessionGuid}), {(body != null ? "with the body" : "head only")}, {plan}");
         return cues.Count;
     }
 

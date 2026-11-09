@@ -70,6 +70,9 @@ public static class HapticCues
             case CueKind.Timing: return new Color(0.66f, 0.52f, 1f, 1f);
             case CueKind.Anticipation: return new Color(1f, 0.62f, 0.22f, 1f);
             case CueKind.Checkpoint: return new Color(0.35f, 0.88f, 0.5f, 1f);
+            case CueKind.Proximity: return new Color(1f, 0.45f, 0.72f, 1f);
+            case CueKind.Contact: return new Color(0.98f, 0.86f, 0.3f, 1f);
+            case CueKind.HoldPosition: return new Color(0.62f, 0.76f, 1f, 1f);
             default: return new Color(0.8f, 0.8f, 0.8f, 1f);
         }
     }

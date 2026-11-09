@@ -22,12 +22,21 @@ using UnityEngine;
 //   Giro    CLICK, that side's wrist    Marca  DOUBLE, sternum
 //   Pasos   CLICK on the shins, alternating left/right, at the walk's cadence, for its span
 //   Aviso   clicks on the sternum that speed up (the firmware has no ascending pattern)
+//   Pasos from a body: one CLICK per real step, on that leg's shin
+//   Proximidad (the hand)  CLICKs on that wrist closer and closer over the reach, DOUBLE there
+//   Contacto  overlapping LONG pulses on that wrist for the whole hold (a sustained buzz)
+//   Sostener  LONG 600 ms on that wrist at the start of the hold, DOUBLE when it ends
 public class CueEngine : MonoBehaviour
 {
     public static CueEngine Instance { get; private set; }
 
     const int CutParam = 50;                       // LONG 500 ms
     static readonly float[] AnticipationClicks = { 0f, 0.4f, 0.7f, 0.9f, 1.05f };
+    const float ProximityFirstGap = 0.45f;         // s between clicks as the reach starts...
+    const float ProximityLastGap = 0.1f;           // ...and as it arrives
+    const float ContactRepeat = 1f;                // a new long pulse every second...
+    const float ContactPulse = 1.2f;               // ...each 1.2 s, so they overlap
+    const int HoldPulseParam = 60;                 // LONG 600 ms: "hold it there"
 
     [Tooltip("Off only for testing without pods: plays (and logs) the timeline anyway.")]
     public bool requirePods = true;
@@ -278,6 +287,28 @@ public class CueEngine : MonoBehaviour
                 case CueKind.Anticipation:
                     foreach (float offset in AnticipationClicks)
                         Add(at + offset, PodIds.Sternum, PodReceiver.Cue.Click, 0, "Aviso");
+                    break;
+                case CueKind.Timing when cue.Dur <= 0f:
+                    // A real step from the reference's body: that leg's shin, at that moment.
+                    Add(at, cue.Pod, PodReceiver.Cue.Click, 0, "Paso");
+                    break;
+                case CueKind.Proximity:
+                    // The hand nearing its point: clicks closer and closer, then a double there.
+                    for (float s = 0f; s < cue.Dur;)
+                    {
+                        Add(at + s, cue.Pod, PodReceiver.Cue.Click, 0, "Proximidad");
+                        s += Mathf.Lerp(ProximityFirstGap, ProximityLastGap, s / cue.Dur);
+                    }
+                    Add(at + cue.Dur, cue.Pod, PodReceiver.Cue.Double, 0, "Proximidad: llegaste");
+                    break;
+                case CueKind.Contact:
+                    // A sustained buzz: long pulses that overlap (the motor stops on its own).
+                    for (float s = 0f; s < cue.Dur; s += ContactRepeat)
+                        Add(at + s, cue.Pod, PodReceiver.Cue.Long, Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(ContactPulse, cue.Dur - s + 0.1f) * 100f), 10, 255), "Contacto");
+                    break;
+                case CueKind.HoldPosition:
+                    Add(at, cue.Pod, PodReceiver.Cue.Long, HoldPulseParam, "Sostener");
+                    Add(at + cue.Dur, cue.Pod, PodReceiver.Cue.Double, 0, "Sostener: listo");
                     break;
                 case CueKind.Timing:
                     float step = 1f / Mathf.Max(cue.Param, 0.5f);

@@ -51,16 +51,16 @@ public class RecordingPlaybackController : MonoBehaviour
     const float TickWidth = 3f;
     const float TickLabelRowHeight = 16f;
 
-    // The shot's haptic cue timeline under the slider (saved single-shot takes): ticks for
-    // single cues, bars for Pasos, a colour legend. Filled for the preferida, the take the
-    // cues are generated from; a hint otherwise.
+    // The haptic cue timeline under the slider: ticks for single cues, bars for Pasos, a colour
+    // legend. The preferida shows its shot's saved cues; any other take (a full-scene one, the
+    // replay right after recording) shows a preview generated on the spot, not saved.
     const float CueLaneHeight = 20f;
     const float CueLegendHeight = 20f;
     const float CueLegendFontSize = 15f;
     const float CueTickWidth = 4f;
     const float CueBarHeight = 6f;
     RectTransform cueRow;
-    bool ShowsCueRow => currentSession != null && !currentSession.IsScene;
+    bool ShowsCueRow => samples != null && samples.Count > 1;
     const int TickLabelFontSize = 13;
     const float TickLabelWidth = 40f;
     static readonly Color TickColor = new Color(1f, 0.82f, 0.3f, 1f);
@@ -1233,14 +1233,15 @@ public class RecordingPlaybackController : MonoBehaviour
             Destroy(cueRow.GetChild(i).gameObject);
 
         ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
-        List<CueEvent> cues = database != null && currentSession.EsPreferida ? database.GetCueTrack(currentSession.ShotNumber) : null;
+        bool saved = currentSession != null && currentSession.EsPreferida && !currentSession.IsScene && database != null;
+        List<CueEvent> cues = saved
+            ? database.GetCueTrack(currentSession.ShotNumber)
+            : CueGenerator.Generate(samples, currentSession != null ? currentSession.Duracion : totalDuration);
 
         TMP_Text legend = CreateCueText(cueRow, "Legend", 0f, CueLegendHeight);
-        if (cues == null || cues.Count == 0)
+        if (cues.Count == 0)
         {
-            legend.text = currentSession.EsPreferida
-                ? "Pistas hápticas: no se encontraron en esta toma"
-                : "Pistas hápticas: marca esta toma como preferida para generarlas";
+            legend.text = "Pistas hápticas: no se encontraron en esta toma";
             return;
         }
 
@@ -1256,12 +1257,14 @@ public class RecordingPlaybackController : MonoBehaviour
 
         float duration = Mathf.Max(totalDuration, 0.01f);
         var kinds = new List<CueKind>();
-        foreach (bool spans in new[] { true, false }) // bars first, ticks over them
+        for (int layer = 0; layer < 3; layer++) // bars, then ticks, then Acción/Corte on top
         {
             foreach (CueEvent cue in cues)
             {
-                if ((cue.Dur > 0f) != spans)
+                bool frame = cue.Kind == CueKind.CameraStart || cue.Kind == CueKind.Cut;
+                if (layer != (cue.Dur > 0f ? 0 : frame ? 2 : 1))
                     continue;
+                bool spans = layer == 0;
                 if (!kinds.Contains(cue.Kind))
                     kinds.Add(cue.Kind);
 
@@ -1288,10 +1291,10 @@ public class RecordingPlaybackController : MonoBehaviour
         }
 
         kinds.Sort();
-        var text = new System.Text.StringBuilder();
+        var text = new System.Text.StringBuilder(saved ? "" : "Vista previa:   ");
         foreach (CueKind kind in kinds)
         {
-            if (text.Length > 0)
+            if (kind != kinds[0])
                 text.Append("   ");
             text.Append($"<color=#{ColorUtility.ToHtmlStringRGB(HapticCues.Color(kind))}>{HapticCues.Name(kind)}</color>");
         }

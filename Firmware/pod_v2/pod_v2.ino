@@ -45,7 +45,7 @@
 // not through the core's pin numbers, so there is no Arduino-pin-number mapping
 // that could point at the wrong pin.
 
-#define POD_ID 7
+#define POD_ID  2
 
 #include <ArduinoBLE.h>
 #include <Wire.h>

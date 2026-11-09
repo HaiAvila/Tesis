@@ -50,6 +50,17 @@ public class RecordingPlaybackController : MonoBehaviour
     // number ("T6") in a row under the slider. Placeholder look, not tuned.
     const float TickWidth = 3f;
     const float TickLabelRowHeight = 16f;
+
+    // The shot's haptic cue timeline under the slider (saved single-shot takes): ticks for
+    // single cues, bars for Pasos, a colour legend. Filled for the preferida, the take the
+    // cues are generated from; a hint otherwise.
+    const float CueLaneHeight = 20f;
+    const float CueLegendHeight = 20f;
+    const float CueLegendFontSize = 15f;
+    const float CueTickWidth = 4f;
+    const float CueBarHeight = 6f;
+    RectTransform cueRow;
+    bool ShowsCueRow => currentSession != null && !currentSession.IsScene;
     const int TickLabelFontSize = 13;
     const float TickLabelWidth = 40f;
     static readonly Color TickColor = new Color(1f, 0.82f, 0.3f, 1f);
@@ -284,6 +295,7 @@ public class RecordingPlaybackController : MonoBehaviour
 
         playbackAvatar = null;
         panelObject = null;
+        cueRow = null;
         cameraSamples = null;
         cameraMarker = null;
         playbackCamera = null;
@@ -574,6 +586,8 @@ public class RecordingPlaybackController : MonoBehaviour
         float panelHeight = ButtonSize + RowSpacing + SliderHeight + RowSpacing + (TimeLabelFontSize + 6f) + PanelPadding * 2f;
         if (boundaries != null)
             panelHeight += TickLabelRowHeight + RowSpacing; // the shot numbers under the slider's ticks
+        if (ShowsCueRow)
+            panelHeight += CueLaneHeight + CueLegendHeight + RowSpacing;
 
         panelObject = new GameObject("PlaybackPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
 
@@ -619,6 +633,8 @@ public class RecordingPlaybackController : MonoBehaviour
         BuildSlider(rootRect);
         if (boundaries != null)
             BuildShotTicks(rootRect);
+        if (ShowsCueRow)
+            BuildCueRow(rootRect);
         BuildTimeText(rootRect);
 
         XRUISetup.MoveToUILayer(panelObject);
@@ -999,6 +1015,7 @@ public class RecordingPlaybackController : MonoBehaviour
         currentSession.EsPreferida = true;
 
         ApplyPreferidaVisual(true);
+        RefreshCueRow();
     }
 
     void OnFavoritaClicked()
@@ -1197,6 +1214,109 @@ public class RecordingPlaybackController : MonoBehaviour
             labelText.overflowMode = TextOverflowModes.Overflow;
             labelText.raycastTarget = false;
         }
+    }
+
+    void BuildCueRow(RectTransform parent)
+    {
+        var rowObject = new GameObject("CueRow", typeof(RectTransform), typeof(LayoutElement));
+        rowObject.transform.SetParent(parent, false);
+        rowObject.GetComponent<LayoutElement>().preferredHeight = CueLaneHeight + CueLegendHeight;
+        cueRow = (RectTransform)rowObject.transform;
+        RefreshCueRow();
+    }
+
+    public void RefreshCueRow()
+    {
+        if (cueRow == null)
+            return;
+        for (int i = cueRow.childCount - 1; i >= 0; i--)
+            Destroy(cueRow.GetChild(i).gameObject);
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        List<CueEvent> cues = database != null && currentSession.EsPreferida ? database.GetCueTrack(currentSession.ShotNumber) : null;
+
+        TMP_Text legend = CreateCueText(cueRow, "Legend", 0f, CueLegendHeight);
+        if (cues == null || cues.Count == 0)
+        {
+            legend.text = currentSession.EsPreferida
+                ? "Pistas hápticas: no se encontraron en esta toma"
+                : "Pistas hápticas: marca esta toma como preferida para generarlas";
+            return;
+        }
+
+        // The lane, inset like the slider's handle so a cue at t sits where the handle is at t.
+        var laneObject = new GameObject("CueLane", typeof(RectTransform));
+        laneObject.transform.SetParent(cueRow, false);
+        var laneRect = (RectTransform)laneObject.transform;
+        laneRect.anchorMin = new Vector2(0f, 1f);
+        laneRect.anchorMax = new Vector2(1f, 1f);
+        laneRect.pivot = new Vector2(0.5f, 1f);
+        laneRect.sizeDelta = new Vector2(0f, CueLaneHeight);
+        RectTransform lane = CreateHandleInsetArea(laneRect, "Inset");
+
+        float duration = Mathf.Max(totalDuration, 0.01f);
+        var kinds = new List<CueKind>();
+        foreach (bool spans in new[] { true, false }) // bars first, ticks over them
+        {
+            foreach (CueEvent cue in cues)
+            {
+                if ((cue.Dur > 0f) != spans)
+                    continue;
+                if (!kinds.Contains(cue.Kind))
+                    kinds.Add(cue.Kind);
+
+                var mark = new GameObject($"Cue_{cue.Kind}", typeof(RectTransform), typeof(Image));
+                mark.transform.SetParent(lane, false);
+                var rect = (RectTransform)mark.transform;
+                float x0 = Mathf.Clamp01(cue.T / duration);
+                if (spans)
+                {
+                    rect.anchorMin = new Vector2(x0, 0.5f);
+                    rect.anchorMax = new Vector2(Mathf.Clamp01((cue.T + cue.Dur) / duration), 0.5f);
+                    rect.sizeDelta = new Vector2(0f, CueBarHeight);
+                }
+                else
+                {
+                    rect.anchorMin = new Vector2(x0, 0f);
+                    rect.anchorMax = new Vector2(x0, 1f);
+                    rect.sizeDelta = new Vector2(CueTickWidth, 0f);
+                }
+                Image image = mark.GetComponent<Image>();
+                image.color = HapticCues.Color(cue.Kind);
+                image.raycastTarget = false;
+            }
+        }
+
+        kinds.Sort();
+        var text = new System.Text.StringBuilder();
+        foreach (CueKind kind in kinds)
+        {
+            if (text.Length > 0)
+                text.Append("   ");
+            text.Append($"<color=#{ColorUtility.ToHtmlStringRGB(HapticCues.Color(kind))}>{HapticCues.Name(kind)}</color>");
+        }
+        legend.text = text.ToString();
+    }
+
+    TMP_Text CreateCueText(RectTransform parent, string name, float bottom, float height)
+    {
+        var textObject = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+        var rect = (RectTransform)textObject.transform;
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(1f, 0f);
+        rect.pivot = new Vector2(0.5f, 0f);
+        rect.anchoredPosition = new Vector2(0f, bottom);
+        rect.sizeDelta = new Vector2(0f, height);
+        var tmp = textObject.GetComponent<TextMeshProUGUI>();
+        tmp.font = GlassUI.Regular;
+        tmp.fontSize = CueLegendFontSize;
+        tmp.color = GlassUI.SubTextColor;
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.enableWordWrapping = false;
+        tmp.overflowMode = TextOverflowModes.Ellipsis;
+        tmp.raycastTarget = false;
+        return tmp;
     }
 
     static RectTransform CreateHandleInsetArea(RectTransform parent, string name)

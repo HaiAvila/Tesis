@@ -26,7 +26,84 @@ public class ShotListDatabase : MonoBehaviour
             CreateShotBoundariesTable(connection);
             CreateCameraFramingsTable(connection);
             EnsureCameraFramingsColumns(connection);
+            CreateCueTrackTable(connection);
         }
+
+        GenerateMissingCueTracks();
+    }
+
+    // Each shot's haptic cue timeline (CueKind, pod, time). source "auto" rows come from the
+    // shot's preferida take (CueGenerator) and are replaced whenever another take becomes the
+    // preferida; "manual" rows (the timeline editor, later) are the director's and are kept.
+    // session_guid: the take an auto row was made from. A brand new table.
+    void CreateCueTrackTable(SQLiteConnection connection)
+    {
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS CueTrack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scene_number INTEGER,
+                shot_number INTEGER,
+                session_guid TEXT,
+                t REAL,
+                dur REAL NOT NULL DEFAULT 0,
+                cue INTEGER,
+                pod INTEGER NOT NULL DEFAULT 0,
+                param REAL NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'auto'
+            );");
+        connection.Execute("CREATE INDEX IF NOT EXISTS CueTrack_shot_number ON CueTrack (shot_number);");
+    }
+
+    public List<CueEvent> GetCueTrack(int shotNumber)
+    {
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        {
+            return connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? ORDER BY t ASC;", shotNumber);
+        }
+    }
+
+    // The shot's automatic cues, made again from this take (its preferida). Manual rows stay.
+    public int RegenerateAutoCues(RecordingSession session)
+    {
+        if (session == null || session.IsScene)
+            return 0;
+
+        List<CueEvent> cues = CueGenerator.Generate(GetMetricsForSession(session.Id), session.Duracion);
+        foreach (CueEvent cue in cues)
+        {
+            cue.SceneNumber = session.SceneNumber;
+            cue.ShotNumber = session.ShotNumber;
+            cue.SessionGuid = session.SessionGuid;
+            cue.Source = CueEvent.SourceAuto;
+        }
+
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        {
+            connection.RunInTransaction(() =>
+            {
+                connection.Execute("DELETE FROM CueTrack WHERE shot_number = ? AND source = ?;", session.ShotNumber, CueEvent.SourceAuto);
+                connection.InsertAll(cues);
+            });
+        }
+
+        Debug.Log($"[Cues] shot {session.ShotNumber}: {cues.Count} automatic cues from take {session.Id} ({session.SessionGuid})");
+        return cues.Count;
+    }
+
+    // Preferida takes approved before cues existed (or on another device's copy of the
+    // database) get their automatic timeline once.
+    void GenerateMissingCueTracks()
+    {
+        List<RecordingSession> missing;
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        {
+            missing = connection.Query<RecordingSession>(
+                "SELECT * FROM Sesiones WHERE es_preferida = 1 AND tipo = ? AND shot_number NOT IN (SELECT shot_number FROM CueTrack WHERE source = ?);",
+                RecordingSession.TipoToma, CueEvent.SourceAuto);
+        }
+
+        foreach (RecordingSession session in missing)
+            RegenerateAutoCues(session);
     }
 
     // Where each shot starts and ends inside a full-scene recording, in the recording's own
@@ -248,6 +325,9 @@ public class ShotListDatabase : MonoBehaviour
             });
 
             int boundaryCount = boundaries != null ? boundaries.Count : 0;
+            if (esPreferida)
+                RegenerateAutoCues(session);
+
             Debug.Log($"{(tipo == RecordingSession.TipoEscena ? "[Escena] " : "")}ShotListDatabase: saved session {session.Id} ({tipo}, scene {sceneNumber}, shot {shotNumber}, guid {sessionGuid}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {boundaryCount} shot boundaries, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
         }
@@ -267,6 +347,8 @@ public class ShotListDatabase : MonoBehaviour
                 connection.Execute("UPDATE Sesiones SET es_preferida = 1 WHERE id = ?;", sessionId);
             });
         }
+
+        RegenerateAutoCues(GetSession(sessionId));
     }
 
     // Non-exclusive bookmark - marking or unmarking one session never touches any other.
@@ -549,6 +631,7 @@ public class ShotListDatabase : MonoBehaviour
                 connection.Execute("DELETE FROM PoseTrack WHERE sesion_id = ?;", session.Id);
                 connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM NotasVoz WHERE session_guid = ?;", session.SessionGuid);
+                connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source = ?;", session.SessionGuid, CueEvent.SourceAuto);
                 connection.Execute("DELETE FROM Sesiones WHERE id = ?;", session.Id);
             });
         }
@@ -949,6 +1032,31 @@ public class VoiceNote
     [Column("fecha_hora")] public string FechaHora { get; set; }
     [Column("duracion")] public float Duracion { get; set; }
     [Column("archivo")] public string Archivo { get; set; }
+}
+
+[Table("CueTrack")]
+public class CueEvent
+{
+    public const string SourceAuto = "auto";
+    public const string SourceManual = "manual";
+
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Column("scene_number")] public int SceneNumber { get; set; }
+    [Indexed, Column("shot_number")] public int ShotNumber { get; set; }
+    [Column("session_guid")] public string SessionGuid { get; set; }
+    // Seconds from Acción.
+    [Column("t")] public float T { get; set; }
+    // 0 = a single cue; otherwise a span (Pasos: the walk).
+    [Column("dur")] public float Dur { get; set; }
+    // A CueKind.
+    [Column("cue")] public int Cue { get; set; }
+    // PodIds; 0 = every pod.
+    [Column("pod")] public int Pod { get; set; }
+    // Per kind: Pasos = steps per second; Giro = degrees (> 0 right).
+    [Column("param")] public float Param { get; set; }
+    [Column("source")] public string Source { get; set; }
+
+    [Ignore] public CueKind Kind => (CueKind)Cue;
 }
 
 [Table("PoseTrack")]

@@ -15,9 +15,12 @@ using UnityEngine;
 //   cuerpo.csv   t + the avatar's root, head and 16 bones' local rotations, 20 Hz (PoseTrack)
 //   tomas.csv    a full-scene take's shot boundaries
 //   notas.csv    the director's voice notes, and their audio under notas/
+//   pistas.csv   the preferida take's shot's haptic cue timeline (CueTrack): t, duration, cue
+//                number and name, pod, parameter, auto/manual
 //   conversacion_director.wav, conversacion_actor.wav   what each one said during the take
 //
-// Notes can be added after a take was exported, so those are brought up to date every time.
+// Notes can be added after a take was exported, and the preferida (and so the cues) can change,
+// so those are brought up to date every time.
 // Notes of a shot in general, with no take, go in notas_sin_toma.
 // A file with no rows isn't written. Decimal points, whatever the machine's language.
 public static class TakeExporter
@@ -38,6 +41,7 @@ public static class TakeExporter
                 alreadyExported++;
                 ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), folder);
                 ExportConversation(session, folder);
+                ExportCues(database, session, folder);
                 continue;
             }
 
@@ -50,6 +54,7 @@ public static class TakeExporter
             Export(database, session, temporary);
             ExportNotes(database.GetVoiceNotesOfTake(session.SessionGuid), temporary);
             ExportConversation(session, temporary);
+            ExportCues(database, session, temporary);
             Directory.Move(temporary, folder);
             exported++;
         }
@@ -106,6 +111,21 @@ public static class TakeExporter
                 rows.Add(Row(b.ShotNumber, b.TIn, b.TOut.HasValue ? (object)b.TOut.Value : "", b.Source));
             WriteFile(folder, "tomas.csv", "shot,t_in,t_out,origen", rows);
         }
+    }
+
+    // Only in the preferida's folder: the cues belong to the shot and come from that take.
+    static void ExportCues(ShotListDatabase database, RecordingSession session, string folder)
+    {
+        string path = Path.Combine(folder, "pistas.csv");
+        if (File.Exists(path))
+            File.Delete(path);
+        if (!session.EsPreferida || session.IsScene)
+            return;
+
+        var rows = new List<string>();
+        foreach (CueEvent cue in database.GetCueTrack(session.ShotNumber))
+            rows.Add(Row(cue.T, cue.Dur, cue.Cue, cue.Kind.ToString(), cue.Pod, cue.Param, cue.Source));
+        WriteFile(folder, "pistas.csv", "t,duracion,cue,nombre,pod,param,origen", rows);
     }
 
     static void ExportConversation(RecordingSession session, string folder)

@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (replay audio on the Quest: the live voice silenced during a replay, the looping-audio bug).
+Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (automatic cue generator: CueTrack table, CueGenerator from the preferida take, cue row in the replay, pistas.csv).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -87,7 +87,7 @@ Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (replay audio
 | 2 | Shots: `cues` column | ⬜ Only `notes` (free text) |
 | 2 | Sesiones: scene_number, tipo, session_id GUID | ✅ Added with the PRAGMA + ALTER rule. `tipo` is "toma" (a shot) or "escena" (the whole scene, `shot_number` 0). `session_id` is a GUID made at record start for every take (`RecordingSession.SessionGuid` in C#, not to be confused with `id`, the local key that `Metricas`/`CamaraTrack.sesion_id` use). Older rows were migrated on start: tipo "toma", scene_number from Shots, a fresh GUID each. A scene take is never saved as preferida, and the stop panel hides "Marcar como preferida" for it |
 | 2 | es_preferida = approved reference, sends `aprobar` | 🟡 Preferida exists (exclusive per shot); nothing is sent |
-| 2 | PoseTrack / ShotBoundaries / CueTrack tables | 🟡 **ShotBoundaries** exists (`session_id` = the Sesiones GUID, `shot_number`, `t_in`, `t_out` in the recording's own seconds, `source` "manual"/"auto", indexed by `session_id`). Full-scene takes keep them in memory and write them with Guardar, in the same transaction as the session; Descartar drops them (and deletes any rows for that GUID). Automatic suggestions: `RehearsalRecorder.SuggestShotBoundariesAuto`, an empty hook for now (would return `source = "auto"` rows). PoseTrack and CueTrack ⬜ |
+| 2 | PoseTrack / ShotBoundaries / CueTrack tables | 🟡 **ShotBoundaries** exists (`session_id` = the Sesiones GUID, `shot_number`, `t_in`, `t_out` in the recording's own seconds, `source` "manual"/"auto", indexed by `session_id`). Full-scene takes keep them in memory and write them with Guardar, in the same transaction as the session; Descartar drops them (and deletes any rows for that GUID). Automatic suggestions: `RehearsalRecorder.SuggestShotBoundariesAuto`, an empty hook for now (would return `source = "auto"` rows). PoseTrack ✅ (the avatar, see P1-10). **CueTrack** ✅: `id`, `scene_number`, `shot_number` (indexed), `session_guid` (the take an auto row came from), `t` (s from Acción), `dur` (0 = single cue, else a span), `cue` (a `CueKind`), `pod` (0 = all), `param`, `source` "auto"/"manual". |
 | 2 | Metricas every 0.1 s on the director | ✅ `RehearsalRecorder`, `SampleInterval = 0.1` |
 | 3 | SceneSelect "Escena completa" entry | ✅ Director only, Ensayo Remoto and Inspección: an "Escena completa — shots X a Y" button heads each scene group (own color). In Remote it syncs scene + shot 0 and the take starts on the first shot's start mark; in Inspección it opens the scene's full-scene recordings. Not in Solo |
 | 3 | Approved-reference icon; Solo only allows those | 🟡 The session list has a star per session; no icon at shot level. In Solo, SceneSelect lists only shots for which `ApprovedReferences.HasApprovedReference(scene, shot)` is true, single shots only. The hook returns true for every shot until it can ask the server |
@@ -126,8 +126,8 @@ Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (replay audio
 | P1-9 | Server-side recording + server DB | ⬜ |
 | P1-10 | Director DB PoseTrack + avatar replay | ✅ |
 | P1-11 | Scene rehearsal + shot slicing | ⬜ |
-| P2-12 | Haptic vocabulary enum + command contract | ⬜ |
-| P2-13 | CueGenerator | ⬜ |
+| P2-12 | Haptic vocabulary enum + command contract | 🟡 `CueKind` (`Haptics/HapticCues.cs`) numbers the 13 cues as the vocabulary in CLAUDE.md, with Spanish names and colours for the UI; `PodIds` names the pods (Docs/pod-map.md). It's what a cue means; mapping each kind to a firmware pattern (`PodReceiver` cue IDs) is the CueEngine's job, not done yet. |
+| P2-13 | CueGenerator | ✅ `Haptics/CueGenerator.cs`, from the preferida take's head track (Metricas, ~10 Hz, so it works without pods): Acción at 0 and Corte at the end (all pods); each walk (smoothed speed > 0.3 m/s, < 0.15 to stop, pauses < 0.8 s merged, ≥ 1 m) → a Pasos span with a cadence from the speed (1.1 + 0.55·v steps/s, 1.2-2.3); a stop ≥ 1 s after a walk → Marca on arrival and Aviso 1.5 s before (sternum, pod 9); a facing change ≥ 45° within 3 s, held 1.5 s (±25°), back-to-back same-way turns merged → Giro 0.5 s before it starts on that side's wrist (pods 1/2), param = degrees. Thresholds tuned on the three preferida takes on the PC (Python prototype first, same results in C#), still to be tuned by feel. Runs when a take becomes preferida (replay star, Scene Select star, or saved as preferida), replacing the shot's auto rows and keeping manual ones; on start for any preferida without cues; deleting the reference take deletes its auto rows. **Replay panel**: a saved single-shot take shows a cue row under the slider (ticks, Pasos as bars, a colour legend) if it's the preferida, or "marca esta toma como preferida para generarlas"; it fills in as soon as the star is pressed. **Export**: `pistas.csv` in the preferida's folder, refreshed on every export. |
 | P2-14 | CueTrack sync | ⬜ |
 | P2-15 | CueEngine | ⬜ |
 | P2-16 | Haptic timeline editor | ⬜ |

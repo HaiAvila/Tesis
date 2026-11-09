@@ -233,6 +233,11 @@ El robot levitador flota en su lugar (se mece un poco, mueve las orejas) hasta q
 **El actor y el director lo ven al mismo tiempo**, con el reloj compartido de Normcore. **Menú de pausa → Repetir dron** lo regresa y vuelve a salir a los 5 s (solo el director en Ensayo Remoto).
 **En las reproducciones** el dron sale en el mismo momento que en la toma: se guarda cuándo empezó (y cada "Repetir"). Se exporta en `eventos.csv`.
 
+### Pistas hápticas durante la toma (lo que siente el actor)
+Si el shot tiene **toma preferida**, al empezar la toma los pods reproducen sus pistas en su momento: **Acción** (3 pulsos en todos), **Giro** (un clic en la muñeca del lado hacia donde girar), **Pasos** (clics alternando espinilla izquierda y derecha al ritmo de caminar), **Aviso** (clics en el esternón que se aceleran, antes de llegar a una marca), **Marca** (doble pulso en el esternón al llegar) y **Corte** (un pulso largo en todos).
+**Cuándo empiezan:** en Ensayo Remoto, cuando el director empieza a grabar (**B**); en Ensayar Solo, al iniciar. **Terminan** al detener la grabación o la práctica: lo que faltaba se cancela y llega el Corte. En una escena completa, cada **Siguiente toma** (Y izquierda) carga las pistas del siguiente shot. Si el shot no tiene preferida, aparece un aviso y solo suena Acción.
+Las reproduce la computadora que tiene los pods (el receptor y `bridge.py`).
+
 ### Tutorial de controles
 **Script:** `TutorialController.cs` (persistente, objeto "Tutorial" bajo Bootstrap).
 **Cuándo aparece:** la primera vez que se entra a una escena de contenido en cada modo, un panel pregunta si quieres ver el tutorial (Sí / No); en Ensayo Remoto, "¿Quieres ver un tutorial de cómo calibrar y de los controles?". La respuesta se guarda en el headset (`PlayerPrefs`, una clave por modo: `Tutorial.Seen.DirectorRemote`, `DirectorInspection`, `ActorRemote`, `ActorSolo`), así que no vuelve a preguntar. Se puede repetir siempre desde el menú de pausa → **Tutorial** (entra directo a los pasos, sin preguntar).

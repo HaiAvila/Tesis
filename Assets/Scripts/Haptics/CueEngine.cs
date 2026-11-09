@@ -1,0 +1,306 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+// Plays a shot's haptic cue timeline (CueTrack, made by CueGenerator from the preferida take)
+// on the pods, from Acción. Timeline mode only for now; the live cues (proximity, orientation
+// and timing compared with the reference as the actor moves) come next.
+//
+// It runs on the machine with the pods - the one whose PodReceiver hears them - and does
+// nothing anywhere else. What starts and stops a take there:
+//   Ensayo Remoto  the director recording (RehearsalSessionState.isRecording, synced): Acción
+//                  when it starts, Corte when it stops. An escena completa starts on the scene's
+//                  first shot; each Siguiente toma loads the next shot's cues from that moment
+//                  (Acción only at the start, Corte only at the end).
+//   Ensayar Solo   the actor's Iniciar / Parar (SoloSession's commands from the Quest, or
+//                  SoloRehearsalController's events when the pods are on the same machine).
+// Stopping early cancels whatever hadn't played and sends Corte to everyone, unless the
+// timeline's own Corte already went out.
+//
+// Each cue kind becomes firmware patterns (PodReceiver.Cue) here, so the stored timeline only
+// says what a cue means:
+//   Acción  TRIPLE, every pod          Corte  LONG 500 ms, every pod
+//   Giro    CLICK, that side's wrist    Marca  DOUBLE, sternum
+//   Pasos   CLICK on the shins, alternating left/right, at the walk's cadence, for its span
+//   Aviso   clicks on the sternum that speed up (the firmware has no ascending pattern)
+public class CueEngine : MonoBehaviour
+{
+    public static CueEngine Instance { get; private set; }
+
+    const int CutParam = 50;                       // LONG 500 ms
+    static readonly float[] AnticipationClicks = { 0f, 0.4f, 0.7f, 0.9f, 1.05f };
+
+    [Tooltip("Off only for testing without pods: plays (and logs) the timeline anyway.")]
+    public bool requirePods = true;
+    [Tooltip("Logs every cue without sending it to the pods.")]
+    public bool dryRun;
+
+    struct Scheduled
+    {
+        public float At;
+        public int Pod;
+        public PodReceiver.Cue Cue;
+        public int Param;
+        public string Label;
+    }
+
+    readonly List<Scheduled> queue = new List<Scheduled>();
+    PodReceiver receiver;
+    bool playing;
+    bool cutPlayed;
+    bool wasRecording;
+    int sceneNumber;
+    readonly List<int> sceneShots = new List<int>();
+    int shotIndex;
+    RehearsalSessionState sessionState;
+    SoloSession soloSession;
+
+    public bool IsPlaying => playing;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    static void Create()
+    {
+        if (Instance != null)
+            return;
+        var engine = new GameObject("CueEngine");
+        DontDestroyOnLoad(engine);
+        engine.AddComponent<CueEngine>();
+    }
+
+    void Awake()
+    {
+        Instance = this;
+        SoloRehearsalController.RunStarted += OnLocalSoloStarted;
+        SoloRehearsalController.RunStopped += OnLocalSoloStopped;
+        RehearsalSessionState.CommandSentLocally += OnSessionCommand;
+    }
+
+    void OnDestroy()
+    {
+        SoloRehearsalController.RunStarted -= OnLocalSoloStarted;
+        SoloRehearsalController.RunStopped -= OnLocalSoloStopped;
+        RehearsalSessionState.CommandSentLocally -= OnSessionCommand;
+        if (sessionState != null)
+            sessionState.OnCommand -= OnSessionCommand;
+        if (soloSession != null)
+            soloSession.OnCommand -= OnSoloCommand;
+        if (Instance == this)
+            Instance = null;
+    }
+
+    void Update()
+    {
+        HookSessions();
+
+        // Ensayo Remoto: the director's recording, as every machine sees it.
+        bool recording = sessionState != null && sessionState.IsRecording;
+        if (recording && !wasRecording)
+            StartTake(sessionState.SceneNumber, sessionState.ShotNumber, "the director started recording");
+        else if (!recording && wasRecording)
+            StopTake("the director stopped recording");
+        wasRecording = recording;
+
+        if (!playing)
+            return;
+
+        float now = Time.time;
+        for (int i = 0; i < queue.Count; i++)
+        {
+            if (queue[i].At > now)
+                continue;
+            Fire(queue[i]);
+            queue.RemoveAt(i--);
+        }
+    }
+
+    // The session objects live under Bootstrap and may come up after this.
+    void HookSessions()
+    {
+        if (sessionState == null)
+        {
+            sessionState = FindFirstObjectByType<RehearsalSessionState>();
+            if (sessionState != null)
+            {
+                sessionState.OnCommand += OnSessionCommand;
+                wasRecording = sessionState.IsRecording;
+            }
+        }
+        if (soloSession == null && SoloSession.Instance != null)
+        {
+            soloSession = SoloSession.Instance;
+            soloSession.OnCommand += OnSoloCommand;
+        }
+    }
+
+    void OnSessionCommand(SessionCommand command)
+    {
+        if (command == SessionCommand.SiguienteToma && playing && sceneShots.Count > 0)
+            NextShot();
+    }
+
+    void OnSoloCommand(SoloCommand command)
+    {
+        if (command == SoloCommand.Iniciar && soloSession.InSolo)
+            StartTake(soloSession.SceneNumber, soloSession.ShotNumber, "the actor's solo Iniciar");
+        else if (command == SoloCommand.Parar)
+            StopTake("the actor's solo Parar");
+    }
+
+    void OnLocalSoloStarted(int shot) => StartTake(Bootstrap.CurrentSceneNumber, shot, "solo run on this machine");
+    void OnLocalSoloStopped() => StopTake("solo run stopped on this machine");
+
+    // The receiver that hears pods (Bootstrap's ActorAvatar has one; test scenes their own).
+    PodReceiver Receiver()
+    {
+        if (receiver != null && receiver.isActiveAndEnabled)
+            return receiver;
+        receiver = null;
+        foreach (PodReceiver candidate in FindObjectsByType<PodReceiver>(FindObjectsSortMode.None))
+        {
+            if (receiver == null || candidate.ActivePods().Length > receiver.ActivePods().Length)
+                receiver = candidate;
+        }
+        return receiver;
+    }
+
+    bool HasPods => Receiver() != null && Receiver().ActivePods().Length > 0;
+
+    public void StartTake(int scene, int shot, string reason)
+    {
+        if (requirePods && !HasPods)
+        {
+            Debug.Log($"[CueEngine] {reason}: no pods on this machine, timeline not played");
+            return;
+        }
+
+        queue.Clear();
+        sceneShots.Clear();
+        cutPlayed = false;
+        playing = true;
+        sceneNumber = scene;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+        {
+            Debug.LogError("[CueEngine] no ShotListDatabase");
+            playing = false;
+            return;
+        }
+
+        if (shot == RehearsalSessionState.FullSceneShot)
+        {
+            sceneShots.AddRange(database.GetShotNumbersOfScene(scene));
+            shotIndex = 0;
+            if (sceneShots.Count == 0)
+            {
+                Debug.LogWarning($"[CueEngine] scene {scene} has no shots");
+                playing = false;
+                return;
+            }
+            Debug.Log($"[CueEngine] Acción ({reason}): escena completa {scene}, shots {string.Join(",", sceneShots)}");
+            Schedule(database, sceneShots[0], first: true, last: false);
+        }
+        else
+        {
+            Debug.Log($"[CueEngine] Acción ({reason}): scene {scene}, shot {shot}");
+            Schedule(database, shot, first: true, last: true);
+        }
+    }
+
+    void NextShot()
+    {
+        if (shotIndex + 1 >= sceneShots.Count)
+            return;
+
+        // Whatever the last shot still had pending is dropped: the director moved on.
+        queue.Clear();
+        shotIndex++;
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        Debug.Log($"[CueEngine] Siguiente toma: shot {sceneShots[shotIndex]}");
+        if (database != null)
+            Schedule(database, sceneShots[shotIndex], first: false, last: false);
+    }
+
+    public void StopTake(string reason)
+    {
+        if (!playing)
+            return;
+
+        playing = false;
+        int dropped = queue.Count;
+        queue.Clear();
+        PodReceiver pods = dryRun ? null : Receiver();
+        if (pods != null)
+        {
+            pods.SendCue(PodIds.All, PodReceiver.Cue.Stop);
+            if (!cutPlayed)
+                pods.SendCue(PodIds.All, PodReceiver.Cue.Long, CutParam);
+        }
+        Debug.Log($"[CueEngine] Corte ({reason}): {dropped} cues not played" + (cutPlayed ? "" : ", Corte sent"));
+    }
+
+    // The shot's cues from now on, as firmware sends.
+    void Schedule(ShotListDatabase database, int shot, bool first, bool last)
+    {
+        List<CueEvent> cues = database.GetCueTrack(shot);
+        if (cues.Count == 0)
+        {
+            Debug.Log($"[CueEngine] shot {shot} has no cues (no preferida take yet)");
+            FloatingMessage.Show($"Shot {shot}: sin pistas hápticas (marca una toma preferida)");
+            if (first)
+                Add(Time.time, PodIds.All, PodReceiver.Cue.Triple, 0, "Acción");
+            return;
+        }
+
+        float start = Time.time;
+        int count = 0;
+        foreach (CueEvent cue in cues)
+        {
+            float at = start + cue.T;
+            switch (cue.Kind)
+            {
+                case CueKind.CameraStart:
+                    if (first) Add(at, PodIds.All, PodReceiver.Cue.Triple, 0, "Acción");
+                    break;
+                case CueKind.Cut:
+                    if (last) Add(at, PodIds.All, PodReceiver.Cue.Long, CutParam, "Corte");
+                    break;
+                case CueKind.Orientation:
+                    Add(at, cue.Pod, PodReceiver.Cue.Click, 0, $"Giro {cue.Param:+0;-0}°");
+                    break;
+                case CueKind.Checkpoint:
+                case CueKind.MarkConfirmation:
+                    Add(at, cue.Pod != PodIds.All ? cue.Pod : PodIds.Sternum, PodReceiver.Cue.Double, 0, HapticCues.Name(cue.Kind));
+                    break;
+                case CueKind.Anticipation:
+                    foreach (float offset in AnticipationClicks)
+                        Add(at + offset, PodIds.Sternum, PodReceiver.Cue.Click, 0, "Aviso");
+                    break;
+                case CueKind.Timing:
+                    float step = 1f / Mathf.Max(cue.Param, 0.5f);
+                    int n = 0;
+                    for (float s = 0f; s < cue.Dur; s += step, n++)
+                        Add(at + s, n % 2 == 0 ? PodIds.LeftShin : PodIds.RightShin, PodReceiver.Cue.Click, 0, "Paso");
+                    break;
+                default:
+                    Debug.Log($"[CueEngine] {cue.Kind} not playable in timeline mode yet");
+                    continue;
+            }
+            count++;
+        }
+        queue.Sort((a, b) => a.At.CompareTo(b.At));
+        Debug.Log($"[CueEngine] shot {shot}: {count} cues, {queue.Count} sends scheduled");
+    }
+
+    void Add(float at, int pod, PodReceiver.Cue cue, int param, string label) =>
+        queue.Add(new Scheduled { At = at, Pod = pod, Cue = cue, Param = param, Label = label });
+
+    void Fire(Scheduled s)
+    {
+        if (s.Cue == PodReceiver.Cue.Long && s.Pod == PodIds.All)
+            cutPlayed = true;
+        PodReceiver pods = dryRun ? null : Receiver();
+        if (pods != null)
+            pods.SendCue(s.Pod, s.Cue, s.Param);
+        Debug.Log($"[CueEngine] {s.Label} → pod {(s.Pod == PodIds.All ? "todos" : s.Pod.ToString())} {s.Cue}{(s.Param != 0 ? " " + s.Param : "")}");
+    }
+}

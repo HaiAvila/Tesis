@@ -30,6 +30,11 @@ public class SoloSession : RealtimeComponent<SoloSessionModel>
 
     public bool IsConnected => model != null;
 
+    // The take the actor is practicing (NoNumber when not in solo), for the machine with the pods.
+    public bool InSolo => model != null && model.mode == (int)Bootstrap.AppMode.Solo;
+    public int SceneNumber => model != null ? model.sceneNumber : NoNumber;
+    public int ShotNumber => model != null ? model.shotNumber : NoNumber;
+
     void Awake()
     {
         Instance = this;

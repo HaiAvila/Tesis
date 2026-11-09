@@ -24,6 +24,7 @@ public class SoloRehearsalController : MonoBehaviour
 
     // A solo run started on this shot - the set's action keys off it (DroneFlight).
     public static event System.Action<int> RunStarted;
+    public static event System.Action RunStopped;
 
     // Read by the tutorial's solo steps.
     public bool IsRunning => isRunning;
@@ -93,6 +94,7 @@ public class SoloRehearsalController : MonoBehaviour
 
         isRunning = false;
         Debug.Log($"[Solo] Parar ({reason})");
+        RunStopped?.Invoke();
         if (SoloSession.Instance != null)
             SoloSession.Instance.SendCommand(SoloCommand.Parar);
         if (showMessage)

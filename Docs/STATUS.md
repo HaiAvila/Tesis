@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (automatic cue generator, and a cue preview on every replay).
+Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (automatic cue generator, a cue preview on every replay, scene 2's start moved).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -179,4 +179,6 @@ Updated after every task (see CLAUDE.md). Last update: Nov 8, 2026 (automatic cu
 - **Takes live only where the director ran.** `RehearsalRecorder` saves on the director's machine; the actor never saves takes. So the PC (director in the Editor) holds the takes from Sep 24 – Nov 7 (25), and the director's Quest only those made with the director on the Quest. Nothing was lost. Decision (user): fix it with the server `.exe` (Wednesday) - the server PC becomes the store of record, takes made on the director's Quest are copied there and the director can see the server's takes. No one-off copy script before then.
 - **Pause wheel:** the microphone option is now "Micrófono"; whether it's on is in the description. The wheel's title shrinks to fit (24-40 pt) instead of wrapping over the description.
 - **User to re-check on the Quest:** the replay's conversation and notes play cleanly (no loop), the actor's live voice goes quiet while a replay is open and comes back when it closes, and a voice note is heard apart from the conversation. And with two headsets, what each one shows in Scene Select. (An earlier run where the director's Quest heard nothing at all - live voice included - didn't happen again on the next run; cause unknown.)
+- **Scene 2's start moved** (Nov 8, the user's pick, from where they stood in the simulator): `Shot6_Start` from z −14.5 to −6.2 (x 0, same height, facing +Z), closer to the element in the middle. It's now 0.3 m from `Shot7_Start` (z −5.88). Scene 2 is the first to be re-recorded with the planned blocking.
+- **Planned for Nov 9:** (1) the cue generator's turns from the sternum pod's yaw and its steps from the shin pods, when the take has a body (PoseTrack), the headset as fallback; (2) scene 3: animate the robot straight ahead from where it stands now, along the way it faces, so the user can see where it looks and choose where it should end up.
 - Not a bug: Scene Select from the pause menu in Ensayo Remoto goes straight into a new take (no take picker); the picker and "Ver el set sin toma" are Inspección only, and show only takes saved on that device.

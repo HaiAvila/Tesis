@@ -149,8 +149,8 @@ public class PauseMenuController : MonoBehaviour
             menuOptions.Add(new PauseMenuOption
             {
                 Icon = on ? GlassUI.Icon.Mic : GlassUI.Icon.MicOff,
-                Label = on ? "Micrófono encendido" : "Micrófono apagado",
-                Description = on ? "Te escuchan. Elígelo para apagarlo." : "No te escuchan. Elígelo para encenderlo.",
+                Label = "Micrófono",
+                Description = on ? "Encendido: te escuchan. Elígelo para apagarlo." : "Apagado: no te escuchan. Elígelo para encenderlo.",
                 OnSelected = ToggleMicrophone,
             });
         }

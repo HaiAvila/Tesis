@@ -57,17 +57,17 @@ public class TutorialController : MonoBehaviour
     const float ButtonWidth = 250f;
     const float ButtonHeight = 64f;
 
-    // Placement in the head's yaw-only frame: distance, yaw to the left of straight ahead,
-    // height above the eyes - placeholder values, not tuned.
+    // Placement in the head's yaw-only frame: distance, yaw from straight ahead (0 =
+    // centered), height relative to the eyes (a little below them).
     const float PanelDistance = 1.25f;
-    const float PanelYawOffsetDegrees = -20f;
-    const float PanelUp = 0.2f;
+    const float PanelYawOffsetDegrees = 0f;
+    const float PanelUp = -0.08f;
     const float DockGapDegrees = 4f;
     const float MaxAbovePitchDegrees = 22f;
     const float AbovePitchCostWeight = 1.5f;
     const float ObstacleRefreshSeconds = 0.25f;
     const float FollowDistanceThreshold = 1f;
-    const float FollowAngleThreshold = 35f;
+    const float FollowAngleThreshold = 45f;
     const float FollowTransitionDuration = 0.4f;
 
     const float PromptDelaySeconds = 0.75f;
@@ -876,6 +876,13 @@ public class TutorialController : MonoBehaviour
     {
         PanelFocusManager.GetObstacles(obstacles);
 
+        // Head-locked panels (the corner chips) move with the head, so they'd always end
+        // up wherever the tutorial is when you turn to read it - avoiding them made it run
+        // away. Only panels that stay put in the world count.
+        Camera headCamera = Camera.main;
+        if (headCamera != null)
+            obstacles.RemoveAll(obstacle => obstacle == null || obstacle.IsChildOf(headCamera.transform));
+
         int signature = 0;
         foreach (RectTransform obstacle in obstacles)
             signature ^= obstacle.GetInstanceID();
@@ -913,8 +920,8 @@ public class TutorialController : MonoBehaviour
 
     static float FlatYaw(Vector3 direction) => Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
 
-    // Default spot: up and to the left of straight ahead (yaw-only, so looking up or down
-    // doesn't drag it along). If that spot would cover an open panel with buttons, it moves
+    // Default spot: centered in front, a little below the eyes (yaw-only, so looking up or
+    // down doesn't drag it along). If that spot would cover an open panel with buttons, it moves
     // either to that panel's left or above it - whichever is the smaller move from the
     // default spot (a wide, low panel like the stop-recording one -> above; a tall one like
     // the pause menu -> to the left). Repeated in case the new spot hits another panel.

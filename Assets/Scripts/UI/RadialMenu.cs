@@ -125,6 +125,11 @@ public class RadialMenu : MonoBehaviour
         var titleRect = (RectTransform)centerTitle.transform;
         titleRect.sizeDelta = new Vector2(CenterRadius * 1.6f, 56f);
         titleRect.anchoredPosition = new Vector2(0f, 58f);
+        // One line: a long label shrinks to fit instead of wrapping over the description.
+        centerTitle.enableWordWrapping = false;
+        centerTitle.enableAutoSizing = true;
+        centerTitle.fontSizeMin = 24f;
+        centerTitle.fontSizeMax = 40f;
 
         centerDescription = GlassUI.Label(centerRect, idleDescription, 24f, false, GlassUI.SubTextColor);
         var descriptionRect = (RectTransform)centerDescription.transform;

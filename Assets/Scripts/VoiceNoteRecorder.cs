@@ -31,7 +31,7 @@ public class VoiceNoteRecorder : MonoBehaviour
     const float MaxSeconds = 120f;
 
     // In the lower-left corner of the view, placeholder position.
-    static readonly Vector3 ButtonOffset = new Vector3(RecordingIndicator.ChipOffset.x, -0.12f, RecordingIndicator.ChipOffset.z);
+    static readonly Vector3 ButtonOffset = new Vector3(RecordingIndicator.ChipOffset.x, -0.2f, RecordingIndicator.ChipOffset.z);
     const float ButtonScale = 0.001f;
     static readonly Vector2 ButtonSize = new Vector2(250f, 76f);
     const int ButtonFontSize = 34;

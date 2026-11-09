@@ -29,4 +29,7 @@ public partial class RehearsalSessionStateModel
     [RealtimeProperty(5, true, true)] private int _sceneNumber;
     // The director is recording: the actor can't re-set the start until it stops.
     [RealtimeProperty(6, true, true)] private bool _isRecording;
+    // When the set's scripted action (scene 3's drone) was triggered, in Normcore room time
+    // (realtime.room.time, the same clock on every client); 0 = not triggered. See SetAction.
+    [RealtimeProperty(7, true, true)] private double _setActionTime;
 }

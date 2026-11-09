@@ -101,6 +101,22 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
         Debug.Log($"[SessionSync] write sessionState={state}");
     }
 
+    // The set's scripted action: when it was triggered, in room time (0 = not triggered), and
+    // the room clock it's measured on. See SetAction.
+    public double SetActionTime => model != null ? model.setActionTime : 0;
+    public double RoomTime => Online ? realtime.room.time : 0;
+
+    // Director only, same ownership pattern as SetState.
+    public void SetSetActionTime(double roomTime)
+    {
+        if (!Online)
+            return;
+
+        model.RequestOwnership();
+        model.setActionTime = roomTime;
+        Debug.Log($"[SessionSync] write setActionTime={roomTime:F2}");
+    }
+
     // Director only, same ownership pattern as SetState.
     public void SetRecording(bool recording)
     {

@@ -1105,8 +1105,43 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8128668236925612103, guid: 4a6604d6f90134a01ad1bba03ac74486, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 718004664}
   m_SourcePrefab: {fileID: -5645937942226959685, guid: 4a6604d6f90134a01ad1bba03ac74486, type: 3}
+--- !u!1 &718004663 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8128668236925612103, guid: 4a6604d6f90134a01ad1bba03ac74486, type: 3}
+  m_PrefabInstance: {fileID: 718004662}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &718004664
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 718004663}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bdd8400524be81e4f826991d4de11924, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DroneFlight
+  actionShot: 14
+  endPosition: {x: -4, y: 1.268, z: -0.699}
+  fallbackEndYaw: -270
+  delay: 5
+  dashSeconds: 1.3
+  turnDelay: 0.15
+  turnSeconds: 0.8
+  dashTilt: 18
+  overshoot: 0.12
+  followTurnRate: 150
+  hoverAmplitude: 0.025
+  hoverFrequency: 0.5
+  rollAmplitude: 3
+  swayAmplitude: 0.01
+  idleClip: {fileID: 2898493369555196641, guid: 4a6604d6f90134a01ad1bba03ac74486, type: 3}
 --- !u!1 &720038999
 GameObject:
   m_ObjectHideFlags: 0

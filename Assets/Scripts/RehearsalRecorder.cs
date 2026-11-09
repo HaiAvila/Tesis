@@ -32,6 +32,8 @@ public class RehearsalRecorder : MonoBehaviour
     // Fired from the exact same start/stop calls that drive the recording itself, so a
     // UI indicator built from these can never drift out of sync with the real state.
     public event Action RecordingStarted;
+    // A full-scene take moved on to this shot (Siguiente toma).
+    public event Action<int> ShotOpened;
     public event Action RecordingStopped;
 
     readonly List<Metric> buffer = new List<Metric>();
@@ -64,6 +66,10 @@ public class RehearsalRecorder : MonoBehaviour
     // opens the next; stopping closes the last. Recording without any Siguiente toma leaves
     // one boundary: the first shot, for the whole take.
     readonly List<ShotBoundary> boundaryBuffer = new List<ShotBoundary>();
+    // When the set's action was triggered during the take (s from its start), so the replay
+    // plays it back at the same moments. Saved with Guardar (EventosToma).
+    readonly List<float> setActionBuffer = new List<float>();
+    public IReadOnlyList<float> PendingSetActions => setActionBuffer;
     // The scene's shots in order, read at record start.
     readonly List<int> sceneShotsAtStart = new List<int>();
 
@@ -118,6 +124,7 @@ public class RehearsalRecorder : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        SetAction.Triggered += OnSetActionTriggered;
 
 #if DIRECTOR_BUILD
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -141,8 +148,15 @@ public class RehearsalRecorder : MonoBehaviour
 #endif
     }
 
+    void OnSetActionTriggered()
+    {
+        if (IsRecording)
+            setActionBuffer.Add(Time.time - recordingStartTime);
+    }
+
     void OnDestroy()
     {
+        SetAction.Triggered -= OnSetActionTriggered;
         if (Instance == this)
             Instance = null;
 
@@ -246,6 +260,7 @@ public class RehearsalRecorder : MonoBehaviour
         current.TOut = time;
         int nextShot = sceneShotsAtStart[index + 1];
         OpenBoundary(nextShot, time);
+        ShotOpened?.Invoke(nextShot);
 
         if (RehearsalSessionSync.Instance != null)
             RehearsalSessionSync.Instance.SendCommand(SessionCommand.SiguienteToma);
@@ -286,6 +301,7 @@ public class RehearsalRecorder : MonoBehaviour
         buffer.Clear();
         cameraBuffer.Clear();
         poseBuffer.Clear();
+        setActionBuffer.Clear();
         avatarLayoutAtStart = null;
         shotNumberAtStart = Bootstrap.CurrentShotNumber;
         sceneNumberAtStart = Bootstrap.CurrentSceneNumber;
@@ -615,6 +631,9 @@ public class RehearsalRecorder : MonoBehaviour
 
         if (TakeAudioRecorder.Instance != null)
             TakeAudioRecorder.Instance.Save(sessionGuidAtStart);
+        if (database != null && setActionBuffer.Count > 0)
+            database.SaveSetActions(sessionGuidAtStart, setActionBuffer);
+        setActionBuffer.Clear();
 
         buffer.Clear();
         cameraBuffer.Clear();
@@ -627,6 +646,7 @@ public class RehearsalRecorder : MonoBehaviour
     {
         DestroyDecisionPanel();
         SendHaptic();
+        setActionBuffer.Clear();
         buffer.Clear();
         cameraBuffer.Clear();
         poseBuffer.Clear();

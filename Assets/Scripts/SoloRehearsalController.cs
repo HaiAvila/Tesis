@@ -22,6 +22,9 @@ public class SoloRehearsalController : MonoBehaviour
 {
     public static SoloRehearsalController Instance { get; private set; }
 
+    // A solo run started on this shot - the set's action keys off it (DroneFlight).
+    public static event System.Action<int> RunStarted;
+
     // Read by the tutorial's solo steps.
     public bool IsRunning => isRunning;
 
@@ -76,6 +79,7 @@ public class SoloRehearsalController : MonoBehaviour
     {
         isRunning = true;
         Debug.Log($"[Solo] Iniciar (scene {currentSceneNumber}, shot {currentShotNumber})");
+        RunStarted?.Invoke(currentShotNumber);
         if (SoloSession.Instance != null)
             SoloSession.Instance.SendCommand(SoloCommand.Iniciar);
         FloatingMessage.Show("Iniciando...");

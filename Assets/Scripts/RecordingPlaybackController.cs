@@ -272,6 +272,8 @@ public class RecordingPlaybackController : MonoBehaviour
 
         PanelFocusManager.Unregister(panelObject);
         PanelFocusManager.Unregister(monitorObject);
+        SetAction.EndReplay();
+        setActionTimes = null;
 
         if (playbackAvatar != null)
             playbackAvatar.Destroy();
@@ -422,6 +424,7 @@ public class RecordingPlaybackController : MonoBehaviour
         monitorEnabled = true;
 
         BuildAvatar(poseFrames, avatarLayout);
+        LoadSetActions();
 #if DIRECTOR_BUILD
         LoadAudio();
 #endif
@@ -1216,6 +1219,57 @@ public class RecordingPlaybackController : MonoBehaviour
         }
     }
 
+    // The set's scripted action (scene 3's drone) at the replay's moment: from the take's
+    // recorded triggers - saved (EventosToma), or still in the recorder for Ver replay.
+    List<float> setActionTimes;
+
+    void LoadSetActions()
+    {
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (currentSession != null && database != null)
+            setActionTimes = database.GetSetActions(currentSession.SessionGuid);
+        else if (currentSession == null && RehearsalRecorder.Instance != null)
+            setActionTimes = new List<float>(RehearsalRecorder.Instance.PendingSetActions);
+        else
+            setActionTimes = new List<float>();
+        UpdateSetActionReplay();
+    }
+
+    void UpdateSetActionReplay()
+    {
+        if (setActionTimes == null)
+            return;
+
+        float elapsed = SetAction.NotTriggered;
+        foreach (float trigger in setActionTimes)
+        {
+            if (trigger <= playbackTime)
+                elapsed = playbackTime - trigger;
+        }
+        SetAction.SetReplay(elapsed, ActorHeadAt(playbackTime));
+    }
+
+    Vector3? ActorHeadAt(float time)
+    {
+        if (samples == null || samples.Count == 0)
+            return null;
+
+        int lo = 0, hi = samples.Count - 1;
+        if (time <= samples[lo].TiempoRelativo)
+            return new Vector3(samples[lo].PosX, samples[lo].PosY, samples[lo].PosZ);
+        if (time >= samples[hi].TiempoRelativo)
+            return new Vector3(samples[hi].PosX, samples[hi].PosY, samples[hi].PosZ);
+        while (hi - lo > 1)
+        {
+            int mid = (lo + hi) / 2;
+            if (samples[mid].TiempoRelativo <= time) lo = mid; else hi = mid;
+        }
+        Metric a = samples[lo], b = samples[hi];
+        float span = b.TiempoRelativo - a.TiempoRelativo;
+        float k = span > 0f ? (time - a.TiempoRelativo) / span : 0f;
+        return Vector3.Lerp(new Vector3(a.PosX, a.PosY, a.PosZ), new Vector3(b.PosX, b.PosY, b.PosZ), k);
+    }
+
     void BuildCueRow(RectTransform parent)
     {
         var rowObject = new GameObject("CueRow", typeof(RectTransform), typeof(LayoutElement));
@@ -1456,6 +1510,7 @@ public class RecordingPlaybackController : MonoBehaviour
 #if DIRECTOR_BUILD
             SyncAudio();
 #endif
+            UpdateSetActionReplay();
             yield return null;
         }
     }

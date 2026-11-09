@@ -155,6 +155,17 @@ public class PauseMenuController : MonoBehaviour
             });
         }
 
+        // The set's scripted action (scene 3's drone): back to its start, then again after its
+        // countdown. Not during a replay, which plays the take's own.
+        if (SetAction.HasTarget && SetAction.CanTrigger && !SetAction.ReplayActive)
+            menuOptions.Add(new PauseMenuOption
+            {
+                Icon = GlassUI.Icon.Robot,
+                Label = $"Repetir {SetAction.TargetName}",
+                Description = $"Vuelve a su lugar y sale otra vez a los {SetAction.TargetDelay:0} segundos.",
+                OnSelected = RepeatSetAction,
+            });
+
         menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Pods, Label = "Estado de pods", Description = "Batería y señal de cada pod.", OnSelected = ShowPodStatus });
 
         // Replays the controls tutorial for the current mode - it's only offered
@@ -248,6 +259,12 @@ public class PauseMenuController : MonoBehaviour
     {
         VoiceChat.Instance.MicrophoneOn = !VoiceChat.Instance.MicrophoneOn;
         FloatingMessage.Show(VoiceChat.Instance.MicrophoneOn ? "Micrófono encendido" : "Micrófono apagado");
+    }
+
+    void RepeatSetAction()
+    {
+        SetAction.Trigger("pause menu Repetir");
+        FloatingMessage.Show($"El {SetAction.TargetName} sale en {SetAction.TargetDelay:0} s");
     }
 
     void ShowPodStatus()

@@ -15,6 +15,7 @@ using UnityEngine;
 //   cuerpo.csv   t + the avatar's root, head and 16 bones' local rotations, 20 Hz (PoseTrack)
 //   tomas.csv    a full-scene take's shot boundaries
 //   notas.csv    the director's voice notes, and their audio under notas/
+//   eventos.csv  moments in the take: when the set's scripted action (scene 3's drone) started
 //   pistas.csv   the preferida take's shot's haptic cue timeline (CueTrack): t, duration, cue
 //                number and name, pod, parameter, auto/manual
 //   conversacion_director.wav, conversacion_actor.wav   what each one said during the take
@@ -103,6 +104,11 @@ public static class TakeExporter
         foreach (PoseSample frame in database.GetPoseTrackForSession(session.Id))
             rows.Add(BodyRow(frame));
         WriteFile(folder, "cuerpo.csv", BodyHeader(), rows);
+
+        rows.Clear();
+        foreach (float t in database.GetSetActions(session.SessionGuid))
+            rows.Add(Row(t, TakeEvent.SetAction));
+        WriteFile(folder, "eventos.csv", "t,evento", rows);
 
         if (session.IsScene)
         {

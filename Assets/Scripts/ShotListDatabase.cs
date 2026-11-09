@@ -27,6 +27,7 @@ public class ShotListDatabase : MonoBehaviour
             CreateCameraFramingsTable(connection);
             EnsureCameraFramingsColumns(connection);
             CreateCueTrackTable(connection);
+            CreateTakeEventsTable(connection);
         }
 
         GenerateMissingCueTracks();
@@ -52,6 +53,41 @@ public class ShotListDatabase : MonoBehaviour
                 source TEXT NOT NULL DEFAULT 'auto'
             );");
         connection.Execute("CREATE INDEX IF NOT EXISTS CueTrack_shot_number ON CueTrack (shot_number);");
+    }
+
+    // Moments in a take, in its own seconds, by the take's GUID: evento "accion_set" = the
+    // set's scripted action was triggered (SetAction), so the replay plays it back then.
+    void CreateTakeEventsTable(SQLiteConnection connection)
+    {
+        connection.Execute(@"
+            CREATE TABLE IF NOT EXISTS EventosToma (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_guid TEXT,
+                t REAL,
+                evento TEXT
+            );");
+        connection.Execute("CREATE INDEX IF NOT EXISTS EventosToma_session_guid ON EventosToma (session_guid);");
+    }
+
+    public void SaveSetActions(string sessionGuid, IReadOnlyList<float> times)
+    {
+        var rows = new List<TakeEvent>();
+        foreach (float t in times)
+            rows.Add(new TakeEvent { SessionGuid = sessionGuid, T = t, Evento = TakeEvent.SetAction });
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            connection.InsertAll(rows);
+        Debug.Log($"[SetAction] saved {rows.Count} triggers with take {sessionGuid}");
+    }
+
+    public List<float> GetSetActions(string sessionGuid)
+    {
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        {
+            var times = new List<float>();
+            foreach (TakeEvent row in connection.Query<TakeEvent>("SELECT * FROM EventosToma WHERE session_guid = ? AND evento = ? ORDER BY t ASC;", sessionGuid, TakeEvent.SetAction))
+                times.Add(row.T);
+            return times;
+        }
     }
 
     public List<CueEvent> GetCueTrack(int shotNumber)
@@ -632,6 +668,7 @@ public class ShotListDatabase : MonoBehaviour
                 connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM NotasVoz WHERE session_guid = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source = ?;", session.SessionGuid, CueEvent.SourceAuto);
+                connection.Execute("DELETE FROM EventosToma WHERE session_guid = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM Sesiones WHERE id = ?;", session.Id);
             });
         }
@@ -1032,6 +1069,17 @@ public class VoiceNote
     [Column("fecha_hora")] public string FechaHora { get; set; }
     [Column("duracion")] public float Duracion { get; set; }
     [Column("archivo")] public string Archivo { get; set; }
+}
+
+[Table("EventosToma")]
+public class TakeEvent
+{
+    public const string SetAction = "accion_set";
+
+    [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
+    [Indexed, Column("session_guid")] public string SessionGuid { get; set; }
+    [Column("t")] public float T { get; set; }
+    [Column("evento")] public string Evento { get; set; }
 }
 
 [Table("CueTrack")]

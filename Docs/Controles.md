@@ -33,6 +33,7 @@ no lee el HMD sino el joystick de la mano izquierda.
 | "Exportar tomas a CSV" (menú de pausa) — **director** | Guarda las tomas nuevas en archivos CSV. Ver "Exportar tomas" abajo | Inspección de Escenas | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado, sin probar en hardware real |
 | Botón **Calibrar** (Inspector de `Bootstrap → ActorAvatar`) | Inicia la misma calibración en esta máquina, si tiene pods | Editor en Play mode, cualquier rol | — | — | 🧪 Para probar |
 | "Estado de pods" (menú de pausa) | Muestra cada pod por parte del cuerpo: conexión, batería y señal (ver "Estado de los pods" abajo) | Las 3 escenas de contenido, actor y director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado, sin probar en hardware real |
+| "Repetir dron" (menú de pausa) | Regresa el dron de la escena 3 a su lugar y vuelve a salir a los 5 segundos, para repetir el momento si algo salió mal. En Ensayo Remoto se repite igual para el actor | Escena 3: director en Ensayo Remoto e Inspección, actor en Ensayar Solo (no durante una reproducción, que muestra el de la toma) | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado, sin probar en hardware real |
 | "Tutorial" (menú de pausa) | Repite el tutorial de controles del modo actual (ver "Tutorial de controles" abajo) | Las 3 escenas de contenido, actor y director | Clic con mouse (Game view) | Apuntar con el rayo + gatillo | ✅ Implementado |
 | Secondary Button "B" (control derecho) | Inicia/detiene la grabación de la toma | Solo Ensayo Remoto (escena de contenido, no Inspección de Escenas) | Mantener `Y` + `N` | Botón B (control derecho) | ✅ Implementado |
 | Secondary Button izquierdo (botón **Y**) — **director** | **Siguiente toma**: cierra el shot actual y abre el siguiente dentro de la grabación de una escena completa (`ShotBoundaries`), manda el comando `SiguienteToma` a todos y muestra "Siguiente toma: shot N". Es opcional. En el último shot no hace nada y muestra "Última toma de la escena" | Solo mientras se graba una **escena completa** en Ensayo Remoto, con el menú de pausa cerrado | Mantener `T` + `N` | Botón Y (control izquierdo) | ✅ Implementado, sin probar en hardware real |
@@ -225,6 +226,12 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 **Qué ves:** en **Ver replay** y en **Inspección de Escenas**, el avatar del actor hace los movimientos de la toma, del tamaño del actor. Ya no aparece la cápsula amarilla.
 **El avatar en vivo se oculta** mientras el panel de reproducción está abierto, para que no haya dos cuerpos en el mismo lugar, y vuelve al cerrarlo.
 **Tomas sin datos del cuerpo** (grabadas antes de este cambio o sin pods): solo se guardó el recorrido de la cabeza, así que el avatar sigue ese recorrido parado, con los brazos abajo, y aparece el mensaje "Toma sin datos del cuerpo".
+
+### El dron de la escena 3 (shot 14)
+El robot levitador flota en su lugar (se mece un poco, mueve las orejas) hasta que empieza la acción del shot 14. **5 segundos después** cruza veloz frente al actor inclinándose hacia adelante, frena en seco con un pequeño rebote y **se voltea hacia el actor**, siguiéndolo con la mirada si se mueve.
+**Cuándo empieza:** al empezar a grabar una toma del shot 14 (**B**); en una **escena completa**, cuando el director pasa al shot 14 (**Y izquierda**); en **Ensayar Solo**, al iniciar el shot 14. En una toma del shot 15 ya está en su lugar final, viendo al actor. Una toma nueva lo regresa a su inicio.
+**El actor y el director lo ven al mismo tiempo**, con el reloj compartido de Normcore. **Menú de pausa → Repetir dron** lo regresa y vuelve a salir a los 5 s (solo el director en Ensayo Remoto).
+**En las reproducciones** el dron sale en el mismo momento que en la toma: se guarda cuándo empezó (y cada "Repetir"). Se exporta en `eventos.csv`.
 
 ### Tutorial de controles
 **Script:** `TutorialController.cs` (persistente, objeto "Tutorial" bajo Bootstrap).

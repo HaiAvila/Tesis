@@ -113,16 +113,67 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
+    // What plays: auto and manual rows (not the "removed" markers).
     public List<CueEvent> GetCueTrack(int shotNumber)
     {
         using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
         {
-            return connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? ORDER BY t ASC;", shotNumber);
+            return connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? AND source != ? ORDER BY t ASC;", shotNumber, CueEvent.SourceRemoved);
         }
     }
 
-    // The shot's automatic cues, made again from this take (its preferida). Manual rows stay.
-    public int RegenerateAutoCues(RecordingSession session)
+    // --- the director's edits (CueTimelineEditor) ---------------------------------------------
+    // An automatic cue the director moves, stretches, turns or deletes leaves a "removed" copy of
+    // itself as it was (same take, kind, pod, time), so regenerating that take's cues - a newer
+    // generator - doesn't bring it back; the edited cue itself becomes manual.
+
+    public bool HasManualCues(int shotNumber)
+    {
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM CueTrack WHERE shot_number = ? AND source != ?;", shotNumber, CueEvent.SourceAuto) > 0;
+    }
+
+    public void InsertCue(CueEvent cue)
+    {
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            connection.Insert(cue);
+    }
+
+    // Before changing an automatic cue: remember it as removed, make it manual.
+    public void TakeOverAutoCue(CueEvent cue)
+    {
+        if (cue.Source != CueEvent.SourceAuto)
+            return;
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        {
+            CueEvent original = connection.Find<CueEvent>(cue.Id);
+            if (original != null)
+            {
+                original.Id = 0;
+                original.Source = CueEvent.SourceRemoved;
+                connection.Insert(original);
+            }
+        }
+        cue.Source = CueEvent.SourceManual;
+    }
+
+    public void UpdateCue(CueEvent cue)
+    {
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            connection.Update(cue);
+    }
+
+    public void DeleteCue(CueEvent cue)
+    {
+        TakeOverAutoCue(cue);
+        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+            connection.Delete<CueEvent>(cue.Id);
+    }
+
+    // The shot's automatic cues, made again from this take (its preferida). Manual rows stay,
+    // unless keepManual is false (the director chose to start over); automatic cues the director
+    // removed from this same take stay removed.
+    public int RegenerateAutoCues(RecordingSession session, bool keepManual = true)
     {
         if (session == null || session.IsScene)
             return 0;
@@ -141,9 +192,19 @@ public class ShotListDatabase : MonoBehaviour
 
         using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
         {
+            List<CueEvent> removed = keepManual
+                ? connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? AND source = ? AND session_guid = ?;", session.ShotNumber, CueEvent.SourceRemoved, session.SessionGuid)
+                : new List<CueEvent>();
+            int skipped = cues.RemoveAll(c => removed.Exists(r => r.Cue == c.Cue && r.Pod == c.Pod && Mathf.Abs(r.T - c.T) < 0.15f && Mathf.Abs(r.Dur - c.Dur) < 0.3f));
+            if (skipped > 0)
+                Debug.Log($"[Cues] shot {session.ShotNumber}: {skipped} automatic cues left out, the director removed them");
+
             connection.RunInTransaction(() =>
             {
-                connection.Execute("DELETE FROM CueTrack WHERE shot_number = ? AND source = ?;", session.ShotNumber, CueEvent.SourceAuto);
+                if (keepManual)
+                    connection.Execute("DELETE FROM CueTrack WHERE shot_number = ? AND source = ?;", session.ShotNumber, CueEvent.SourceAuto);
+                else
+                    connection.Execute("DELETE FROM CueTrack WHERE shot_number = ?;", session.ShotNumber);
                 connection.InsertAll(cues);
             });
         }
@@ -397,7 +458,9 @@ public class ShotListDatabase : MonoBehaviour
 
     // Exclusive: unmarks any other preferida session of the same shot first, then marks
     // this one, in a single transaction.
-    public void SetPreferida(int sessionId, int shotNumber)
+    // keepManual: the director's edited cues of the shot stay (asked first, see
+    // CueTimelineEditor.AskKeepEdits); false starts the shot's cues over from this take.
+    public void SetPreferida(int sessionId, int shotNumber, bool keepManual = true)
     {
         string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
 
@@ -410,7 +473,7 @@ public class ShotListDatabase : MonoBehaviour
             });
         }
 
-        RegenerateAutoCues(GetSession(sessionId));
+        RegenerateAutoCues(GetSession(sessionId), keepManual);
     }
 
     // Non-exclusive bookmark - marking or unmarking one session never touches any other.
@@ -693,7 +756,7 @@ public class ShotListDatabase : MonoBehaviour
                 connection.Execute("DELETE FROM PoseTrack WHERE sesion_id = ?;", session.Id);
                 connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM NotasVoz WHERE session_guid = ?;", session.SessionGuid);
-                connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source = ?;", session.SessionGuid, CueEvent.SourceAuto);
+                connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source IN (?, ?);", session.SessionGuid, CueEvent.SourceAuto, CueEvent.SourceRemoved);
                 connection.Execute("DELETE FROM EventosToma WHERE session_guid = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM Sesiones WHERE id = ?;", session.Id);
             });
@@ -1113,6 +1176,9 @@ public class CueEvent
 {
     public const string SourceAuto = "auto";
     public const string SourceManual = "manual";
+    // An automatic cue the director edited or deleted, as it was: never played, only keeps
+    // regeneration from bringing it back.
+    public const string SourceRemoved = "removed";
 
     [PrimaryKey, AutoIncrement, Column("id")] public int Id { get; set; }
     [Column("scene_number")] public int SceneNumber { get; set; }

@@ -245,6 +245,15 @@ Si el shot tiene **toma preferida**, al empezar la toma los pods reproducen sus 
 **Cuándo empiezan:** en Ensayo Remoto, cuando el director empieza a grabar (**B**); en Ensayar Solo, al iniciar. **Terminan** al detener la grabación o la práctica: lo que faltaba se cancela y llega el Corte. En una escena completa, cada **Siguiente toma** (Y izquierda) carga las pistas del siguiente shot. Si el shot no tiene preferida, aparece un aviso y solo suena Acción.
 Las reproduce la computadora que tiene los pods (el receptor y `bridge.py`).
 
+### Editor de pistas hápticas (director)
+En la reproducción de una toma guardada de un shot, el botón **Editar pistas** (lápiz) abre las pistas del shot debajo del panel. Solo se editan en la **toma preferida** (la estrella), porque son las del shot. Funciona con el rayo y con el mouse.
+- **Filas:** Todos (Acción y Corte, fijas), Esternón (Marca, Aviso), Muñecas (Giro, Proximidad, Contacto, Sostener), Espinillas (Pasos). I / D = izquierda / derecha.
+- **Mover:** arrastra una pista (se ajusta a 0.1 s). **Estirar:** arrastra un borde de una barra.
+- **Seleccionar:** tócala (contorno azul). **Borrar** la quita; **Cambiar lado** la pasa de izquierda a derecha o al revés.
+- **Añadir:** toca un tipo en la fila de arriba y se agrega en el cursor de la reproducción, editado a mano.
+- **Regla de tiempo** (abajo): tócala o arrástrala para mover la reproducción.
+- Todo se guarda al momento. Una pista automática que cambias queda **editada a mano** (contorno blanco) y no regresa aunque las pistas se vuelvan a generar. Si marcas otra toma como preferida y el shot tiene pistas editadas, te pregunta si **las conservas** o **empiezas de cero**.
+
 ### Tutorial de controles
 **Script:** `TutorialController.cs` (persistente, objeto "Tutorial" bajo Bootstrap).
 **Cuándo aparece:** la primera vez que se entra a una escena de contenido en cada modo, un panel pregunta si quieres ver el tutorial (Sí / No); en Ensayo Remoto, "¿Quieres ver un tutorial de cómo calibrar y de los controles?". La respuesta se guarda en el headset (`PlayerPrefs`, una clave por modo: `Tutorial.Seen.DirectorRemote`, `DirectorInspection`, `ActorRemote`, `ActorSolo`), así que no vuelve a preguntar. Se puede repetir siempre desde el menú de pausa → **Tutorial** (entra directo a los pasos, sin preguntar).

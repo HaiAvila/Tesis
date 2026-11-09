@@ -580,6 +580,8 @@ public class RecordingPlaybackController : MonoBehaviour
             buttonCount += 1f; // monitor toggle
 #if DIRECTOR_BUILD
         buttonCount += currentSession != null ? 2f : 1f; // notes + delete (only a saved take)
+        if (currentSession != null && !currentSession.IsScene)
+            buttonCount += 1f; // edit the cues
         if (HasConversation)
             buttonCount += 1f; // conversation on/off
         if (timedNotes.Count > 0)
@@ -705,6 +707,9 @@ public class RecordingPlaybackController : MonoBehaviour
 
         CreateIconButton(rowObject.transform, GlassUI.Icon.Mic, OnNotesClicked, ButtonColor, "Notas de voz");
 
+        if (currentSession != null && !currentSession.IsScene)
+            CreateIconButton(rowObject.transform, GlassUI.Icon.Edit, OnEditCuesClicked, ButtonColor, "Editar pistas");
+
         if (currentSession != null)
         {
             CreateIconButton(rowObject.transform, GlassUI.Icon.Delete, OnDeleteClicked, ButtonColor, "Borrar toma").color = GlassUI.Danger;
@@ -719,6 +724,30 @@ public class RecordingPlaybackController : MonoBehaviour
 #if DIRECTOR_BUILD
     string NotesTakeGuid => currentSession != null ? currentSession.SessionGuid
         : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeGuid : null;
+
+    // The shot's cue timeline under the panel (the preferida's: they're the shot's). Again to close.
+    CueTimelineEditor cueEditor;
+
+    void OnEditCuesClicked()
+    {
+        if (cueEditor != null)
+        {
+            Destroy(cueEditor.gameObject);
+            cueEditor = null;
+            return;
+        }
+        if (currentSession == null || currentSession.IsScene || panelObject == null)
+            return;
+        if (!currentSession.EsPreferida)
+        {
+            FloatingMessage.Show("Las pistas se editan en la toma preferida del shot (la estrella)");
+            return;
+        }
+
+        var panelRect = (RectTransform)panelObject.transform;
+        cueEditor = CueTimelineEditor.Create(panelRect, panelRect.sizeDelta.y, this, currentSession,
+            Mathf.Max(totalDuration, currentSession.Duracion), RefreshCueRow);
+    }
 
     void OnNotesClicked()
     {
@@ -1014,7 +1043,24 @@ public class RecordingPlaybackController : MonoBehaviour
             return;
         }
 
-        database.SetPreferida(currentSession.Id, currentSession.ShotNumber);
+        // Another take becoming the preferida replaces the shot's automatic cues: the director's
+        // edited ones stay or go, as they choose.
+        if (!currentSession.EsPreferida && database.HasManualCues(currentSession.ShotNumber))
+        {
+            RecordingSession session = currentSession;
+            CueTimelineEditor.AskKeepEdits(keep =>
+            {
+                if (currentSession == session)
+                    MarkPreferida(database, keep);
+            });
+            return;
+        }
+        MarkPreferida(database, true);
+    }
+
+    void MarkPreferida(ShotListDatabase database, bool keepManualCues)
+    {
+        database.SetPreferida(currentSession.Id, currentSession.ShotNumber, keepManualCues);
         currentSession.EsPreferida = true;
 
         ApplyPreferidaVisual(true);

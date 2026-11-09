@@ -558,6 +558,18 @@ public class SceneSelectController : MonoBehaviour
     // list is rebuilt to keep every row's star in sync with the DB.
     void OnPreferidaToggled(Shot shot, string sceneName, RecordingSession session)
     {
+        // A new preferida replaces the shot's automatic cues; the director's edited ones stay or
+        // go, as they choose.
+        if (!session.EsPreferida && database.HasManualCues(shot.ShotNumber))
+        {
+            CueTimelineEditor.AskKeepEdits(keep =>
+            {
+                database.SetPreferida(session.Id, shot.ShotNumber, keep);
+                if (this != null)
+                    ShowSessionList(shot, sceneName);
+            });
+            return;
+        }
         database.SetPreferida(session.Id, shot.ShotNumber);
         ShowSessionList(shot, sceneName);
     }

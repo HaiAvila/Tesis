@@ -29,7 +29,8 @@ public static class GlassUI
             Notes = "", Export = "", Pods = "", Tutorial = "", Speed = "",
             Record = "", WifiOff = "", Movie = "", Save = "", PlayCircle = "",
             Check = "", Back = "", Previous = "", Next = "", Star = "",
-            Robot = ""; // smart_toy
+            Robot = "", // smart_toy
+            Edit = ""; // edit
     }
 
     static TMP_FontAsset regular, semiBold, icons;

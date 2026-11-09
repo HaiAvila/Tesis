@@ -14,6 +14,12 @@ Then type:
     0 4 60     ALL pods, LONG 600 ms  (cut)
     q          quit
 
+Several on one line, separated by ";" (sent one after another), and "w <ms>"
+to wait in between:
+
+    7 4 20; 8 4 20           pods 7 and 8 at the same time
+    7 4 20; w 1000; 8 4 20   pod 7, one second later pod 8  (to compare them)
+
 Cues: 0 STOP   1 CLICK   2 PULSE(param = ms/10)   3 TRIPLE
       4 LONG(param = ms/10, 0 = 500 ms)           5 DOUBLE
       6 DONE   7 FAIL
@@ -22,6 +28,7 @@ Pod id 0 means broadcast to every connected pod.
 """
 
 import socket
+import time
 
 HOST, PORT = "127.0.0.1", 5006
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -40,21 +47,32 @@ while True:
     if not line or line in ("q", "quit", "exit"):
         break
 
-    parts = line.split()
-    if len(parts) < 2:
-        print("  need at least:  <pod> <cue>")
-        continue
+    for command in line.split(";"):
+        parts = command.split()
+        if not parts:
+            continue
 
-    try:
-        pod = int(parts[0])
-        cue = int(parts[1])
-        param = int(parts[2]) if len(parts) > 2 else 0
-    except ValueError:
-        print("  numbers only:  <pod> <cue> [param]")
-        continue
+        if parts[0] in ("w", "wait"):
+            try:
+                time.sleep(int(parts[1]) / 1000)
+            except (IndexError, ValueError):
+                print("  wait needs milliseconds:  w 1000")
+            continue
 
-    msg = f"C,{pod},{cue},{param}"
-    sock.sendto(msg.encode(), (HOST, PORT))
+        if len(parts) < 2:
+            print("  need at least:  <pod> <cue>")
+            continue
 
-    where = "all pods" if pod == 0 else f"pod {pod}"
-    print(f"  {msg}   -> {NAMES.get(cue, '?')} on {where}")
+        try:
+            pod = int(parts[0])
+            cue = int(parts[1])
+            param = int(parts[2]) if len(parts) > 2 else 0
+        except ValueError:
+            print("  numbers only:  <pod> <cue> [param]")
+            continue
+
+        msg = f"C,{pod},{cue},{param}"
+        sock.sendto(msg.encode(), (HOST, PORT))
+
+        where = "all pods" if pod == 0 else f"pod {pod}"
+        print(f"  {msg}   -> {NAMES.get(cue, '?')} on {where}")

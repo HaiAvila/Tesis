@@ -131,6 +131,13 @@ public class PauseMenuController : MonoBehaviour
                 OnSelected = GoToMainMenu },
         };
 
+#if !DIRECTOR_BUILD
+        // Ensayar Solo: pick another shot without going home (opening this menu already stopped
+        // a run). Not in Ensayo Remoto, where the director picks the take.
+        if (Bootstrap.Mode == Bootstrap.AppMode.Solo)
+            menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Scenes, Label = "Escenas", Description = "Elige otro shot para ensayar.", OnSelected = GoToSceneSelect });
+#endif
+
 #if DIRECTOR_BUILD
         menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Scenes, Label = "Escenas", Description = "Elige otra escena o toma.", OnSelected = GoToSceneSelect });
         menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Favorite, Label = "Favoritos", Description = "Las tomas que marcaste con corazón.", OnSelected = ShowFavorites });
@@ -306,6 +313,12 @@ public class PauseMenuController : MonoBehaviour
 #endif
     }
 
+    // Keeps the mode: Scene Select lists what the current mode can open.
+    void GoToSceneSelect()
+    {
+        Bootstrap.LoadSceneSelect();
+    }
+
 #if DIRECTOR_BUILD
     // Runs on the machine with the pods, through the command channel.
     void StartCalibration()
@@ -360,10 +373,6 @@ public class PauseMenuController : MonoBehaviour
         }
     }
 
-    void GoToSceneSelect()
-    {
-        Bootstrap.LoadSceneSelect();
-    }
 
     void ShowFavorites()
     {

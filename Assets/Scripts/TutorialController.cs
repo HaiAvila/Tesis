@@ -536,7 +536,7 @@ public class TutorialController : MonoBehaviour
                     SimulatorHint = "Simulador: mantén Y + N.",
                     IsDone = () => SoloRehearsalController.Instance != null && !SoloRehearsalController.Instance.IsRunning,
                 });
-                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Menú Principal")} {Act("te regresa al inicio")} para elegir otra toma y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
+                list.Add(MenuStep($"Presiona {Key("Menu")} (control izquierdo) para {Act("abrir el menú de pausa")}. {Key("Escenas")} {Act("te deja elegir otro shot")} sin salir de Ensayar Solo, {Key("Menú Principal")} {Act("te regresa al inicio")} y {Key("Estado de pods")} te muestra {Act("la batería y la señal")} de cada pod."));
                 list.Add(ActorCalibrationStep());
                 break;
 #endif

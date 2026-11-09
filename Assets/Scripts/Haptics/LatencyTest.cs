@@ -62,6 +62,7 @@ public class LatencyTest : MonoBehaviour
     string status = "Listo. Coloca un pod junto al micrófono.";
     string summary = "";
     float liveLevel, liveBaseline;
+    float liveDb = -120f, livePeakDb = -120f;
 
     void Start()
     {
@@ -238,6 +239,14 @@ public class LatencyTest : MonoBehaviour
         if (recording.Count < window)
             return;
         liveLevel = Goertzel(recording.Count - window, window);
+        float sum = 0f, peak = 0f;
+        for (int i = recording.Count - window; i < recording.Count; i++)
+        {
+            sum += recording[i] * recording[i];
+            peak = Mathf.Max(peak, Mathf.Abs(recording[i]));
+        }
+        liveDb = 20f * Mathf.Log10(Mathf.Max(Mathf.Sqrt(sum / window), 1e-6f));
+        livePeakDb = Mathf.Max(livePeakDb - 20f * Time.deltaTime, 20f * Mathf.Log10(Mathf.Max(peak, 1e-6f)));
         liveBaseline = Mathf.Lerp(liveBaseline <= 0f ? liveLevel : liveBaseline, liveLevel, 0.01f);
     }
 
@@ -336,6 +345,9 @@ public class LatencyTest : MonoBehaviour
         GUILayout.EndHorizontal();
         GUILayout.Label($"Pods conectados: {(receiver != null ? receiver.connectedPods : 0)} · pod {podId} {(receiver != null && receiver.IsAlive(podId) ? "vivo" : "SIN SEÑAL")}");
 
+        // A working mic in a quiet room sits around -60 to -45 dBFS and jumps when you talk;
+        // stuck near -90 or lower = muted or blocked by Windows.
+        GUILayout.Label($"Micrófono: {liveDb:F0} dBFS (pico {livePeakDb:F0})" + (livePeakDb < -80f ? "  ← NO OYE NADA: revisa que no esté silenciado ni bloqueado en Windows" : ""));
         float ratio = liveBaseline > 0f ? liveLevel / liveBaseline : 0f;
         GUILayout.Label($"Nivel a {targetHz:F0} Hz: {new string('|', Mathf.Clamp(Mathf.RoundToInt(Mathf.Log10(1f + ratio) * 20f), 0, 60))}  ×{ratio:F1}");
 

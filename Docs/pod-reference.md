@@ -540,8 +540,8 @@ virtual surface texture
 - [x] Avatar over Normcore (AvatarModel) — built; receiving on a second machine still to try
 - [x] **End-to-end latency** — measured 2026-11-09 (Unity `LatencyTest` scene, microphone):
       median 55 ms, p90 93 ms, preliminary; to repeat with all 9 pods connected
-- [ ] **Firmware v5** (DRV tuned + auto-calibrated at power-up, STEP and RISE): A/B on
-      pod 7 felt stronger (Nov 9); to flash on all 9
+- [x] **Firmware v5** (DRV tuned + auto-calibrated at power-up, STEP and RISE): A/B on
+      pod 7 felt stronger; **flashed on all 9 (2026-11-09), all print "DRV calibrated"**
 - [ ] Walker Tape under sustained vibration + sweat, full session
 - [ ] The five MVP cues driven by scene state
 - [ ] Rehearsal workflow: scene selection, take approval

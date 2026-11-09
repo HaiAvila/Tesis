@@ -20,9 +20,9 @@ using UnityEngine;
 // says what a cue means:
 //   Acción  TRIPLE, every pod          Corte  LONG 500 ms, every pod
 //   Giro    CLICK, that side's wrist    Marca  DOUBLE, sternum
-//   Pasos   CLICK on the shins, alternating left/right, at the walk's cadence, for its span
+//   Pasos   a 200 ms buzz (LONG 20) on the shins, alternating left/right, at the walk's cadence
 //   Aviso   clicks on the sternum that speed up (the firmware has no ascending pattern)
-//   Pasos from a body: one CLICK per real step, on that leg's shin
+//   Pasos from a body: one 200 ms buzz per real step, on that leg's shin
 //   Proximidad (the hand)  CLICKs on that wrist closer and closer over the reach, DOUBLE there
 //   Contacto  overlapping LONG pulses on that wrist for the whole hold (a sustained buzz)
 //   Sostener  LONG 600 ms on that wrist at the start of the hold, DOUBLE when it ends
@@ -37,6 +37,10 @@ public class CueEngine : MonoBehaviour
     const float ContactRepeat = 1f;                // a new long pulse every second...
     const float ContactPulse = 1.2f;               // ...each 1.2 s, so they overlap
     const int HoldPulseParam = 60;                 // LONG 600 ms: "hold it there"
+    // A step: a 200 ms buzz. A CLICK (10-20 ms) is barely felt on a moving shin; tried by hand
+    // with cue.py on Nov 9 (CLICK, DOUBLE, 80, 120, 200 ms): 200 ms was the one felt walking.
+    const PodReceiver.Cue StepCue = PodReceiver.Cue.Long;
+    const int StepParam = 20;
 
     [Tooltip("Off only for testing without pods: plays (and logs) the timeline anyway.")]
     public bool requirePods = true;
@@ -290,7 +294,7 @@ public class CueEngine : MonoBehaviour
                     break;
                 case CueKind.Timing when cue.Dur <= 0f:
                     // A real step from the reference's body: that leg's shin, at that moment.
-                    Add(at, cue.Pod, PodReceiver.Cue.Click, 0, "Paso");
+                    Add(at, cue.Pod, StepCue, StepParam, "Paso");
                     break;
                 case CueKind.Proximity:
                     // The hand nearing its point: clicks closer and closer, then a double there.
@@ -314,7 +318,7 @@ public class CueEngine : MonoBehaviour
                     float step = 1f / Mathf.Max(cue.Param, 0.5f);
                     int n = 0;
                     for (float s = 0f; s < cue.Dur; s += step, n++)
-                        Add(at + s, n % 2 == 0 ? PodIds.LeftShin : PodIds.RightShin, PodReceiver.Cue.Click, 0, "Paso");
+                        Add(at + s, n % 2 == 0 ? PodIds.LeftShin : PodIds.RightShin, StepCue, StepParam, "Paso");
                     break;
                 default:
                     Debug.Log($"[CueEngine] {cue.Kind} not playable in timeline mode yet");

@@ -81,6 +81,16 @@ the Adafruit breakout. Use `begin_I2C(0x4B)`.
 **`useLRA()` is mandatory.** Without it the LRA does not move at all, correct
 wiring or not. Also call `selectLibrary(6)`.
 
+**The DRV was never tuned to this motor until v5.** `useLRA()` only sets the motor-type
+bit; the rest stayed at the chip's defaults (rated ~1.6 V rms, drive time for ~208 Hz,
+uncalibrated back-EMF), so steps felt weak on a moving shin (Nov 9). **v5** (`calibrateDRV`)
+writes, before the chip's auto-calibration at every power-up (~1.2 s of buzzing):
+RATED_VOLTAGE 70 (= 1.8 V rms closed loop at 235 Hz, datasheet Eq. 5), DRIVE_TIME 16
+(2.1 ms, half of 235 Hz; Table 24), OD_CLAMP left at the default 0x8C (~3 V peak), FEEDBACK
+LRA with default brake/loop/back-EMF gains, AUTO_CAL_TIME 3. The serial port prints
+"DRV calibrated: comp=… bemf=… feedback=…" or "DRV calibration FAILED". First flashed on
+pod 7 only, to compare with pod 8 (v4) using the same cue (`7 4 20` vs `8 4 20`).
+
 **Effect 118 does NOT run until stopped.** Despite being named "long buzz for
 programmatic stopping," it self-terminates after roughly 10 s. Verified on
 hardware. Sustained cues must either re-trigger or use real-time playback (RTP)
@@ -523,8 +533,10 @@ virtual surface texture
 - [x] **Firmware batch** — battery voltage + charge status on pods, RSSI on the receiver,
       cues DONE and FAIL: v4, flashed on all 9 (2026-11-04). The optional 30 Hz notify was left out.
 - [x] Avatar over Normcore (AvatarModel) — built; receiving on a second machine still to try
-- [ ] **End-to-end latency** — Unity cue → vibration on skin, never measured,
-      target under ~100 ms
+- [x] **End-to-end latency** — measured 2026-11-09 (Unity `LatencyTest` scene, microphone):
+      median 55 ms, p90 93 ms, preliminary; to repeat with all 9 pods connected
+- [ ] **Firmware v5** (DRV tuned + auto-calibrated at power-up): on pod 7 for an A/B
+      against pod 8, then all 9 if it's stronger
 - [ ] Walker Tape under sustained vibration + sweat, full session
 - [ ] The five MVP cues driven by scene state
 - [ ] Rehearsal workflow: scene selection, take approval

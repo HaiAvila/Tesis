@@ -11,6 +11,9 @@
 //
 // v4 = v3 + battery voltage + charge status in the quaternion notify,
 //      + cues 6 DONE and 7 FAIL. Everything else unchanged.
+// v5 = v4 + the DRV2605L tuned to this motor at every power-up (calibrateDRV):
+//      rated voltage, drive time for 235 Hz and the chip's auto-calibration, instead
+//      of factory defaults meant for another motor. Cues and BLE unchanged.
 //
 // Cue packet = 2 bytes: [cueId, param]
 //   0 STOP   1 CLICK   2 PULSE(param=ms/10)   3 TRIPLE
@@ -221,6 +224,54 @@ const uint8_t SEQ_FAIL[] = { 52, WAIT_MS(100), 52 };
 
 void stopEffect() { if (drvOK) drv.stop(); }
 
+// --- DRV2605L tuned to the LRA -------------------------------------------------
+// Vybronics VG0832013D: 1.8 V rms rated, 235 Hz resonance. The Adafruit library only
+// sets the LRA bit; everything else stayed at the chip's defaults, which suit a
+// ~208 Hz motor at ~1.6 V rms, uncalibrated. Values from the DRV2605L datasheet
+// (SLOS854D):
+//   RATED_VOLTAGE  Eq. 5, LRA closed loop:
+//                  V_rms = 20.7 mV x RATED / sqrt(1 - (4 x t_sample + 300 us) x f)
+//                  t_sample 300 us (SAMPLE_TIME 3), f 235 Hz -> RATED = 70 for 1.8 V rms
+//   OD_CLAMP       left at the chip's default (0x8C, about 3 V peak): overdrive is no
+//                  stronger than before
+//   DRIVE_TIME     Table 24: drive time = DRIVE_TIME x 0.1 ms + 0.5 ms, about half the
+//                  period; 235 Hz -> 2.13 ms -> 16 (default 19 = ~208 Hz)
+//   FEEDBACK       LRA, brake factor 3x, loop gain medium, back-EMF gain 2 (defaults
+//                  apart from the LRA bit; the calibration sets the gain itself)
+//   CONTROL4       AUTO_CAL_TIME 3 (1-1.2 s), as the datasheet suggests
+// The calibration (section 8.5.6) runs ~1.2 s with the motor buzzing, every power-up,
+// and fills A_CAL_COMP, A_CAL_BEMF and BEMF_GAIN. DIAG_RESULT set = it failed: the
+// tuned voltage and drive time stay, with the default compensation.
+const uint8_t DRV_RATED_VOLTAGE = 70;
+const uint8_t DRV_OD_CLAMP      = 0x8C;
+const uint8_t DRV_DRIVE_TIME    = 16;
+
+bool drvCalibrated = false;
+
+void calibrateDRV() {
+  drv.writeRegister8(DRV2605_REG_MODE, DRV2605_MODE_AUTOCAL);
+  drv.writeRegister8(DRV2605_REG_RATEDV, DRV_RATED_VOLTAGE);
+  drv.writeRegister8(DRV2605_REG_CLAMPV, DRV_OD_CLAMP);
+  drv.writeRegister8(DRV2605_REG_FEEDBACK, 0x80 | (3 << 4) | (1 << 2) | 2);
+  drv.writeRegister8(DRV2605_REG_CONTROL1, 0x80 | DRV_DRIVE_TIME);   // + STARTUP_BOOST
+  drv.writeRegister8(DRV2605_REG_CONTROL2, 0xF5);                    // defaults: sample 300 us
+  drv.writeRegister8(DRV2605_REG_CONTROL4, 0x30);                    // AUTO_CAL_TIME 3
+  drv.writeRegister8(DRV2605_REG_GO, 1);
+
+  unsigned long t0 = millis();
+  while ((drv.readRegister8(DRV2605_REG_GO) & 0x01) && millis() - t0 < 2500) delay(10);
+
+  uint8_t status = drv.readRegister8(DRV2605_REG_STATUS);
+  drvCalibrated = !(status & 0x08) && millis() - t0 < 2500;
+  Serial.print(drvCalibrated ? "DRV calibrated" : "DRV calibration FAILED");
+  Serial.print(": comp=0x");  Serial.print(drv.readRegister8(0x18), HEX);
+  Serial.print(" bemf=0x");   Serial.print(drv.readRegister8(0x19), HEX);
+  Serial.print(" feedback=0x"); Serial.print(drv.readRegister8(DRV2605_REG_FEEDBACK), HEX);
+  Serial.print(" in ");       Serial.print(millis() - t0); Serial.println(" ms");
+
+  drv.setMode(DRV2605_MODE_INTTRIG);
+}
+
 void startCue(uint8_t id, uint8_t param) {
   curCue = id; curParam = param; cueStep = 0; cueT = millis();
   switch (id) {
@@ -363,7 +414,7 @@ void setup() {
   if (drvOK) {
     drv.selectLibrary(6);
     drv.useLRA();
-    drv.setMode(DRV2605_MODE_INTTRIG);
+    calibrateDRV();                  // ends in internal-trigger mode
   } else {
     Serial.println("DRV FAILED");
   }

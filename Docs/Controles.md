@@ -246,7 +246,8 @@ Si el shot tiene **toma preferida**, al empezar la toma los pods reproducen sus 
 Las reproduce la computadora que tiene los pods (el receptor y `bridge.py`).
 
 ### Editor de pistas hápticas (director)
-En la reproducción de una toma guardada de un shot, el botón **Editar pistas** (lápiz) abre las pistas del shot debajo del panel. Solo se editan en la **toma preferida** (la estrella), porque son las del shot. Funciona con el rayo y con el mouse.
+En la reproducción de una toma guardada de un shot, el botón **Editar pistas** (lápiz) abre las pistas del shot debajo del panel; presiónalo otra vez (o **Cerrar**) para quitarlas. El lápiz se pone **azul** mientras están abiertas. Solo se editan en la **toma preferida** (la estrella), porque son las del shot. Funciona con el rayo y con el mouse.
+- **Minimizar:** las deja en una franja delgada (solo las pistas de colores y el cursor, sin botones) para que no tapen la vista; **Expandir** las regresa completas. Se queda como lo dejaste la próxima vez que las abras en ese visor.
 - **Filas:** Todos (Acción y Corte, fijas), Esternón (Marca, Aviso), Muñecas (Giro, Proximidad, Contacto, Sostener), Espinillas (Pasos). I / D = izquierda / derecha.
 - **Mover:** arrastra una pista (se ajusta a 0.1 s). **Estirar:** arrastra un borde de una barra.
 - **Seleccionar:** tócala (contorno azul). **Borrar** la quita; **Cambiar lado** la pasa de izquierda a derecha o al revés.

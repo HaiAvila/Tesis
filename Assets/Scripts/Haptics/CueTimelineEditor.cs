@@ -15,6 +15,7 @@ using UnityEngine.UI;
 //   palette             add a cue of that kind at the playhead, manual
 //   ruler               tap or drag to move the replay
 //   Acción / Corte      fixed
+//   Minimizar           a thin strip: the cues and the playhead only (remembered per device)
 //
 // Every change is saved at once. An automatic cue the director changes becomes manual (white
 // outline) and leaves a "removed" copy, so regenerating the take's cues doesn't bring the old
@@ -30,6 +31,11 @@ public class CueTimelineEditor : MonoBehaviour
     const float LaneGap = 6f;
     const float LanesTop = 140f;
     const float RulerHeight = 30f;
+    // Minimized: thin lanes, no palette, tools or hint.
+    const float MiniLaneHeight = 20f;
+    const float MiniLaneGap = 4f;
+    const float MiniLanesTop = 72f;
+    const string MinimizedPref = "CueEditor.Minimized";
     const float InstantWidth = 20f;
     const float LockedWidth = 64f;
     const float EdgeGrab = 12f;
@@ -59,6 +65,23 @@ public class CueTimelineEditor : MonoBehaviour
     readonly List<GameObject> blocks = new List<GameObject>();
     int selectedId = -1;
 
+    // Called when the editor goes away (Cerrar, the pencil again, the replay closing).
+    public Action Closed;
+
+    bool minimized;
+    RectTransform rootRect;
+    RectTransform rulerRect;
+    readonly TMP_Text[] laneLabels = new TMP_Text[LaneNames.Length];
+    readonly List<GameObject> fullOnly = new List<GameObject>();
+    TMP_Text minimizeLabel;
+
+    float LaneH => minimized ? MiniLaneHeight : LaneHeight;
+    float Gap => minimized ? MiniLaneGap : LaneGap;
+    float Top => minimized ? MiniLanesTop : LanesTop;
+    float BlockInset => minimized ? 2f : 4f;
+    float LanesSpan => LaneNames.Length * (LaneH + Gap);
+    float PanelHeight => minimized ? Top + LanesSpan + RulerHeight + 14f : Height;
+
     float TimelineWidth => Width - Padding * 2f - LabelColumn;
 
     public static CueTimelineEditor Create(RectTransform replayPanel, float replayPanelHeight, RecordingPlaybackController replay, RecordingSession session, float duration, Action onChanged)
@@ -82,7 +105,10 @@ public class CueTimelineEditor : MonoBehaviour
         editor.duration = Mathf.Max(duration, 0.5f);
         editor.onChanged = onChanged;
         editor.database = FindFirstObjectByType<ShotListDatabase>();
+        editor.rootRect = rect;
+        editor.minimized = PlayerPrefs.GetInt(MinimizedPref, 0) == 1;
         editor.Build(rect);
+        editor.ApplyLayout();
         editor.Reload();
 
         XRUISetup.MoveToUILayer(root);
@@ -93,47 +119,44 @@ public class CueTimelineEditor : MonoBehaviour
 
     void Build(RectTransform root)
     {
-        title = Text(root, $"Pistas hápticas · Shot {session.ShotNumber}", 26f, true, new Rect(Padding, 18f, 520f, 40f), TextAlignmentOptions.MidlineLeft);
+        title = Text(root, $"Pistas hápticas · Shot {session.ShotNumber}", 26f, true, new Rect(Padding, 18f, 480f, 40f), TextAlignmentOptions.MidlineLeft);
 
         Pill(root, GlassUI.Icon.Close, "Cerrar", new Rect(Width - Padding - 140f, 16f, 140f, 44f), Close, GlassUI.ButtonStyle.Normal);
-        Pill(root, null, "Borrar", new Rect(Width - Padding - 290f, 16f, 140f, 44f), DeleteSelected, GlassUI.ButtonStyle.Danger);
-        Pill(root, null, "Cambiar lado", new Rect(Width - Padding - 500f, 16f, 200f, 44f), SwapSide, GlassUI.ButtonStyle.Normal);
+        minimizeLabel = Pill(root, null, "", new Rect(Width - Padding - 300f, 16f, 150f, 44f), ToggleMinimized, GlassUI.ButtonStyle.Normal)
+            .GetComponentInChildren<TMP_Text>();
+        fullOnly.Add(Pill(root, null, "Borrar", new Rect(Width - Padding - 460f, 16f, 140f, 44f), DeleteSelected, GlassUI.ButtonStyle.Danger));
+        fullOnly.Add(Pill(root, null, "Cambiar lado", new Rect(Width - Padding - 670f, 16f, 200f, 44f), SwapSide, GlassUI.ButtonStyle.Normal));
 
-        Text(root, "Añadir:", 20f, false, new Rect(Padding, 80f, 90f, 40f), TextAlignmentOptions.MidlineLeft, GlassUI.SubTextColor);
+        fullOnly.Add(Text(root, "Añadir:", 20f, false, new Rect(Padding, 80f, 90f, 40f), TextAlignmentOptions.MidlineLeft, GlassUI.SubTextColor).gameObject);
         float x = Padding + 96f;
         foreach (CueKind kind in Palette)
         {
             CueKind captured = kind;
             string name = HapticCues.Name(kind);
             float w = 30f + name.Length * 11f;
-            Pill(root, null, $"<color=#{ColorUtility.ToHtmlStringRGB(HapticCues.Color(kind))}>{Dot}</color> {name}", new Rect(x, 78f, w, 42f), () => Add(captured), GlassUI.ButtonStyle.Row);
+            fullOnly.Add(Pill(root, null, $"<color=#{ColorUtility.ToHtmlStringRGB(HapticCues.Color(kind))}>{Dot}</color> {name}", new Rect(x, 78f, w, 42f), () => Add(captured), GlassUI.ButtonStyle.Row));
             x += w + 8f;
         }
 
-        // The timeline: lanes, ruler, playhead share one x range.
+        // The timeline: lanes, ruler, playhead share one x range. Their sizes: ApplyLayout.
         var area = new GameObject("Timeline", typeof(RectTransform));
         area.transform.SetParent(root, false);
         timeline = (RectTransform)area.transform;
-        Place(timeline, new Rect(Padding + LabelColumn, LanesTop, TimelineWidth, LaneNames.Length * (LaneHeight + LaneGap) + RulerHeight));
 
         for (int i = 0; i < LaneNames.Length; i++)
         {
-            float y = i * (LaneHeight + LaneGap);
-            Text(root, LaneNames[i], 20f, false, new Rect(Padding, LanesTop + y, LabelColumn - 10f, LaneHeight), TextAlignmentOptions.MidlineLeft, GlassUI.SubTextColor);
+            laneLabels[i] = Text(root, LaneNames[i], 20f, false, new Rect(Padding, 0f, LabelColumn - 10f, LaneHeight), TextAlignmentOptions.MidlineLeft, GlassUI.SubTextColor);
 
             var lane = new GameObject($"Lane_{LaneNames[i]}", typeof(RectTransform), typeof(Image), typeof(LaneSurface));
             lane.transform.SetParent(timeline, false);
             lanes[i] = (RectTransform)lane.transform;
-            Place(lanes[i], new Rect(0f, y, TimelineWidth, LaneHeight));
             GlassUI.Rounded(lane.GetComponent<Image>(), 10f, new Color(1f, 1f, 1f, 0.05f));
             lane.GetComponent<LaneSurface>().Editor = this;
         }
 
         var ruler = new GameObject("Ruler", typeof(RectTransform), typeof(Image), typeof(RulerSurface));
         ruler.transform.SetParent(timeline, false);
-        var rulerRect = (RectTransform)ruler.transform;
-        float rulerY = LaneNames.Length * (LaneHeight + LaneGap);
-        Place(rulerRect, new Rect(0f, rulerY, TimelineWidth, RulerHeight));
+        rulerRect = (RectTransform)ruler.transform;
         ruler.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.02f);
         ruler.GetComponent<RulerSurface>().Editor = this;
         for (int s = 0; s <= Mathf.FloorToInt(duration); s++)
@@ -152,14 +175,45 @@ public class CueTimelineEditor : MonoBehaviour
         var head = new GameObject("Playhead", typeof(RectTransform), typeof(Image));
         head.transform.SetParent(timeline, false);
         playhead = (RectTransform)head.transform;
-        Place(playhead, new Rect(0f, 0f, 3f, rulerY + 12f));
         Image headImage = head.GetComponent<Image>();
         headImage.color = GlassUI.Accent;
         headImage.raycastTarget = false;
 
         hint = Text(root, "Arrastra para mover · los bordes de una barra la estiran · se ajusta a 0.1 s · contorno blanco = editada a mano",
             16f, false, new Rect(Padding, Height - 38f, Width - Padding * 2f, 26f), TextAlignmentOptions.MidlineLeft, GlassUI.SubTextColor);
+        fullOnly.Add(hint.gameObject);
     }
+
+    // Full or minimized: what shows, the lanes' heights, the panel's height (its top stays put).
+    void ApplyLayout()
+    {
+        foreach (GameObject part in fullOnly)
+            part.SetActive(!minimized);
+        minimizeLabel.text = (minimized ? GlassUI.Icon.Expand : GlassUI.Icon.Collapse) + "  " + (minimized ? "Expandir" : "Minimizar");
+
+        float lanesSpan = LanesSpan;
+        Place(timeline, new Rect(Padding + LabelColumn, Top, TimelineWidth, lanesSpan + RulerHeight));
+        for (int i = 0; i < LaneNames.Length; i++)
+        {
+            float y = i * (LaneH + Gap);
+            Place(lanes[i], new Rect(0f, y, TimelineWidth, LaneH));
+            Place((RectTransform)laneLabels[i].transform, new Rect(Padding, Top + y, LabelColumn - 10f, LaneH));
+            laneLabels[i].fontSize = minimized ? 15f : 20f;
+        }
+        Place(rulerRect, new Rect(0f, lanesSpan, TimelineWidth, RulerHeight));
+        Place(playhead, new Rect(0f, 0f, 3f, lanesSpan + 12f));
+        rootRect.sizeDelta = new Vector2(Width, PanelHeight);
+        Rebuild();
+    }
+
+    void ToggleMinimized()
+    {
+        minimized = !minimized;
+        PlayerPrefs.SetInt(MinimizedPref, minimized ? 1 : 0);
+        ApplyLayout();
+    }
+
+    void OnDestroy() => Closed?.Invoke();
 
     void Update()
     {
@@ -199,6 +253,7 @@ public class CueTimelineEditor : MonoBehaviour
         PlaceBlock(rect, cue);
 
         bool selected = cue.Id == selectedId;
+        float blockHeight = LaneH - BlockInset * 2f;
         Color color = HapticCues.Color(cue.Kind);
         GlassUI.Rounded(block.GetComponent<Image>(), 7f, new Color(color.r, color.g, color.b, selected ? 1f : 0.85f));
         Outline outline = block.GetComponent<Outline>();
@@ -207,11 +262,15 @@ public class CueTimelineEditor : MonoBehaviour
         outline.effectColor = selected ? GlassUI.Accent : Color.white;
         outline.effectDistance = selected ? new Vector2(3f, -3f) : new Vector2(2f, -2f);
 
-        string side = SideLetter(cue.Pod);
-        string label = cue.Dur > 0f && rect.sizeDelta.x > 110f ? HapticCues.Name(cue.Kind) + (side.Length > 0 ? " · " + side : "") : Short(cue.Kind) + side;
-        TMP_Text text = Text(rect, label, Locked(cue.Kind) ? 14f : 15f, true, new Rect(0f, 0f, Mathf.Max(rect.sizeDelta.x, InstantWidth), LaneHeight - 8f), TextAlignmentOptions.Center, new Color(0.05f, 0.06f, 0.08f, 1f));
-        text.enableWordWrapping = false;
-        text.overflowMode = TextOverflowModes.Overflow;
+        // Minimized: colors only, the strip is too thin for names.
+        if (!minimized)
+        {
+            string side = SideLetter(cue.Pod);
+            string label = cue.Dur > 0f && rect.sizeDelta.x > 110f ? HapticCues.Name(cue.Kind) + (side.Length > 0 ? " · " + side : "") : Short(cue.Kind) + side;
+            TMP_Text text = Text(rect, label, Locked(cue.Kind) ? 14f : 15f, true, new Rect(0f, 0f, Mathf.Max(rect.sizeDelta.x, InstantWidth), blockHeight), TextAlignmentOptions.Center, new Color(0.05f, 0.06f, 0.08f, 1f));
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Overflow;
+        }
 
         CueBlock handle = block.GetComponent<CueBlock>();
         handle.Editor = this;
@@ -225,7 +284,7 @@ public class CueTimelineEditor : MonoBehaviour
         if (Locked(cue.Kind))
         {
             float at = cue.Kind == CueKind.CameraStart ? 0f : Mathf.Min(TimeToX(cue.T), TimelineWidth) - LockedWidth;
-            Place(rect, new Rect(Mathf.Max(0f, at), 4f, LockedWidth, LaneHeight - 8f));
+            Place(rect, new Rect(Mathf.Max(0f, at), BlockInset, LockedWidth, LaneH - BlockInset * 2f));
             return;
         }
 
@@ -233,7 +292,7 @@ public class CueTimelineEditor : MonoBehaviour
         float w = cue.Dur > 0f ? Mathf.Max(cue.Dur / duration * TimelineWidth, InstantWidth) : InstantWidth;
         if (cue.Dur <= 0f)
             x -= InstantWidth / 2f;
-        Place(rect, new Rect(x, 4f, w, LaneHeight - 8f));
+        Place(rect, new Rect(x, BlockInset, w, LaneH - BlockInset * 2f));
     }
 
     static int LaneOf(CueKind kind)
@@ -551,7 +610,7 @@ public class CueTimelineEditor : MonoBehaviour
         return label;
     }
 
-    static void Pill(RectTransform parent, string glyph, string text, Rect r, Action onClick, GlassUI.ButtonStyle style)
+    static GameObject Pill(RectTransform parent, string glyph, string text, Rect r, Action onClick, GlassUI.ButtonStyle style)
     {
         var buttonObject = new GameObject($"Button_{text}", typeof(RectTransform), typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
@@ -562,6 +621,7 @@ public class CueTimelineEditor : MonoBehaviour
             style == GlassUI.ButtonStyle.Danger ? GlassUI.DangerText : (Color?)null);
         GlassUI.Stretch((RectTransform)tmp.transform);
         tmp.enableWordWrapping = false;
+        return buttonObject;
     }
 }
 

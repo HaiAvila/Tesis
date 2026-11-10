@@ -30,6 +30,7 @@ public static class GlassUI
             Record = "", WifiOff = "", Movie = "", Save = "", PlayCircle = "",
             Check = "", Back = "", Previous = "", Next = "", Star = "",
             Robot = "", // smart_toy
+            Collapse = "", Expand = "", // expand_less, expand_more (chevrons)
             Edit = ""; // edit
     }
 

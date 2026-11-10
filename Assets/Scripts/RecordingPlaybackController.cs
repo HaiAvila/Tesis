@@ -708,7 +708,7 @@ public class RecordingPlaybackController : MonoBehaviour
         CreateIconButton(rowObject.transform, GlassUI.Icon.Mic, OnNotesClicked, ButtonColor, "Notas de voz");
 
         if (currentSession != null && !currentSession.IsScene)
-            CreateIconButton(rowObject.transform, GlassUI.Icon.Edit, OnEditCuesClicked, ButtonColor, "Editar pistas");
+            editCuesButtonText = CreateIconButton(rowObject.transform, GlassUI.Icon.Edit, OnEditCuesClicked, cueEditor != null ? ButtonActiveColor : ButtonColor, "Editar pistas");
 
         if (currentSession != null)
         {
@@ -726,7 +726,9 @@ public class RecordingPlaybackController : MonoBehaviour
         : RehearsalRecorder.Instance != null ? RehearsalRecorder.Instance.PendingTakeGuid : null;
 
     // The shot's cue timeline under the panel (the preferida's: they're the shot's). Again to close.
+    // The pencil is cyan while the editor is open, like the other toggles.
     CueTimelineEditor cueEditor;
+    TMP_Text editCuesButtonText;
 
     void OnEditCuesClicked()
     {
@@ -747,6 +749,14 @@ public class RecordingPlaybackController : MonoBehaviour
         var panelRect = (RectTransform)panelObject.transform;
         cueEditor = CueTimelineEditor.Create(panelRect, panelRect.sizeDelta.y, this, currentSession,
             Mathf.Max(totalDuration, currentSession.Duracion), RefreshCueRow);
+        CueTimelineEditor opened = cueEditor;
+        opened.Closed = () =>
+        {
+            if (cueEditor == opened)
+                cueEditor = null;
+            SetActiveLook(editCuesButtonText, false);
+        };
+        SetActiveLook(editCuesButtonText, true);
     }
 
     void OnNotesClicked()

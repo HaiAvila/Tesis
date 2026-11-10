@@ -7,15 +7,20 @@ using SQLite4Unity3d;
 using UnityEngine;
 using UnityEngine.Networking;
 
-public class ShotListDatabase : MonoBehaviour
+// The syncing between devices (version stamps, exporting and importing takes) is in
+// ShotListDatabase.Sync.cs.
+public partial class ShotListDatabase : MonoBehaviour
 {
     const string DatabaseFileName = "shotlist.db";
     const string CsvFileName = "ShotListDB.csv";
     const string HeaderMarker = "scene_number";
 
+    // The database file, in this copy's data folder (AppPaths: the server .exe has its own).
+    static string DbPath => Path.Combine(AppPaths.DataRoot, DatabaseFileName);
+
     void Start()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -28,6 +33,7 @@ public class ShotListDatabase : MonoBehaviour
             EnsureCameraFramingsColumns(connection);
             CreateCueTrackTable(connection);
             CreateTakeEventsTable(connection);
+            CreateSyncTables(connection);
         }
 
         GenerateMissingCueTracks();
@@ -47,7 +53,7 @@ public class ShotListDatabase : MonoBehaviour
         yield return null;
 
         List<RecordingSession> preferidas;
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
             preferidas = connection.Query<RecordingSession>("SELECT * FROM Sesiones WHERE es_preferida = 1 AND tipo = ?;", RecordingSession.TipoToma);
         Debug.Log($"[Cues] generator version {CueGenerator.Version}: regenerating {preferidas.Count} preferidas");
         foreach (RecordingSession session in preferidas)
@@ -97,14 +103,14 @@ public class ShotListDatabase : MonoBehaviour
         var rows = new List<TakeEvent>();
         foreach (float t in times)
             rows.Add(new TakeEvent { SessionGuid = sessionGuid, T = t, Evento = TakeEvent.SetAction });
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
             connection.InsertAll(rows);
         Debug.Log($"[SetAction] saved {rows.Count} triggers with take {sessionGuid}");
     }
 
     public List<float> GetSetActions(string sessionGuid)
     {
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             var times = new List<float>();
             foreach (TakeEvent row in connection.Query<TakeEvent>("SELECT * FROM EventosToma WHERE session_guid = ? AND evento = ? ORDER BY t ASC;", sessionGuid, TakeEvent.SetAction))
@@ -116,7 +122,7 @@ public class ShotListDatabase : MonoBehaviour
     // What plays: auto and manual rows (not the "removed" markers).
     public List<CueEvent> GetCueTrack(int shotNumber)
     {
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             return connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? AND source != ? ORDER BY t ASC;", shotNumber, CueEvent.SourceRemoved);
         }
@@ -129,14 +135,18 @@ public class ShotListDatabase : MonoBehaviour
 
     public bool HasManualCues(int shotNumber)
     {
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
             return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM CueTrack WHERE shot_number = ? AND source != ?;", shotNumber, CueEvent.SourceAuto) > 0;
     }
 
     public void InsertCue(CueEvent cue)
     {
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
+        {
             connection.Insert(cue);
+            TouchCues(connection, cue.ShotNumber);
+        }
+        RaiseChanged();
     }
 
     // Before changing an automatic cue: remember it as removed, make it manual.
@@ -144,7 +154,7 @@ public class ShotListDatabase : MonoBehaviour
     {
         if (cue.Source != CueEvent.SourceAuto)
             return;
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             CueEvent original = connection.Find<CueEvent>(cue.Id);
             if (original != null)
@@ -152,6 +162,7 @@ public class ShotListDatabase : MonoBehaviour
                 original.Id = 0;
                 original.Source = CueEvent.SourceRemoved;
                 connection.Insert(original);
+                TouchCues(connection, cue.ShotNumber);
             }
         }
         cue.Source = CueEvent.SourceManual;
@@ -159,15 +170,23 @@ public class ShotListDatabase : MonoBehaviour
 
     public void UpdateCue(CueEvent cue)
     {
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
+        {
             connection.Update(cue);
+            TouchCues(connection, cue.ShotNumber);
+        }
+        RaiseChanged();
     }
 
     public void DeleteCue(CueEvent cue)
     {
         TakeOverAutoCue(cue);
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
+        {
             connection.Delete<CueEvent>(cue.Id);
+            TouchCues(connection, cue.ShotNumber);
+        }
+        RaiseChanged();
     }
 
     // The shot's automatic cues, made again from this take (its preferida). Manual rows stay,
@@ -190,7 +209,7 @@ public class ShotListDatabase : MonoBehaviour
             cue.Source = CueEvent.SourceAuto;
         }
 
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             List<CueEvent> removed = keepManual
                 ? connection.Query<CueEvent>("SELECT * FROM CueTrack WHERE shot_number = ? AND source = ? AND session_guid = ?;", session.ShotNumber, CueEvent.SourceRemoved, session.SessionGuid)
@@ -206,8 +225,10 @@ public class ShotListDatabase : MonoBehaviour
                 else
                     connection.Execute("DELETE FROM CueTrack WHERE shot_number = ?;", session.ShotNumber);
                 connection.InsertAll(cues);
+                TouchCues(connection, session.ShotNumber);
             });
         }
+        RaiseChanged();
 
         Debug.Log($"[Cues] shot {session.ShotNumber}: {cues.Count} automatic cues from take {session.Id} ({session.SessionGuid}), {(body != null ? "with the body" : "head only")}, {plan}");
         return cues.Count;
@@ -218,7 +239,7 @@ public class ShotListDatabase : MonoBehaviour
     void GenerateMissingCueTracks()
     {
         List<RecordingSession> missing;
-        using (var connection = new SQLiteConnection(Path.Combine(Application.persistentDataPath, DatabaseFileName)))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             missing = connection.Query<RecordingSession>(
                 "SELECT * FROM Sesiones WHERE es_preferida = 1 AND tipo = ? AND shot_number NOT IN (SELECT shot_number FROM CueTrack WHERE source = ?);",
@@ -252,7 +273,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public List<ShotBoundary> GetBoundariesForSession(string sessionGuid)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -266,7 +287,7 @@ public class ShotListDatabase : MonoBehaviour
     // whatever wrote them.
     public void DeleteBoundaries(string sessionGuid)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -278,7 +299,7 @@ public class ShotListDatabase : MonoBehaviour
     // A scene's shots in order - Siguiente toma walks through them.
     public List<int> GetShotNumbersOfScene(int sceneNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -393,7 +414,7 @@ public class ShotListDatabase : MonoBehaviour
     // without their session either.
     public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false, List<PoseSample> poseFrames = null, byte[] avatarLayout = null)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         if (tipo == RecordingSession.TipoEscena)
             esPreferida = false;
@@ -410,13 +431,14 @@ public class ShotListDatabase : MonoBehaviour
                 Duracion = duration,
                 EsPreferida = esPreferida,
                 EsFavorita = esFavorita,
-                AvatarLayout = avatarLayout
+                AvatarLayout = avatarLayout,
+                Rev = NewRev()
             };
 
             connection.RunInTransaction(() =>
             {
                 if (esPreferida)
-                    connection.Execute("UPDATE Sesiones SET es_preferida = 0 WHERE shot_number = ?;", shotNumber);
+                    connection.Execute("UPDATE Sesiones SET es_preferida = 0, rev = ? WHERE shot_number = ? AND es_preferida = 1;", session.Rev, shotNumber);
 
                 connection.Insert(session);
 
@@ -450,6 +472,7 @@ public class ShotListDatabase : MonoBehaviour
             int boundaryCount = boundaries != null ? boundaries.Count : 0;
             if (esPreferida)
                 RegenerateAutoCues(session);
+            RaiseChanged();
 
             Debug.Log($"{(tipo == RecordingSession.TipoEscena ? "[Escena] " : "")}ShotListDatabase: saved session {session.Id} ({tipo}, scene {sceneNumber}, shot {shotNumber}, guid {sessionGuid}, {samples.Count} metrics, {cameraSamples.Count} camera samples, {boundaryCount} shot boundaries, {duration:F1}s, preferida={esPreferida}, favorita={esFavorita}).");
             return session.Id;
@@ -462,14 +485,15 @@ public class ShotListDatabase : MonoBehaviour
     // CueTimelineEditor.AskKeepEdits); false starts the shot's cues over from this take.
     public void SetPreferida(int sessionId, int shotNumber, bool keepManual = true)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
+            long rev = NewRev();
             connection.RunInTransaction(() =>
             {
-                connection.Execute("UPDATE Sesiones SET es_preferida = 0 WHERE shot_number = ?;", shotNumber);
-                connection.Execute("UPDATE Sesiones SET es_preferida = 1 WHERE id = ?;", sessionId);
+                connection.Execute("UPDATE Sesiones SET es_preferida = 0, rev = ? WHERE shot_number = ? AND es_preferida = 1 AND id != ?;", rev, shotNumber, sessionId);
+                connection.Execute("UPDATE Sesiones SET es_preferida = 1, rev = ? WHERE id = ?;", rev, sessionId);
             });
         }
 
@@ -479,17 +503,18 @@ public class ShotListDatabase : MonoBehaviour
     // Non-exclusive bookmark - marking or unmarking one session never touches any other.
     public void SetFavorita(int sessionId, bool esFavorita)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
-            connection.Execute("UPDATE Sesiones SET es_favorita = ? WHERE id = ?;", esFavorita ? 1 : 0, sessionId);
+            connection.Execute("UPDATE Sesiones SET es_favorita = ?, rev = ? WHERE id = ?;", esFavorita ? 1 : 0, NewRev(), sessionId);
         }
+        RaiseChanged();
     }
 
     public SortedDictionary<int, List<Shot>> GetShotsGroupedByScene()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
         var grouped = new SortedDictionary<int, List<Shot>>();
 
         using (var connection = new SQLiteConnection(dbPath))
@@ -521,7 +546,7 @@ public class ShotListDatabase : MonoBehaviour
     // The whole scene starts where its first shot (lowest shot_number) starts.
     public int? GetFirstShotOfScene(int sceneNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -534,7 +559,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public int? GetSceneNumberForShot(int shotNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -549,7 +574,7 @@ public class ShotListDatabase : MonoBehaviour
     // guarantee, but ids are assigned in insertion order). Null if none exists yet.
     public RecordingSession GetMostRecentSession(int shotNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -562,7 +587,7 @@ public class ShotListDatabase : MonoBehaviour
     // matches how the multi-session list in Inspección de Escenas should sort/highlight.
     public List<RecordingSession> GetSessionsForShot(int shotNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -576,7 +601,7 @@ public class ShotListDatabase : MonoBehaviour
     // have shot_number 0, which is never a shot).
     public List<RecordingSession> GetSceneSessions(int sceneNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -587,7 +612,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public RecordingSession GetSession(int sessionId)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -600,7 +625,7 @@ public class ShotListDatabase : MonoBehaviour
     // Favoritos screen.
     public List<RecordingSession> GetAllSessions()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -610,7 +635,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public List<RecordingSession> GetFavoriteSessions()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -621,7 +646,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public Shot GetShot(int shotNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -634,7 +659,7 @@ public class ShotListDatabase : MonoBehaviour
     // "ghost only".
     public List<CameraTrackSample> GetCameraTrackForSession(int sessionId)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -648,7 +673,7 @@ public class ShotListDatabase : MonoBehaviour
     // (scene, shot), shot 0 being the whole scene's recordings.
     public Dictionary<(int scene, int shot), TakeSummary> GetTakeSummaries()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
         var result = new Dictionary<(int, int), TakeSummary>();
 
         using (var connection = new SQLiteConnection(dbPath))
@@ -670,7 +695,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public void SaveVoiceNote(VoiceNote note)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -681,7 +706,7 @@ public class ShotListDatabase : MonoBehaviour
     // A take's notes, by the moment they were said, then the general notes of its shot.
     public List<VoiceNote> GetVoiceNotes(string takeGuid, int sceneNumber, int shotNumber)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -694,7 +719,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public List<VoiceNote> GetVoiceNotesOfTake(string takeGuid)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -704,7 +729,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public List<VoiceNote> GetVoiceNotesWithoutTake()
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -714,7 +739,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public void DeleteVoiceNote(VoiceNote note)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -733,7 +758,7 @@ public class ShotListDatabase : MonoBehaviour
     // The take was discarded: its notes stay, as notes of the shot.
     public void DetachVoiceNotes(string takeGuid)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -741,13 +766,22 @@ public class ShotListDatabase : MonoBehaviour
         }
     }
 
-    // A take and everything recorded with it, its notes included.
+    // A take and everything recorded with it, its notes included. Remembered as deleted
+    // (DeletedTakes), so the other devices delete it too instead of sending it back.
     public void DeleteSession(RecordingSession session)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        DeleteSessionRows(session, NewRev(), touchCues: true);
+        RaiseChanged();
+    }
+
+    // touchCues: the shot's cue timeline changed here (its automatic cues from this take went
+    // with it). False when the deletion arrives from another device: that one's timeline comes
+    // with its own stamp.
+    void DeleteSessionRows(RecordingSession session, long deletedAt, bool touchCues)
+    {
         List<VoiceNote> notes = GetVoiceNotesOfTake(session.SessionGuid);
 
-        using (var connection = new SQLiteConnection(dbPath))
+        using (var connection = new SQLiteConnection(DbPath))
         {
             connection.RunInTransaction(() =>
             {
@@ -756,9 +790,13 @@ public class ShotListDatabase : MonoBehaviour
                 connection.Execute("DELETE FROM PoseTrack WHERE sesion_id = ?;", session.Id);
                 connection.Execute("DELETE FROM ShotBoundaries WHERE session_id = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM NotasVoz WHERE session_guid = ?;", session.SessionGuid);
-                connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source IN (?, ?);", session.SessionGuid, CueEvent.SourceAuto, CueEvent.SourceRemoved);
+                int cues = connection.Execute("DELETE FROM CueTrack WHERE session_guid = ? AND source IN (?, ?);", session.SessionGuid, CueEvent.SourceAuto, CueEvent.SourceRemoved);
                 connection.Execute("DELETE FROM EventosToma WHERE session_guid = ?;", session.SessionGuid);
                 connection.Execute("DELETE FROM Sesiones WHERE id = ?;", session.Id);
+                if (!string.IsNullOrEmpty(session.SessionGuid))
+                    connection.Execute("INSERT OR REPLACE INTO DeletedTakes (session_guid, deleted) VALUES (?, ?);", session.SessionGuid, deletedAt);
+                if (touchCues && cues > 0 && !session.IsScene)
+                    TouchCues(connection, session.ShotNumber);
             });
         }
 
@@ -772,7 +810,7 @@ public class ShotListDatabase : MonoBehaviour
     // Empty for sessions recorded before the pose track existed, or without pods.
     public List<PoseSample> GetPoseTrackForSession(int sessionId)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -783,7 +821,7 @@ public class ShotListDatabase : MonoBehaviour
 
     public List<Metric> GetMetricsForSession(int sessionId)
     {
-        string dbPath = Path.Combine(Application.persistentDataPath, DatabaseFileName);
+        string dbPath = DbPath;
 
         using (var connection = new SQLiteConnection(dbPath))
         {
@@ -1087,6 +1125,9 @@ public class RecordingSession
     [Column("es_preferida")] public bool EsPreferida { get; set; }
     [Column("es_favorita")] public bool EsFavorita { get; set; }
     [Column("avatar_layout")] public byte[] AvatarLayout { get; set; }
+    // When the take or its marks last changed, on the device that changed it (UTC ticks): the
+    // newer one wins when devices sync. 0 = from before syncing existed.
+    [Column("rev")] public long Rev { get; set; }
 
     [Ignore] public bool IsScene => Tipo == TipoEscena;
 }

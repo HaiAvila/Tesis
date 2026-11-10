@@ -233,9 +233,10 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
             return;
         }
 
-#if !DIRECTOR_BUILD
+#if !DIRECTOR_BUILD && !SERVER_BUILD
         // Ensayar Solo (or the home menu) ignores the director's commands. The baseline still
-        // moves up, so nothing from now is replayed later either.
+        // moves up, so nothing from now is replayed later either. (The server has no modes: it
+        // always follows them - Calibrar, Siguiente toma.)
         if (Bootstrap.Mode != Bootstrap.AppMode.Remote)
         {
             Debug.Log($"[SessionSync] command {command} ignored: not in Ensayo Remoto (counter={counter}, baseline={commandBaseline})");

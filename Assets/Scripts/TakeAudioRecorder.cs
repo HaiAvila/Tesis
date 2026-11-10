@@ -16,7 +16,7 @@ public class TakeAudioRecorder : MonoBehaviour
     public const string DirectorTrack = "director";
     public const string ActorTrack = "actor";
 
-    public static string AudioFolder => Path.Combine(Application.persistentDataPath, "Audio");
+    public static string AudioFolder => Path.Combine(AppPaths.DataRoot, "Audio");
 
     public static string TrackPath(string sessionGuid, string track) => Path.Combine(AudioFolder, $"{sessionGuid}_{track}.wav");
 

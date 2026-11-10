@@ -19,6 +19,10 @@ using UnityEngine;
 //
 // The role only takes effect while a build profile is active - with none active (plain
 // platform settings) the Editor compiles as actor, and the switcher warns about it.
+//
+// "PC Server" is the exception: that profile is always the server, whatever the role here, so
+// Tesis > Build > Servidor (.exe) (ServerBuilder) can build the server without changing what
+// the Editor is compiled as. Role > Server still exists, to run the server in the Editor.
 static class RoleSwitcher
 {
     enum Role { Director, Actor, Server }
@@ -29,6 +33,9 @@ static class RoleSwitcher
     const string DirectorMenu = "Tesis/Role/Director";
     const string ActorMenu = "Tesis/Role/Actor";
     const string ServerMenu = "Tesis/Role/Server";
+
+    // Always SERVER_BUILD: never rewritten by the role menu.
+    public const string ServerProfileName = "PC Server";
 
     [MenuItem(DirectorMenu)] static void SwitchToDirector() => SwitchTo(Role.Director);
     [MenuItem(ActorMenu)] static void SwitchToActor() => SwitchTo(Role.Actor);
@@ -65,7 +72,7 @@ static class RoleSwitcher
     {
         List<BuildProfile> profiles = AssetDatabase.FindAssets("t:BuildProfile")
             .Select(guid => AssetDatabase.LoadAssetAtPath<BuildProfile>(AssetDatabase.GUIDToAssetPath(guid)))
-            .Where(profile => profile != null)
+            .Where(profile => profile != null && profile.name != ServerProfileName)
             .ToList();
 
         if (profiles.Count == 0)

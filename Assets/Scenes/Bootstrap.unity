@@ -1028,6 +1028,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f462d1d378e40554daf1ddbded15e707, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RehearsalRecorder
+  countdownSeconds: 10
+  actorCanStartTakes: 1
 --- !u!114 &1236625589 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 8678808007511643474, guid: 968aedacdb5fa48759191dee3fc8febc, type: 3}

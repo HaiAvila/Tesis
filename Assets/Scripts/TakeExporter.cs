@@ -26,7 +26,7 @@ using UnityEngine;
 // A file with no rows isn't written. Decimal points, whatever the machine's language.
 public static class TakeExporter
 {
-    public static string ExportRoot => Path.Combine(Application.persistentDataPath, "Exports");
+    public static string ExportRoot => Path.Combine(AppPaths.DataRoot, "Exports");
 
     public static int ExportAll(ShotListDatabase database, out int alreadyExported)
     {

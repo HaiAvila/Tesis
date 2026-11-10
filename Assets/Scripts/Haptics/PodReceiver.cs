@@ -14,6 +14,10 @@ using Debug = UnityEngine.Debug;
 /// Put this on one GameObject in the scene.
 /// </summary>
 /// <remarks>
+/// On the server the receiver's USB port is read directly (SerialBridge): the same lines come
+/// in through Feed and cues go out through directCueOut, with no bridge.py. UDP keeps listening
+/// either way, so bridge.py still works there if the port can't be opened.
+///
 /// Lines are parsed on a background thread, so nothing in Parse may touch the Unity API
 /// (Time, transforms, ...): it threw on the first sample and killed the thread. Times come
 /// from a Stopwatch, which any thread can read.
@@ -125,10 +129,23 @@ public class PodReceiver : MonoBehaviour
     volatile bool running;
     int badLines;
 
+    /// <summary>The server's built-in bridge: sends a cue line straight to the receiver's USB
+    /// port. True if it went out; false (or null) falls back to UDP and bridge.py.</summary>
+    public Func<string, bool> directCueOut;
+
     void Start()
     {
         sender = new UdpClient();
-        listener = new UdpClient(listenPort);
+        try
+        {
+            listener = new UdpClient(listenPort);
+        }
+        catch (SocketException e)
+        {
+            // Another copy of the app on this PC (the server .exe, or the Editor) already listens.
+            Debug.LogWarning($"PodReceiver: UDP {listenPort} is taken ({e.SocketErrorCode}) - another copy of the app on this PC hears bridge.py instead of this one.");
+            return;
+        }
         running = true;
         rxThread = new Thread(ReceiveLoop) { IsBackground = true };
         rxThread.Start();
@@ -166,6 +183,20 @@ public class PodReceiver : MonoBehaviour
                 if (badLines++ < 5)
                     Debug.LogWarning($"PodReceiver: couldn't parse \"{line}\": {e.Message}");
             }
+        }
+    }
+
+    /// <summary>A line from the receiver that didn't come over UDP (SerialBridge). Any thread.</summary>
+    public void Feed(string line)
+    {
+        try
+        {
+            Parse(line.Trim());
+        }
+        catch (Exception e)
+        {
+            if (badLines++ < 5)
+                Debug.LogWarning($"PodReceiver: couldn't parse \"{line}\": {e.Message}");
         }
     }
 
@@ -329,6 +360,8 @@ public class PodReceiver : MonoBehaviour
     public void SendCue(int podId, Cue cue, int param = 0)
     {
         string msg = $"C,{podId},{(int)cue},{Mathf.Clamp(param, 0, 255)}";
+        if (directCueOut != null && directCueOut(msg))
+            return;
         byte[] data = Encoding.UTF8.GetBytes(msg);
         try { sender.Send(data, data.Length, bridgeHost, commandPort); }
         catch (SocketException e) { Debug.LogWarning($"SendCue failed: {e.Message}"); }

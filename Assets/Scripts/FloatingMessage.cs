@@ -30,6 +30,11 @@ public static class FloatingMessage
 
     static void Show(string text, float holdSeconds, float wrapWidth, float drop)
     {
+#if SERVER_BUILD
+        // No head to put it in front of: the server's window shows it.
+        ServerApp.Notify(text);
+        return;
+#else
         Camera head = Camera.main;
         if (head == null)
             return;
@@ -91,6 +96,7 @@ public static class FloatingMessage
         messageObject.GetComponent<FadeOut>().holdSeconds = holdSeconds;
 
         XRUISetup.MoveToUILayer(messageObject);
+#endif
     }
 
     // Holds, fades the CanvasGroup out, then destroys the message.

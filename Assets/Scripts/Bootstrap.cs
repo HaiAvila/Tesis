@@ -165,6 +165,18 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<StartMarkTape>() == null)
             gameObject.AddComponent<StartMarkTape>();
 
+        // Every role: the takes and cue timelines, kept the same as the server's - see TakeSync.
+        if (GetComponent<SyncLink>() == null)
+            gameObject.AddComponent<SyncLink>();
+        if (GetComponent<TakeSync>() == null)
+            gameObject.AddComponent<TakeSync>();
+
+#if SERVER_BUILD
+        // The server .exe: no headset or menus, a window with the pods and the avatar - see ServerApp.
+        if (GetComponent<ServerApp>() == null)
+            gameObject.AddComponent<ServerApp>();
+#endif
+
         if (realtime == null)
             realtime = GetComponentInChildren<Realtime>();
 
@@ -199,7 +211,12 @@ public class Bootstrap : MonoBehaviour
         // static field happens to hold.
         SetMode(AppMode.None, "first connect");
 
+#if SERVER_BUILD
+        // The server stays where it is: its window is built over Bootstrap's own scene.
+        Debug.Log("[Bootstrap] server: no menus to load");
+#else
         LoadHomeMenu();
+#endif
     }
 
     // Only Ensayo Remoto depends on the other device, so only it is interrupted: the user goes

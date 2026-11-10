@@ -22,13 +22,20 @@ pods ──BLE──> receiver ──USB──> bridge ──> pose solver ─�
                                               (calibration offsets + body measurements)
 ```
 
+**Built (Nov 10, 2026):** `Builds/Servidor/Servidor.exe`, from **Tesis → Build → Servidor (.exe)**
+(copy the whole folder). The bridge is inside it (`SerialBridge` finds the receiver's USB port
+by itself; `bridge.py` still works next to it as a fallback). Its window shows the room, the
+receiver, each pod, the calibration, the take and the avatar.
+
 It also:
 - receives the actor's headset pose from Normcore (the avatar's root);
 - runs the calibration when the actor presses **Y** in a take (the director can too);
-- records the takes with pose data;
-- generates automatic cues from the approved take;
-- plays live cues and the cue timeline on the pods;
-- makes the take report.
+- **keeps everyone's takes: the store of record.** Takes, their preferida / favorita marks and
+  each shot's cue timeline are synced between every device and the server through Normcore
+  (`TakeSync`), so a take made on the director's Quest is on the server PC seconds later, and
+  Ensayar Solo and a shoot day can run from the server alone;
+- plays the cue timeline on the pods;
+- *(not yet)* records takes itself (Solo), plays live cues, makes the take report.
 
 **The director's app never talks to the pods directly.** Commands — Calibrar, Grabar,
 Acción, Corte, Aprobar, edited cues — go through Normcore to the server.
@@ -44,8 +51,11 @@ Acción, Corte, Aprobar, edited cues — go through Normcore to the server.
 4. **Shoot day** — the actor wears only the pods, no Quest. The previz team's PC runs the
    server with the receiver: picks scene and take, loads the timeline, triggers **Acción**
    (3 pulses) and **Corte** (1 long pulse). Cues come from the approved rehearsal's timeline.
-5. **Testing now (one Quest)** — the Editor on the user's PC plays the server role, with the
-   pods on USB. Both roles get tested by swapping builds.
+5. **Testing now (one Quest)** — the server `.exe` on the user's PC with the pods on USB, next
+   to the Editor (each keeps its own data: the `.exe` in a `Servidor` folder). Before the
+   `.exe` existed, the Editor played the server role (with `bridge.py`); that still works.
+   Both Quest roles get tested by swapping builds. Without the hardware:
+   `python Bridge/sim_pods.py` pretends to be 9 pods.
 
 **Whichever machine has the pods sends the avatar** — the server `.exe` in setups 1, 2 and 4,
 the Editor in setup 5 — so the avatar code doesn't depend on the build role. Built as
@@ -62,4 +72,4 @@ from an iPhone video (MediaPipe) is future work.
 
 An API + database on DigitalOcean for persistence: shot list, takes, references, cue tracks,
 reports, body measurements. Normcore stays for live sync; the local databases become caches.
-**Don't build this yet.**
+**Don't build this yet.** Until then the server PC's database is the store of record (above).

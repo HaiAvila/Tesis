@@ -34,14 +34,18 @@ public class ActorPositionSync : MonoBehaviour
     // True while an actor build writes the actor's head: owned by another client, or by this
     // one if it's the actor. Normcore clears the ownership when that client leaves. A director
     // can end up owning it too (seen in the Editor: owner = itself, parked at the origin) -
-    // that's not a head.
+    // that's not a head. Same for the server, which has no headset either.
     public bool IsLive
     {
         get
         {
             if (realtimeTransform == null || realtimeTransform.realtime == null || !realtimeTransform.realtime.connected)
                 return false;
-#if DIRECTOR_BUILD
+#if SERVER_BUILD
+            // From here a director's machine that ended up owning it looks remote too: only a
+            // machine that isn't a director's is the actor's headset.
+            return realtimeTransform.isOwnedRemotelySelf && SyncPeer.RoleOfClient(realtimeTransform.ownerIDSelf) != SyncRole.Director;
+#elif DIRECTOR_BUILD
             return realtimeTransform.isOwnedRemotelySelf;
 #else
             return realtimeTransform.isOwnedRemotelySelf || realtimeTransform.isOwnedLocallySelf;
@@ -61,7 +65,7 @@ public class ActorPositionSync : MonoBehaviour
             Instance = null;
     }
 
-#if !DIRECTOR_BUILD
+#if !DIRECTOR_BUILD && !SERVER_BUILD
     void Update()
     {
         XROrigin actorRig = FindFirstObjectByType<XROrigin>();

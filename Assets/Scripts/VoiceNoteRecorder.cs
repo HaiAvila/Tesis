@@ -23,7 +23,7 @@ public class VoiceNoteRecorder : MonoBehaviour
 {
     public static VoiceNoteRecorder Instance { get; private set; }
 
-    public static string NotesFolder => Path.Combine(Application.persistentDataPath, "Notas");
+    public static string NotesFolder => Path.Combine(AppPaths.DataRoot, "Notas");
 
     public bool IsRecording { get; private set; }
 

@@ -255,6 +255,20 @@ En la reproducción de una toma guardada de un shot, el botón **Editar pistas**
 - **Regla de tiempo** (abajo): tócala o arrástrala para mover la reproducción.
 - Todo se guarda al momento. Una pista automática que cambias queda **editada a mano** (contorno blanco) y no regresa aunque las pistas se vuelvan a generar. Si marcas otra toma como preferida y el shot tiene pistas editadas, te pregunta si **las conservas** o **empiezas de cero**.
 
+### El servidor (la computadora con los pods)
+**Qué es:** `Servidor.exe`, el programa que corre en la computadora donde está conectado el receptor de los pods. No tiene controles: no hay nada que presionar ni que configurar.
+**Cómo se usa:** conecta el receptor por USB, abre `Servidor.exe` (doble clic), enciende los pods. Déjalo abierto durante el ensayo; sigue funcionando aunque quede detrás de otras ventanas. Ya no hace falta abrir `bridge.py` ni Unity en esa computadora.
+**Lo que muestra la ventana:**
+- **Sala:** si está conectado, y si el visor del actor y el director están en la sala.
+- **Receptor (USB):** en qué puerto lo encontró. Si dice que el puerto está ocupado, cierra `bridge.py` o el Monitor Serie de Arduino. Si no lo encuentra, conecta el receptor.
+- **Pods 9/9:** cada pod con su lugar en el cuerpo, su batería y su señal; los apagados se ven en gris.
+- **Calibración:** la pose que toca durante la calibración, o cuántos pods quedaron calibrados. Se calibra igual que antes: el actor con **Y** en su visor, o el director con **Calibrar** en su menú de pausa.
+- **Toma:** qué escena y shot se está ensayando, si se está grabando y si las pistas hápticas están sonando.
+- **Tomas guardadas en esta computadora:** cuántas hay y qué está haciendo la sincronización con cada dispositivo.
+- **A la derecha:** el avatar del actor visto desde atrás (su izquierda queda a la izquierda). Aparece cuando termina la calibración.
+**Las tomas se guardan aquí.** Todo lo que el director graba, marca como preferida o favorita, edita en las pistas hápticas o borra, se copia solo a esta computadora en unos segundos, y de ahí a cualquier otro dispositivo que entre a la sala. Así el visor del director y la PC ven las mismas tomas, y Ensayar Solo usa las pistas aunque el director no esté. No se copia mientras se graba una toma. Todavía no se copian el audio de la conversación ni las notas de voz: esos se quedan en el dispositivo donde se grabaron. Si la lista de Selección de Escenas no muestra una toma recién recibida, vuelve a abrirla.
+**Para generarlo (equipo de previz):** en Unity, menú **Tesis → Build → Servidor (.exe)**. Queda en `Builds/Servidor/`; copia la carpeta completa a la computadora del actor.
+
 ### Tutorial de controles
 **Script:** `TutorialController.cs` (persistente, objeto "Tutorial" bajo Bootstrap).
 **Cuándo aparece:** la primera vez que se entra a una escena de contenido en cada modo, un panel pregunta si quieres ver el tutorial (Sí / No); en Ensayo Remoto, "¿Quieres ver un tutorial de cómo calibrar y de los controles?". La respuesta se guarda en el headset (`PlayerPrefs`, una clave por modo: `Tutorial.Seen.DirectorRemote`, `DirectorInspection`, `ActorRemote`, `ActorSolo`), así que no vuelve a preguntar. Se puede repetir siempre desde el menú de pausa → **Tutorial** (entra directo a los pasos, sin preguntar).

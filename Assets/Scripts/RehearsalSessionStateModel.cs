@@ -32,4 +32,8 @@ public partial class RehearsalSessionStateModel
     // When the set's scripted action (scene 3's drone) was triggered, in Normcore room time
     // (realtime.room.time, the same clock on every client); 0 = not triggered. See SetAction.
     [RealtimeProperty(7, true, true)] private double _setActionTime;
+    // The director turned the guide cues off (the pilot's "sin pistas" condition): the machine
+    // with the pods plays only Acción and Corte. false (the default, and what an older build
+    // never writes) = on. Read at Acción; saved with each take as Sesiones.pistas.
+    [RealtimeProperty(8, true, true)] private bool _guideCuesOff;
 }

@@ -13,6 +13,9 @@ using UnityEngine;
 //                  (Acción only at the start, Corte only at the end).
 //   Ensayar Solo   the actor's Iniciar / Parar (SoloSession's commands from the Quest, or
 //                  SoloRehearsalController's events when the pods are on the same machine).
+// In Ensayo Remoto the director can turn the guide cues off (RehearsalSessionSync.GuideCuesOn,
+// read at Acción, for the whole take): then only Acción and Corte play - the pilot's "sin
+// pistas" condition. Solo always plays everything.
 // Stopping early cancels whatever hadn't played and sends Corte to everyone, unless the
 // timeline's own Corte already went out.
 //
@@ -65,6 +68,7 @@ public class CueEngine : MonoBehaviour
     PodReceiver receiver;
     bool playing;
     bool cutPlayed;
+    bool guideOff;      // this take: Acción and Corte only
     bool wasRecording;
     int sceneNumber;
     readonly List<int> sceneShots = new List<int>();
@@ -115,7 +119,7 @@ public class CueEngine : MonoBehaviour
         // Ensayo Remoto: the director's recording, as every machine sees it.
         bool recording = sessionState != null && sessionState.IsRecording;
         if (recording && !wasRecording)
-            StartTake(sessionState.SceneNumber, sessionState.ShotNumber, "the director started recording");
+            StartTake(sessionState.SceneNumber, sessionState.ShotNumber, "the director started recording", sessionState.GuideCuesOff);
         else if (!recording && wasRecording)
             StopTake("the director stopped recording");
         wasRecording = recording;
@@ -185,7 +189,7 @@ public class CueEngine : MonoBehaviour
 
     bool HasPods => Receiver() != null && Receiver().ActivePods().Length > 0;
 
-    public void StartTake(int scene, int shot, string reason)
+    public void StartTake(int scene, int shot, string reason, bool guideCuesOff = false)
     {
         if (requirePods && !HasPods)
         {
@@ -199,6 +203,9 @@ public class CueEngine : MonoBehaviour
         cutPlayed = false;
         playing = true;
         sceneNumber = scene;
+        guideOff = guideCuesOff;
+        if (guideOff)
+            Debug.Log("[CueEngine] the director turned the guide cues off: Acción and Corte only");
 
         ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
         if (database == null)
@@ -278,6 +285,8 @@ public class CueEngine : MonoBehaviour
         foreach (CueEvent cue in cues)
         {
             float at = start + cue.T;
+            if (guideOff && cue.Kind != CueKind.CameraStart && cue.Kind != CueKind.Cut)
+                continue;
             switch (cue.Kind)
             {
                 case CueKind.CameraStart:

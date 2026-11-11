@@ -9,7 +9,8 @@ using UnityEngine;
 // menu in Inspección de Escenas. Each take gets its own folder under Exports, and one already
 // exported is left alone, so exporting again only adds what's new:
 //
-//   sesion.csv   one row: scene, shot, type, date, duration, preferida, favorita, avatar scale
+//   sesion.csv   one row: scene, shot, type, date, duration, preferida, favorita, avatar scale,
+//                pistas (1 the guide cues were on, 0 off, empty = unknown)
 //   cabeza.csv   t + the actor's head (position, rotation), 10 Hz (Metricas)
 //   camara.csv   t + the director's viewfinder (position, rotation, focal length, visor up)
 //   cuerpo.csv   t + the avatar's root, head and 16 bones' local rotations, 20 Hz (PoseTrack)
@@ -84,10 +85,11 @@ public static class TakeExporter
     static void Export(ShotListDatabase database, RecordingSession session, string folder)
     {
         float scale = session.AvatarLayout != null && session.AvatarLayout.Length >= 4 ? BitConverter.ToSingle(session.AvatarLayout, 0) : 0f;
-        WriteFile(folder, "sesion.csv", "id,guid,escena,shot,tipo,fecha,duracion,preferida,favorita,escala_avatar", new[]
+        WriteFile(folder, "sesion.csv", "id,guid,escena,shot,tipo,fecha,duracion,preferida,favorita,escala_avatar,pistas", new[]
         {
             Row(session.Id, session.SessionGuid, session.SceneNumber, session.ShotNumber, session.Tipo, session.FechaHora,
-                session.Duracion, session.EsPreferida ? 1 : 0, session.EsFavorita ? 1 : 0, scale),
+                session.Duracion, session.EsPreferida ? 1 : 0, session.EsFavorita ? 1 : 0, scale,
+                session.Pistas.HasValue ? (object)session.Pistas.Value : ""),
         });
 
         var rows = new List<string>();

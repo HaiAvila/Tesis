@@ -70,6 +70,15 @@ public class RehearsalSessionSync : MonoBehaviour
 
     public bool IsRecording => sessionState != null && sessionState.IsRecording;
 
+    // The pilot's two conditions: the guide cues on (default) or off. See RehearsalSessionStateModel.
+    public bool GuideCuesOn => sessionState == null || !sessionState.GuideCuesOff;
+
+    public void SetGuideCuesOn(bool on)
+    {
+        if (sessionState != null)
+            sessionState.SetGuideCuesOff(!on);
+    }
+
     // The set's scripted action, shared by every client (see SetAction). Online: in a room.
     public bool Online => sessionState != null && sessionState.RoomTime > 0;
     public double SetActionTime => sessionState != null ? sessionState.SetActionTime : 0;
@@ -111,7 +120,11 @@ public class RehearsalSessionSync : MonoBehaviour
     public void BeginRemoteRehearsal()
     {
         if (sessionState != null)
+        {
             sessionState.SetState(RehearsalSessionState.StateActive);
+            // Every rehearsal starts with the guide cues on, whatever the last one left.
+            sessionState.SetGuideCuesOff(false);
+        }
 
         SelectTake(NoSceneSelected, NoShotSelected);
     }

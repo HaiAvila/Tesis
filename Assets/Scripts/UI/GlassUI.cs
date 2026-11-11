@@ -31,6 +31,7 @@ public static class GlassUI
             Check = "", Back = "", Previous = "", Next = "", Star = "",
             Robot = "", // smart_toy
             Collapse = "", Expand = "", // expand_less, expand_more (chevrons)
+            Haptics = "", HapticsOff = "", // vibration, mobile_off
             Edit = ""; // edit
     }
 

@@ -379,6 +379,11 @@ public partial class ShotListDatabase : MonoBehaviour
         if (!existingColumns.Contains("avatar_layout"))
             connection.Execute("ALTER TABLE Sesiones ADD COLUMN avatar_layout BLOB;");
 
+        // The pilot's condition: 1 = the guide cues were on during the take, 0 = off (only
+        // Acción and Corte). Null = recorded before the switch existed.
+        if (!existingColumns.Contains("pistas"))
+            connection.Execute("ALTER TABLE Sesiones ADD COLUMN pistas INTEGER;");
+
         // Rows from before these columns: every one was a single shot (tipo already defaults
         // to "toma"), so its scene is the shot's; and each gets a GUID of its own. Only rows
         // still missing a value are touched, so this is a no-op on every later start.
@@ -412,7 +417,7 @@ public partial class ShotListDatabase : MonoBehaviour
     // into per-shot references first, which comes later - so esPreferida is ignored for it.
     // A scene recording's ShotBoundaries go in the same transaction, so they can never exist
     // without their session either.
-    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false, List<PoseSample> poseFrames = null, byte[] avatarLayout = null)
+    public int SaveRecordingSession(int sceneNumber, int shotNumber, string tipo, string sessionGuid, DateTime startedAt, float duration, List<Metric> samples, List<CameraTrackSample> cameraSamples, List<ShotBoundary> boundaries, bool esPreferida = false, bool esFavorita = false, List<PoseSample> poseFrames = null, byte[] avatarLayout = null, bool? guideCues = null)
     {
         string dbPath = DbPath;
 
@@ -432,6 +437,7 @@ public partial class ShotListDatabase : MonoBehaviour
                 EsPreferida = esPreferida,
                 EsFavorita = esFavorita,
                 AvatarLayout = avatarLayout,
+                Pistas = guideCues.HasValue ? (guideCues.Value ? 1 : 0) : (int?)null,
                 Rev = NewRev()
             };
 
@@ -1128,6 +1134,8 @@ public class RecordingSession
     // When the take or its marks last changed, on the device that changed it (UTC ticks): the
     // newer one wins when devices sync. 0 = from before syncing existed.
     [Column("rev")] public long Rev { get; set; }
+    // The guide cues during the take: 1 on, 0 off (Acción and Corte only), null = unknown.
+    [Column("pistas")] public int? Pistas { get; set; }
 
     [Ignore] public bool IsScene => Tipo == TipoEscena;
 }

@@ -117,6 +117,23 @@ public class RehearsalSessionState : RealtimeComponent<RehearsalSessionStateMode
         Debug.Log($"[SessionSync] write setActionTime={roomTime:F2}");
     }
 
+    // The guide cues (everything but Acción and Corte), on unless the director turned them off.
+    // Offline (the pods on the director's own machine, in testing) the choice stays local.
+    static bool localGuideCuesOff;
+    public bool GuideCuesOff => Online ? model.guideCuesOff : localGuideCuesOff;
+
+    // Director only, same ownership pattern as SetState.
+    public void SetGuideCuesOff(bool off)
+    {
+        localGuideCuesOff = off;
+        if (!Online)
+            return;
+
+        model.RequestOwnership();
+        model.guideCuesOff = off;
+        Debug.Log($"[SessionSync] write guideCuesOff={off}");
+    }
+
     // Director only, same ownership pattern as SetState.
     public void SetRecording(bool recording)
     {

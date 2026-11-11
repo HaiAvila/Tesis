@@ -15,9 +15,37 @@ public class RecordingIndicator : MonoBehaviour
     static readonly Color RecordColor = new Color(0.95f, 0.22f, 0.22f, 1f);
 
     HudChip chip;
+#if DIRECTOR_BUILD
+    // "Pistas apagadas" while the director has the guide cues off, so a whole session isn't
+    // recorded in the wrong condition by mistake. Under REC and the pods' indicator.
+    static readonly Vector3 GuideOffOffset = ChipOffset + new Vector3(0f, -2f * GlassUI.ChipSpacing, 0f);
+    static readonly Color GuideOffColor = new Color(1f, 0.72f, 0.3f, 1f);
+    HudChip guideOffChip;
+
+    void UpdateGuideOffChip()
+    {
+        bool show = Bootstrap.Mode == Bootstrap.AppMode.Remote
+                    && RehearsalSessionSync.Instance != null && !RehearsalSessionSync.Instance.GuideCuesOn
+                    && Bootstrap.IsContentScene(SceneManager.GetActiveScene().name);
+        if (show && guideOffChip == null)
+        {
+            Camera head = Camera.main;
+            if (head != null)
+                guideOffChip = GlassUI.HudChip(head.transform, "GuideOffChip", GuideOffOffset, GlassUI.Icon.HapticsOff, "Pistas apagadas", GuideOffColor, 0f);
+        }
+        else if (!show && guideOffChip != null)
+        {
+            Destroy(guideOffChip.gameObject);
+            guideOffChip = null;
+        }
+    }
+#endif
 
     void Update()
     {
+#if DIRECTOR_BUILD
+        UpdateGuideOffChip();
+#endif
         bool recording;
 #if DIRECTOR_BUILD
         recording = RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.IsRecording;

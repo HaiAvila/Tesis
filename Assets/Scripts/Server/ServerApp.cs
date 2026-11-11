@@ -372,6 +372,8 @@ public class ServerApp : MonoBehaviour
             text.Append(Paint("● Grabando", Bad)).Append("   ");
         if (playing)
             text.Append(Paint("Pistas hápticas en curso", Good));
+        if (session != null && !session.GuideCuesOn && state != null && state.HasOwner && !(solo != null && solo.InSolo))
+            text.Append('\n').Append(Paint("El director apagó las pistas de guía: solo Acción y Corte", Warn));
         text.Append("\n\n");
     }
 

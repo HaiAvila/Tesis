@@ -247,6 +247,11 @@ public partial class ShotListDatabase
                     writer.Write(e.Evento ?? "");
                 }
 
+                // Added after the format's first version, at the end: an older reader stops
+                // before it, and this one reads it only if it's there.
+                writer.Write(session.Pistas.HasValue);
+                writer.Write(session.Pistas ?? 0);
+
                 writer.Flush();
                 return stream.ToArray();
             }
@@ -319,6 +324,13 @@ public partial class ShotListDatabase
                 var events = new List<TakeEvent>(reader.ReadInt32());
                 for (int i = events.Capacity; i > 0; i--)
                     events.Add(new TakeEvent { SessionGuid = session.SessionGuid, T = reader.ReadSingle(), Evento = reader.ReadString() });
+
+                if (reader.BaseStream.Position < reader.BaseStream.Length)
+                {
+                    bool hasPistas = reader.ReadBoolean();
+                    int pistas = reader.ReadInt32();
+                    session.Pistas = hasPistas ? pistas : (int?)null;
+                }
 
                 if (string.IsNullOrEmpty(session.SessionGuid))
                     return ImportResult.Unreadable;

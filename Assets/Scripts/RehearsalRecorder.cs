@@ -388,6 +388,9 @@ public class RehearsalRecorder : MonoBehaviour
         return new List<ShotBoundary>();
     }
 
+    // Whether the guide cues were on when this take started (saved as Sesiones.pistas).
+    bool guideCuesAtStart = true;
+
     public void StartRecording()
     {
         if (IsRecording)
@@ -402,6 +405,7 @@ public class RehearsalRecorder : MonoBehaviour
         sceneNumberAtStart = Bootstrap.CurrentSceneNumber;
         fullSceneAtStart = Bootstrap.IsFullScene;
         sessionGuidAtStart = Guid.NewGuid().ToString();
+        guideCuesAtStart = RehearsalSessionSync.Instance == null || RehearsalSessionSync.Instance.GuideCuesOn;
 
         boundaryBuffer.Clear();
         sceneShotsAtStart.Clear();
@@ -722,7 +726,7 @@ public class RehearsalRecorder : MonoBehaviour
             savedSessionId = database.SaveRecordingSession(sceneNumberAtStart, shotNumberAtStart,
                 fullSceneAtStart ? RecordingSession.TipoEscena : RecordingSession.TipoToma, sessionGuidAtStart,
                 recordingStartedAt, pendingDuration, buffer, cameraBuffer,
-                fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita, poseBuffer, avatarLayoutAtStart);
+                fullSceneAtStart ? boundaryBuffer : null, markAsPreferida, markAsFavorita, poseBuffer, avatarLayoutAtStart, guideCuesAtStart);
 
         if (TakeAudioRecorder.Instance != null)
             TakeAudioRecorder.Instance.Save(sessionGuidAtStart);

@@ -143,6 +143,19 @@ public class PauseMenuController : MonoBehaviour
         menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Favorite, Label = "Favoritos", Description = "Las tomas que marcaste con corazón.", OnSelected = ShowFavorites });
         if (remote)
             menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Calibrate, Label = "Calibrar", Description = "Calibra el avatar del actor: pose T, sentadilla y palmas juntas.", OnSelected = StartCalibration });
+        if (remote && RehearsalSessionSync.Instance != null)
+        {
+            bool guideOn = RehearsalSessionSync.Instance.GuideCuesOn;
+            menuOptions.Add(new PauseMenuOption
+            {
+                Icon = guideOn ? GlassUI.Icon.Haptics : GlassUI.Icon.HapticsOff,
+                Label = "Pistas de guía",
+                Description = guideOn
+                    ? "Encendidas: el actor siente las pistas del shot. Elígelo para apagarlas en las próximas tomas."
+                    : "Apagadas: solo suenan Acción y Corte. Elígelo para encenderlas.",
+                OnSelected = ToggleGuideCues,
+            });
+        }
         if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
         {
             menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Notes, Label = "Notas del shot", Description = "Escucha las notas de voz de este shot.", OnSelected = ShowShotNotes });
@@ -261,6 +274,23 @@ public class PauseMenuController : MonoBehaviour
 
         option.OnSelected?.Invoke();
     }
+
+#if DIRECTOR_BUILD
+    // The pilot's two conditions. Not while recording: a take is one condition, start to end.
+    void ToggleGuideCues()
+    {
+        RehearsalSessionSync sync = RehearsalSessionSync.Instance;
+        if (sync == null)
+            return;
+        if (sync.IsRecording)
+        {
+            FloatingMessage.Show("No puedes cambiarlas durante la toma");
+            return;
+        }
+        sync.SetGuideCuesOn(!sync.GuideCuesOn);
+        FloatingMessage.Show(sync.GuideCuesOn ? "Pistas de guía encendidas" : "Pistas de guía apagadas: solo Acción y Corte");
+    }
+#endif
 
     void ToggleMicrophone()
     {

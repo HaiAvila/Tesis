@@ -239,6 +239,7 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 - **Repetir:** en el menú de pausa, **Repetir temblor** (shot 2) o **Repetir gigante** (shots 3 a 5) lo regresa a su lugar y lo hace otra vez, con sus pulsos.
 
 ### El dron de la escena 3 (shot 14)
+**Desde Nov 11:** sale **1.5 s después de Acción** (antes eran 5 s) y cruza frente al actor de derecha a izquierda; al pasar, el actor lo siente en el **bíceps derecho y luego en el izquierdo**. "Repetir dron" repite también esos pulsos.
 El robot levitador flota en su lugar (se mece un poco, mueve las orejas) hasta que empieza la acción del shot 14. **5 segundos después** cruza veloz frente al actor inclinándose hacia adelante, frena en seco con un pequeño rebote y **se voltea hacia el actor**, siguiéndolo con la mirada si se mueve.
 **Cuándo empieza:** al empezar a grabar una toma del shot 14 (**B**); en una **escena completa**, cuando el director pasa al shot 14 (**Y izquierda**); en **Ensayar Solo**, al iniciar el shot 14. En una toma del shot 15 ya está en su lugar final, viendo al actor. Una toma nueva lo regresa a su inicio.
 **El actor y el director lo ven al mismo tiempo**, con el reloj compartido de Normcore. **Menú de pausa → Repetir dron** lo regresa y vuelve a salir a los 5 s (solo el director en Ensayo Remoto).

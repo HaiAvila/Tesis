@@ -17,6 +17,7 @@ using UnityEngine;
 // read at Acción, for the whole take): then only Acción and Corte play - the pilot's "sin
 // pistas" condition. Solo always plays everything.
 //
+// Scene 3's robot (DronePlan): as it crosses in front of the actor, right biceps then left biceps.
 // Scene 1's giant (GolemPlan): its rumble and footfalls are felt from the set's action trigger -
 // the director's, synced as a room time with its shot, so a "Repetir" plays them again; in Solo
 // from Acción. Tremor = both shins, footfalls = both thighs, the alert after the rumble = sternum.
@@ -143,7 +144,7 @@ public class CueEngine : MonoBehaviour
         {
             seenSetActionTime = setActionTime;
             if (setActionTime > 0 && recording)
-                ScheduleGolem(sessionState.SetActionShot, (float)(sessionState.RoomTime - setActionTime), "the director's trigger");
+                ScheduleSetAction(sessionState.SetActionShot, (float)(sessionState.RoomTime - setActionTime), "the director's trigger");
         }
 
         if (!playing)
@@ -200,7 +201,7 @@ public class CueEngine : MonoBehaviour
         if (command == SoloCommand.Iniciar && soloSession.InSolo)
         {
             StartTake(soloSession.SceneNumber, soloSession.ShotNumber, "the actor's solo Iniciar");
-            ScheduleGolem(soloSession.ShotNumber, 0f, "solo Iniciar");
+            ScheduleSetAction(soloSession.ShotNumber, 0f, "solo Iniciar");
         }
         else if (command == SoloCommand.Parar)
             StopTake("the actor's solo Parar");
@@ -209,17 +210,33 @@ public class CueEngine : MonoBehaviour
     void OnLocalSoloStarted(int shot)
     {
         StartTake(Bootstrap.CurrentSceneNumber, shot, "solo run on this machine");
-        ScheduleGolem(shot, 0f, "solo run on this machine");
+        ScheduleSetAction(shot, 0f, "solo run on this machine");
     }
 
-    // What the giant makes the actor feel in that shot, from its trigger (since = seconds ago).
-    void ScheduleGolem(int shot, float since, string reason)
+    static bool IsSetActionSend(Scheduled s) => s.Label != null && (s.Label.StartsWith("Gigante") || s.Label.StartsWith("Robot"));
+
+    // What the set's action (the giant, the robot) makes the actor feel in that shot, from its
+    // trigger (since = seconds ago).
+    void ScheduleSetAction(int shot, float since, string reason)
     {
-        if (!playing || guideOff || !GolemPlan.HasAction(shot))
+        if (!playing || guideOff)
+            return;
+        if (shot == DronePlan.Shot)
+        {
+            queue.RemoveAll(IsSetActionSend);
+            float from = Time.time - Mathf.Max(0f, since);
+            Add(from + DronePlan.PassRightAt, PodIds.RightBicep, PodReceiver.Cue.Long, DronePlan.PassParam, "Robot: pasa (derecha)");
+            Add(from + DronePlan.PassLeftAt, PodIds.LeftBicep, PodReceiver.Cue.Long, DronePlan.PassParam, "Robot: pasa (izquierda)");
+            queue.RemoveAll(s => IsSetActionSend(s) && s.At < Time.time - 0.25f);
+            queue.Sort((a, b) => a.At.CompareTo(b.At));
+            Debug.Log($"[CueEngine] the robot in shot {shot} ({reason}, {since:F1} s ago): its pass, right then left biceps");
+            return;
+        }
+        if (!GolemPlan.HasAction(shot))
             return;
 
         // A repeat replaces what was still pending from the last one.
-        queue.RemoveAll(s => s.Label != null && s.Label.StartsWith("Gigante"));
+        queue.RemoveAll(IsSetActionSend);
         float start = Time.time - Mathf.Max(0f, since);
         GolemPlan.Action action = GolemPlan.For(shot);
         int count = 0;
@@ -239,7 +256,7 @@ public class CueEngine : MonoBehaviour
             Add(start + t, PodIds.RightQuad, PodReceiver.Cue.Long, GolemPlan.ThudParam, "Gigante: pisada");
             count += 2;
         }
-        queue.RemoveAll(s => s.Label != null && s.Label.StartsWith("Gigante") && s.At < Time.time - 0.25f);
+        queue.RemoveAll(s => IsSetActionSend(s) && s.At < Time.time - 0.25f);
         queue.Sort((a, b) => a.At.CompareTo(b.At));
         Debug.Log($"[CueEngine] the giant in shot {shot} ({reason}, {since:F1} s ago): {count} sends");
     }

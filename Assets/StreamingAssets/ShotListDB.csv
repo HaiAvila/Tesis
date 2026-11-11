@@ -11,11 +11,11 @@ scene_number,location,int_ext,day_night,shot_number,take_number,subject,descript
 2,spaceship,INT,NIGHT,8,,Protagonista,Extiende la mano hacia una espora flotante que no puede ver con claridad en la penumbra del corredor.,pendiente,Cue de proximidad guia la mano hacia el punto exacto de la espora.
 2,spaceship,INT,NIGHT,9,,"Protagonista, Espora (VFX)",Sujeta la espora.,pendiente,"Cue de contacto con objeto virtual (pulso sostenido, distinto a proximidad)."
 2,spaceship,INT,NIGHT,10,,"Protagonista, Espora (VFX)",Examina la espora sosteniendola quieta antes de que la escena corte.,pendiente,Cue de mantener posicion (hold). Cue de corte al finalizar.
-3,apartment,INT,NIGHT,11,,Protagonista,El protagonista entra a su taller de robots y confirma su marca inicial junto al banco de trabajo.,pendiente,Confirmacion de marca inicial. Inicio de camara.
-3,apartment,INT,NIGHT,12,,Protagonista,Camina entre los robots en reparacion a un ritmo constante.,pendiente,Cue de timing (metronomo continuo) activo.
-3,apartment,INT,NIGHT,13,,Protagonista,Siente que algo pequeno se aproxima rapidamente entre los estantes de piezas.,pendiente,Cue de alerta anticipatoria activo (solo banda de cintura).
-3,apartment,INT,NIGHT,14,,"Protagonista, Robot (VFX)",Un robot levitador del tamano de una laptop cruza veloz frente a el; se detiene en seco.,pendiente,El metronomo se corta abruptamente = senal de alto.
-3,apartment,INT,NIGHT,15,,Protagonista,Reacciona a la presencia del robot antes de que la escena corte.,pendiente,Cue de corte.
+3,apartment,INT,NIGHT,11,,Protagonista,El protagonista camina por el pasillo de la entrada hasta la sala del departamento.,pendiente,"Inicio de camara (3 pulsos). Pasos alternados en espinillas. Proximidad a la marca en el pecho, doble pulso al llegar."
+3,apartment,INT,NIGHT,12,,Protagonista,Camina para acercarse a la ventana.,pendiente,Pasos en espinillas. Proximidad a la marca y doble pulso al llegar.
+3,apartment,INT,NIGHT,13,,Protagonista,"Gira a la derecha, camina unos pasos y siente que algo pequeno se aproxima.",pendiente,Giro a la derecha (muneca derecha). Pasos. Alerta anticipatoria en el pecho antes de detenerse.
+3,apartment,INT,NIGHT,14,,"Protagonista, Robot (VFX)",Camina un poco y se detiene en seco cuando el robot cruza velozmente frente a el.,pendiente,Pasos. El robot pasa frente a el de derecha a izquierda (biceps derecho y luego izquierdo). Marca al detenerse.
+3,apartment,INT,NIGHT,15,,"Protagonista, Robot (VFX)","Gira a la izquierda para ver al robot, dice su dialogo unos segundos y vuelve a girar a la derecha para seguir caminando.",pendiente,"Giro a la izquierda (muneca izquierda), luego giro a la derecha (muneca derecha). Pasos al seguir caminando. Corte (pulso largo en todos)."
 ,,,,,,,,,
 ,,,,,,,,,
 ,,,,,,,,,

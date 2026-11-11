@@ -22,15 +22,17 @@ public class DroneFlight : MonoBehaviour
 {
     const string ActionName = "dron";
 
-    [Tooltip("The shot whose take triggers the flight.")]
-    public int actionShot = 14;
+    // The shot, its delay and the dash's length are DronePlan's: the haptics of its pass follow
+    // the same clock on the machine with the pods.
+    const int actionShot = DronePlan.Shot;
+    const float delay = DronePlan.Delay;
+    const float dashSeconds = DronePlan.DashSeconds;
+
     public Vector3 endPosition = new Vector3(-4f, 1.268f, -0.699f);
     [Tooltip("Where it faces after arriving when there's no actor to face.")]
     public float fallbackEndYaw = -270f;
 
     [Header("Timing (s)")]
-    public float delay = 5f;
-    public float dashSeconds = 1.3f;
     public float turnDelay = 0.15f;
     public float turnSeconds = 0.8f;
 
@@ -98,7 +100,7 @@ public class DroneFlight : MonoBehaviour
     void OnRecordingStarted()
     {
         if (Bootstrap.CurrentShotNumber == actionShot)
-            SetAction.Trigger($"recording shot {actionShot}");
+            SetAction.Trigger($"recording shot {actionShot}", actionShot);
         else
             SetAction.Clear("recording another shot");
     }
@@ -106,13 +108,13 @@ public class DroneFlight : MonoBehaviour
     void OnShotOpened(int shot)
     {
         if (shot == actionShot)
-            SetAction.Trigger($"escena completa reached shot {actionShot}");
+            SetAction.Trigger($"escena completa reached shot {actionShot}", actionShot);
     }
 
     void OnSoloRunStarted(int shot)
     {
         if (shot == actionShot)
-            SetAction.Trigger($"solo run of shot {actionShot}");
+            SetAction.Trigger($"solo run of shot {actionShot}", actionShot);
         else
             SetAction.Clear("solo run of another shot");
     }

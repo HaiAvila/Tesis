@@ -80,3 +80,6 @@ crashlytics-build.properties
 Bridge/*.csv 
 .utmp/ 
 .utmp/ 
+
+# analizar_tomas.py output (commit a run by hand if it is wanted as thesis evidence)
+Analysis/resultados/

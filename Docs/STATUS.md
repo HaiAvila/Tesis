@@ -1,7 +1,7 @@
 # STATUS
 
 Audit of the actual code against `Docs/plan/unity-cambios-existentes.md` and `Docs/plan/unity-priorities.md`.
-Updated after every task (see CLAUDE.md). Last update: Nov 10, 2026 (latency measured with 1 and 9 pods; the server tried with the real receiver).
+Updated after every task (see CLAUDE.md). Last update: Nov 10, 2026 (the Python analysis script; latency measured with 1 and 9 pods).
 
 **Legend:** ✅ Done · 🟡 Partial (what exists, and how) · ⬜ Not started
 
@@ -137,6 +137,7 @@ Updated after every task (see CLAUDE.md). Last update: Nov 10, 2026 (latency mea
 | P3-20 | Ensayar Solo complete | 🟡 See cambios #8: mode, synced session, Iniciar/Parar, start mark, hooks. Missing: server, real reference check, pods guiding, cues, recording |
 | P3-21 | Pod status in both apps | ✅ See "Pod status" |
 | P3-22 | CSV export for Python | ✅ `TakeExporter`, one folder per take, from the director's database (no reference takes yet, no server) |
+| — | Python analysis for the pilot | ✅ `Analysis/analizar_tomas.py` (Nov 10), standard Python only (this PC has Python 3.15 and no numpy/matplotlib). Reads `shotlist.db` read-only (the server's store by default, `--db` for another), not the CSV export: it's always current, preferidas included. Per take vs its shot's preferida: the reference's marks (still ≥ 1 s after moving ≥ 0.5 m) - reached (stopped within 1.5 m, in order), distance, early/late, facing error; path error (mean distance to the reference's path) and sync error (to where the reference was at the same moment); duration difference; a warning when the starts are > 1 m apart (start marks moved). By condition (`Sesiones.pistas`, 1 with cues / 0 without - **the app doesn't save it yet**, so everything is "Sin dato"), per shot and overall. `--desde`, `--escena`, `--shot`. Writes `resumen_tomas.csv`, `marcas.csv`, `condiciones.csv`, SVG charts (paths from above at true scale, metric strip plots with medians, hover titles) and `informe.html`, in Spanish, into `Analysis/resultados/<date>/` (git-ignored). Tried on the server's 46 takes: 21 compared in 7 shots; older takes recorded before scene 2's start marks moved are flagged. **Next:** the app's "Pistas hápticas: encendidas / apagadas" toggle for the director (synced to the server, which then plays nothing; saved as `Sesiones.pistas`, synced, exported), which the user chose for marking the pilot's conditions. |
 | P4-23 | Bone lengths from MediaPipe | ⬜ |
 | P4-24 | Free-fly in Ensayo Remoto | ⬜ Free-fly exists only in Inspección |
 | P4-25 | Notes, voice notes, trajectory verification | ⬜ |

@@ -143,6 +143,11 @@ Bridge/cue.py           Send cues by hand: type "<pod> <cue> [param]" while brid
 Bridge/sim_pods.py      Nine pretend pods over UDP, for testing without the hardware (prints the cues
                         the app sends). Not together with bridge.py.
 Builds/Servidor/        The server .exe (ignored by git). Tesis > Build > Servidor (.exe).
+Analysis/analizar_tomas.py  Compares each take with its shot's preferida (marks reached, distance, early/late,
+                        facing; path error) by condition, from shotlist.db (read only, the server's by
+                        default). Standard Python only. Output: Analysis/resultados/<date>/ (ignored by git):
+                        CSV tables, SVG charts, informe.html. Labels in Spanish.
+Latency/                Latency test runs (csv, summary, mic wav) + README saying which are measurements.
 Docs/pod-reference.md   Full hardware reference.
 ```
 
@@ -215,4 +220,4 @@ Normcore-related assets: `Assets/Normal/`, `Assets/Settings/NormcoreAppSettings.
 
 The `.gitignore` is the standard Unity template: `Library/`, `Temp/`, `Obj/`, `Build*/`, `Logs/`, `UserSettings/` are all ignored, so only source-controlled project files (Assets, Packages, ProjectSettings, .vscode/.claude config) are tracked. Never commit the `Library/` folder — it's large, regeneratable, and already excluded.
 
-Also ignored: `Bridge/*.csv` (bridge session logs — commit individual runs by hand if they're wanted as thesis evidence) and `.utmp/` (Unity's Android build cache; it was committed once by accident and untracked with `git rm -r --cached .utmp`).
+Also ignored: `Analysis/resultados/` (the analysis script's output - commit a run by hand when it's thesis evidence), `Bridge/*.csv` (bridge session logs — commit individual runs by hand if they're wanted as thesis evidence) and `.utmp/` (Unity's Android build cache; it was committed once by accident and untracked with `git rm -r --cached .utmp`).

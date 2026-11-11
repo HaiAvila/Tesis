@@ -41,6 +41,12 @@ public class CueTimelineEditor : MonoBehaviour
     const float EdgeGrab = 12f;
     const float Snap = 0.1f;
     const float MinSpan = 0.2f;
+    // Under the replay panel, smaller than the panel's own scale and tilted toward the eyes like
+    // a laptop screen, so it doesn't hang far below the view (Nov 10, the user on the Quest: "I
+    // have to look down to see it"). The replay goes up a little while it's open
+    // (RecordingPlaybackController.EditorLift), keeping the recorded video above it in view.
+    const float Scale = 0.5f;
+    const float Tilt = 12f;
 
     const string Dot = ""; // Material Symbols "fiber_manual_record", a filled dot (Inter falls back to the icon font)
     static readonly string[] LaneNames = { "Todos", "Esternón", "Muñecas", "Espinillas" };
@@ -92,7 +98,9 @@ public class CueTimelineEditor : MonoBehaviour
         rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
         rect.pivot = new Vector2(0.5f, 1f);
         rect.sizeDelta = new Vector2(Width, Height);
-        rect.anchoredPosition = new Vector2(0f, -replayPanelHeight / 2f - 24f);
+        rect.anchoredPosition = new Vector2(0f, -replayPanelHeight / 2f - 16f);
+        rect.localScale = Vector3.one * Scale;
+        rect.localRotation = Quaternion.Euler(Tilt, 0f, 0f);
 
         Image background = root.GetComponent<Image>();
         GlassUI.Glass(background, 30f);

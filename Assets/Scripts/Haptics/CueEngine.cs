@@ -16,6 +16,11 @@ using UnityEngine;
 // In Ensayo Remoto the director can turn the guide cues off (RehearsalSessionSync.GuideCuesOn,
 // read at Acción, for the whole take): then only Acción and Corte play - the pilot's "sin
 // pistas" condition. Solo always plays everything.
+//
+// Next to the timeline, the live cues (LiveCues: proximity to the next mark on the sternum, and
+// orientation corrections on the wrists), from where the actor's headset actually is; when they
+// run, the timeline's Marca is left out (the live one comes on arrival). Not without the headset
+// (a shoot day) and not with the guide cues off.
 // Stopping early cancels whatever hadn't played and sends Corte to everyone, unless the
 // timeline's own Corte already went out.
 //
@@ -69,6 +74,7 @@ public class CueEngine : MonoBehaviour
     bool playing;
     bool cutPlayed;
     bool guideOff;      // this take: Acción and Corte only
+    LiveCues live;
     bool wasRecording;
     int sceneNumber;
     readonly List<int> sceneShots = new List<int>();
@@ -128,6 +134,17 @@ public class CueEngine : MonoBehaviour
             return;
 
         float now = Time.time;
+        if (live != null)
+        {
+            ActorPositionSync head = ActorPositionSync.Instance;
+            AvatarPoseSync avatar = AvatarPoseSync.Instance;
+            if (head != null && head.IsLive)
+            {
+                Vector3 forward = head.transform.forward;
+                live.Update(now, head.transform.position, Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg,
+                    avatar != null && avatar.HasBody, avatar != null && avatar.HasBody ? avatar.BodyYaw : 0f);
+            }
+        }
         for (int i = 0; i < queue.Count; i++)
         {
             if (queue[i].At > now)
@@ -242,6 +259,7 @@ public class CueEngine : MonoBehaviour
 
         // Whatever the last shot still had pending is dropped: the director moved on.
         queue.Clear();
+        EndLive();
         shotIndex++;
         ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
         Debug.Log($"[CueEngine] Siguiente toma: shot {sceneShots[shotIndex]}");
@@ -255,6 +273,7 @@ public class CueEngine : MonoBehaviour
             return;
 
         playing = false;
+        EndLive();
         int dropped = queue.Count;
         queue.Clear();
         PodReceiver pods = dryRun ? null : Receiver();
@@ -282,10 +301,22 @@ public class CueEngine : MonoBehaviour
 
         float start = Time.time;
         int count = 0;
+
+        // The live cues, when the actor's headset is here to say where they are.
+        live = null;
+        if (!guideOff && ActorPositionSync.Instance != null && ActorPositionSync.Instance.IsLive)
+        {
+            live = LiveCues.Load(database, shot, cues, SendLive);
+            live?.Begin(start);
+        }
+        bool liveMarks = live != null && live.MarkCount > 0;
+
         foreach (CueEvent cue in cues)
         {
             float at = start + cue.T;
             if (guideOff && cue.Kind != CueKind.CameraStart && cue.Kind != CueKind.Cut)
+                continue;
+            if (liveMarks && cue.Kind == CueKind.Checkpoint)
                 continue;
             switch (cue.Kind)
             {
@@ -356,10 +387,22 @@ public class CueEngine : MonoBehaviour
     void Add(float at, int pod, PodReceiver.Cue cue, int param, string label) =>
         queue.Add(new Scheduled { At = at, Pod = pod, Cue = cue, Param = param, Label = label });
 
+    void EndLive()
+    {
+        live?.End();
+        live = null;
+    }
+
+    void SendLive(int pod, PodReceiver.Cue cue, int param, string label) =>
+        Fire(new Scheduled { At = Time.time, Pod = pod, Cue = cue, Param = param, Label = "[vivo] " + label });
+
     void Fire(Scheduled s)
     {
         if (s.Cue == PodReceiver.Cue.Long && s.Pod == PodIds.All)
+        {
             cutPlayed = true;
+            EndLive();
+        }
         PodReceiver pods = dryRun ? null : Receiver();
         if (pods != null)
             pods.SendCue(s.Pod, s.Cue, s.Param);

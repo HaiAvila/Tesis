@@ -246,6 +246,15 @@ Si el shot tiene **toma preferida**, al empezar la toma los pods reproducen sus 
 **Cuándo empiezan:** en Ensayo Remoto, cuando el director empieza a grabar (**B**); en Ensayar Solo, al iniciar. **Terminan** al detener la grabación o la práctica: lo que faltaba se cancela y llega el Corte. En una escena completa, cada **Siguiente toma** (Y izquierda) carga las pistas del siguiente shot. Si el shot no tiene preferida, aparece un aviso y solo suena Acción.
 Las reproduce la computadora que tiene los pods (el receptor y `bridge.py`).
 
+### Pistas en vivo (lo que siente el actor)
+Además de la línea de tiempo, en Ensayo Remoto y Ensayar Solo el servidor sigue dónde está el actor (con su visor) y le avisa en el momento:
+- **Proximidad a la marca:** al acercarse a la siguiente marca del shot, el pecho pulsa cada vez más rápido (lento a 2.5 m, muy rápido al llegar). Al llegar (a menos de 40 cm) siente la **Marca** (doble pulso). Si pasa de largo, sigue con la siguiente.
+- **Orientación:** si su cuerpo mira más de 45° lejos de hacia donde miraba la toma preferida en ese punto del shot, por más de un segundo y medio, la muñeca del lado hacia donde debe girar da un clic (hasta 3 veces) hasta que esté bien orientado.
+No funcionan sin el visor del actor (día de rodaje) ni con las **pistas de guía apagadas**.
+
+### Reporte de la toma (director)
+Al detener la grabación, el panel de Guardar / Descartar muestra cómo salió la toma comparada con la **preferida** del shot: por cada marca, si llegó (✓, a cuántos metros, si llegó a tiempo, antes o tarde, y cuánto se desvió su mirada) o no (✗, a qué distancia pasó); qué tan lejos anduvo del recorrido de la preferida y la diferencia de duración. Si el shot no tiene preferida dice "Sin referencia". No aparece en las tomas de escena completa.
+
 ### Editor de pistas hápticas (director)
 En la reproducción de una toma guardada de un shot, el botón **Editar pistas** (lápiz) abre las pistas del shot debajo del panel; presiónalo otra vez (o **Cerrar**) para quitarlas. El lápiz se pone **azul** mientras están abiertas. Solo se editan en la **toma preferida** (la estrella), porque son las del shot. Funciona con el rayo y con el mouse.
 - **Minimizar:** las deja en una franja delgada (solo las pistas de colores y el cursor, sin botones) para que no tapen la vista; **Expandir** las regresa completas. Se queda como lo dejaste la próxima vez que las abras en ese visor.

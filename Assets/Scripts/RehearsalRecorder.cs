@@ -465,9 +465,82 @@ public class RehearsalRecorder : MonoBehaviour
         // callback and shouldn't wipe out a checkbox the director already ticked.
         markAsPreferida = false;
         markAsFavorita = false;
+        takeReport = BuildTakeReport();
+        takeReportLines = string.IsNullOrEmpty(takeReport) ? 0 : takeReport.Split('\n').Length;
         ShowDecisionPanel();
 #endif
     }
+
+#if DIRECTOR_BUILD
+    // --- the take report: this take next to the shot's preferida, in the panel after Corte -------
+    // (TakeComparison: the preferida's marks - its timeline's Marca cues - reached or not, how far,
+    // early or late, the facing; the path and the duration.) Made once per take; the panel shows it
+    // again after Ver replay.
+    const int ReportFontSize = 21;
+    const float ReportLineHeight = 30f;
+    string takeReport;
+    int takeReportLines;
+
+    string BuildTakeReport()
+    {
+        var text = new System.Text.StringBuilder();
+        void Line(string value)
+        {
+            if (text.Length > 0)
+                text.Append('\n');
+            text.Append(value);
+        }
+
+        if (fullSceneAtStart)
+            return null;
+
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        RecordingSession reference = database != null ? database.GetSessionsForShot(shotNumberAtStart).Find(s => s.EsPreferida && !s.IsScene) : null;
+        string condition = guideCuesAtStart ? "" : " · pistas de guía apagadas";
+        if (reference == null)
+        {
+            Line($"<b>Sin referencia</b>: el shot {shotNumberAtStart} todavía no tiene toma preferida{condition}.");
+            return text.ToString();
+        }
+
+        List<TakeComparison.Point> referencePoints = TakeComparison.FromMetrics(database.GetMetricsForSession(reference.Id));
+        List<TakeComparison.Point> takePoints = TakeComparison.FromMetrics(buffer);
+        if (referencePoints.Count < 5 || takePoints.Count < 5)
+        {
+            Line("Toma demasiado corta para compararla con la preferida.");
+            return text.ToString();
+        }
+
+        List<TakeComparison.Mark> marks = TakeComparison.MarksFromCues(database.GetCueTrack(shotNumberAtStart), referencePoints);
+        TakeComparison.Result result = TakeComparison.Compare(takePoints, pendingDuration, referencePoints, reference.Duracion, marks);
+
+        Line($"<b>Comparada con la preferida</b> (toma {reference.Id}){condition}");
+        string check = $"<color=#5fd38a>{GlassUI.Icon.Check}</color>";
+        string miss = $"<color=#ff7a7a>{GlassUI.Icon.Close}</color>";
+        foreach (TakeComparison.MarkResult mark in result.Marks)
+        {
+            if (mark.Reached)
+            {
+                string when = Mathf.Abs(mark.Delay) < 0.3f ? "a tiempo" : mark.Delay > 0f ? $"{mark.Delay:0.0} s tarde" : $"{-mark.Delay:0.0} s antes";
+                Line($"{check} Marca {mark.Mark.Number}: a {mark.Distance:0.00} m{(mark.WithoutStopping ? " (sin detenerse)" : "")} · {when} · mirando {mark.Facing:0}° desviado");
+            }
+            else
+            {
+                Line($"{miss} Marca {mark.Mark.Number}: no se detuvo ahí (pasó a {mark.Closest:0.0} m)");
+            }
+        }
+        if (marks.Count == 0)
+            Line("La preferida no tiene marcas en sus pistas: solo se compara el recorrido.");
+
+        string duration = Mathf.Abs(result.DurationDifference) < 0.3f ? "misma duración" : $"duración {(result.DurationDifference > 0f ? "+" : "−")}{Mathf.Abs(result.DurationDifference):0.0} s";
+        Line($"Recorrido a {result.PathError:0.00} m del de la preferida en promedio · {duration}");
+        if (result.StartOffset > 1f)
+            Line($"<color=#ffb84d>Empezó a {result.StartOffset:0.0} m del inicio de la preferida: ¿se movió la marca de inicio?</color>");
+
+        Debug.Log($"[TakeReport] shot {shotNumberAtStart} vs take {reference.Id}: {result.Reached}/{marks.Count} marks, path {result.PathError:F2} m, duration {result.DurationDifference:+0.0;-0.0} s\n{text}");
+        return text.ToString();
+    }
+#endif
 
 #if DIRECTOR_BUILD
     void ShowDecisionPanel()
@@ -503,6 +576,9 @@ public class RehearsalRecorder : MonoBehaviour
         float panelHeight = DecisionCheckboxHeight + DecisionRowSpacing + DecisionButtonHeight + DecisionPanelPadding * 2f;
         if (keptAfterConnectionLoss)
             panelHeight += DecisionTitleHeight + DecisionRowSpacing;
+        float reportHeight = string.IsNullOrEmpty(takeReport) ? 0f : takeReportLines * ReportLineHeight + 8f;
+        if (reportHeight > 0f)
+            panelHeight += reportHeight + DecisionRowSpacing;
 
         RectTransform canvasRect = (RectTransform)decisionPanelObject.transform;
         canvasRect.sizeDelta = new Vector2(panelWidth, panelHeight);
@@ -548,6 +624,19 @@ public class RehearsalRecorder : MonoBehaviour
             title.fontStyle = FontStyles.Bold;
             title.color = DecisionTextColor;
             title.alignment = TextAlignmentOptions.Center;
+        }
+
+        if (reportHeight > 0f)
+        {
+            var reportObject = new GameObject("TakeReport", typeof(RectTransform), typeof(LayoutElement));
+            reportObject.transform.SetParent(rootRect, false);
+            reportObject.GetComponent<LayoutElement>().preferredHeight = reportHeight;
+            TextMeshProUGUI report = GlassUI.Label(reportObject.transform, takeReport, ReportFontSize, false, DecisionTextColor, TextAlignmentOptions.TopLeft);
+            GlassUI.Stretch((RectTransform)report.transform);
+            report.richText = true;
+            report.enableWordWrapping = false;
+            report.overflowMode = TextOverflowModes.Overflow;
+            report.lineSpacing = 6f;
         }
 
         var checkboxRowObject = new GameObject("Checkboxes", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));

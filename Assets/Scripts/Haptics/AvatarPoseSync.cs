@@ -142,6 +142,19 @@ public class AvatarPoseSync : RealtimeComponent<AvatarPoseModel>
 
     public bool IsSending { get; private set; }
     public bool IsReceiving { get; private set; }
+
+    // The actor's body facing (the hips, degrees about the vertical, 0 = +Z), while this machine
+    // has the avatar (sending or receiving). For LiveCues.
+    public bool HasBody => IsSending || IsReceiving;
+    public float BodyYaw => synced[0] != null ? FlatYaw(synced[0].rotation * hipsRestForward) : root.eulerAngles.y;
+
+    // The same, in a recorded PoseTrack frame: the root's yaw times the hips' local rotation (the
+    // Y Bot's hips hang straight off its root).
+    public float FrameBodyYaw(byte[] frame)
+    {
+        ReadFrameRoot(frame, out _, out float yaw, out _);
+        return FlatYaw(Quaternion.Euler(0f, yaw, 0f) * ReadFrameBone(frame, 0) * hipsRestForward);
+    }
     public bool HasPodsHere => hasPods;
 
     // Whether any machine in the room hears pods. Normcore clears the owner when that machine leaves.

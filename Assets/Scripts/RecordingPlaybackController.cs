@@ -79,6 +79,10 @@ public class RecordingPlaybackController : MonoBehaviour
     const float FollowTransitionDuration = 0.4f;
     const float FollowForwardOffset = 0.8f;
     const float FollowVerticalOffset = 0.35f;
+    // While the haptic timeline editor is open under the panel, the whole replay sits this much
+    // higher, so the editor isn't far below the view and the video above still is in it.
+    const float EditorLift = 0.28f;
+    float appliedLift;
 
     static readonly Color BackgroundColor = new Color(0.08f, 0.08f, 0.1f, 0.45f);
     static readonly Color ButtonColor = new Color(0.3f, 0.3f, 0.36f, 0.55f);
@@ -485,7 +489,25 @@ public class RecordingPlaybackController : MonoBehaviour
         if (headCamera == null)
             return;
 
+        float lift = 0f;
+#if DIRECTOR_BUILD
+        if (cueEditor != null)
+            lift = EditorLift;
+#endif
         ComputeDesiredAnchor(headCamera.transform, out Vector3 desiredPosition, out Quaternion desiredRotation);
+        desiredPosition += Vector3.up * lift;
+
+        // The editor opened or closed: move up or back down now, not at the next follow.
+        if (!Mathf.Approximately(lift, appliedLift))
+        {
+            appliedLift = lift;
+            transitionStartPosition = panelObject.transform.position;
+            transitionStartRotation = panelObject.transform.rotation;
+            anchorPosition = desiredPosition;
+            anchorRotation = desiredRotation;
+            transitionElapsed = 0f;
+            isTransitioning = true;
+        }
 
         if (!isTransitioning)
         {
@@ -570,6 +592,7 @@ public class RecordingPlaybackController : MonoBehaviour
         Transform head = headCamera != null ? headCamera.transform : transform;
         ComputeDesiredAnchor(head, out anchorPosition, out anchorRotation);
         isTransitioning = false;
+        appliedLift = 0f;
 
         float buttonCount = 4f; // play/pause + restart + loop + speed
         if (currentSession != null)

@@ -74,6 +74,9 @@ public class LiveCues
 
     public int MarkCount => marks.Count;
 
+    // Off while something else owns the sternum (the shot's heartbeat).
+    public bool ProximityEnabled = true;
+
     LiveCues(int shot, List<TakeComparison.Point> reference, List<TakeComparison.Mark> marks, bool bodyFacing, Action<int, PodReceiver.Cue, int, string> send)
     {
         this.shot = shot;
@@ -149,7 +152,8 @@ public class LiveCues
         float elapsed = now - startTime;
 
         UpdateProgress(head, elapsed);
-        UpdateProximity(now, head);
+        if (ProximityEnabled)
+            UpdateProximity(now, head);
         float yaw = bodyFacing ? (hasBody ? bodyYaw : float.NaN) : headYaw;
         if (!float.IsNaN(yaw))
             UpdateOrientation(now, elapsed, yaw);

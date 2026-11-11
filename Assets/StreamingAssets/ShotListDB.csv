@@ -1,11 +1,11 @@
 "SHOT LIST á TESIS Ñ 100% AUTOMATICA, NO EDITAR AQUI",,,,,,,,,
 ,,,,,,,,,
 scene_number,location,int_ext,day_night,shot_number,take_number,subject,description,status,notes
-1,mountain,EXT,NIGHT,1,,Protagonista,El protagonista llega al risco junto a la entrada de la cueva y se detiene en su marca.,pendiente,Confirmacion de marca inicial. Inicio de camara (3 pulsos).
-1,mountain,EXT,NIGHT,2,,Protagonista,"El protagonista siente un temblor lejano proveniente de la cueva y se detiene, alerta.",pendiente,Cue de alerta anticipatoria activo (solo banda de cintura).
-1,mountain,EXT,NIGHT,3,,"Protagonista, Gigante (VFX)",El gigante emerge de la cueva y se desplaza junto al risco; el protagonista gira para seguirlo con la mirada.,pendiente,Cue de orientacion activo; guia giro izquierda/derecha y componente vertical (arriba/abajo).
-1,mountain,EXT,NIGHT,4,,Protagonista,"El protagonista retrocede por instinto, acercandose al borde real del risco (tarima).",pendiente,Cue de zona de exclusion / peligro fisico activo.
-1,mountain,EXT,NIGHT,5,,"Protagonista, Gigante (VFX)",El protagonista reacciona de cerca al gigante antes de que la escena corte.,pendiente,Cue de corte (pulso largo de baja intensidad).
+1,mountain,EXT,NIGHT,1,,Protagonista,El protagonista camina unos pasos hacia el risco y se detiene en su marca.,pendiente,"Inicio de camara (3 pulsos). Pasos alternados en espinillas. Proximidad a la marca en el pecho, doble pulso al llegar."
+1,mountain,EXT,NIGHT,2,,"Protagonista, Gigante (VFX)","El protagonista siente un temblor lejano proveniente de la cueva y, alerta, camina un poco mas.",pendiente,"Temblor en ambas espinillas al iniciar (el gigante sacude la cueva), luego alerta en el pecho. Pasos y marca."
+1,mountain,EXT,NIGHT,3,,"Protagonista, Gigante (VFX)",El gigante emerge de la cueva y avanza hacia la entrada. El protagonista gira a la izquierda y ve al gigante.,pendiente,Giro a la izquierda (muneca izquierda). Pisadas del gigante en ambos muslos.
+1,mountain,EXT,NIGHT,4,,Protagonista,"El protagonista retrocede por instinto, acercandose al borde real del risco (tarima).",pendiente,Latido acelerado en el pecho (miedo). Pasos hacia atras en espinillas. Pisadas del gigante en ambos muslos.
+1,mountain,EXT,NIGHT,5,,"Protagonista, Gigante (VFX)",El protagonista gira a la izquierda y camina o corre unos pasos. Corte de escena.,pendiente,Giro a la izquierda (muneca izquierda). Pasos rapidos en espinillas. Pisadas del gigante en ambos muslos. Corte (pulso largo en todos).
 2,spaceship,INT,NIGHT,6,,Protagonista,El protagonista entra al corredor de la nave y avanza hasta el primer punto de control.,pendiente,Checkpoint 1 (confirmacion de marca). Inicio de camara.
 2,spaceship,INT,NIGHT,7,,Protagonista,"Avanza por un tramo del corredor donde las esporas laten en las paredes, ajustando su paso.",pendiente,Cue de desviacion de velocidad de segmento (tramo pide ritmo mas lento).
 2,spaceship,INT,NIGHT,8,,Protagonista,Extiende la mano hacia una espora flotante que no puede ver con claridad en la penumbra del corredor.,pendiente,Cue de proximidad guia la mano hacia el punto exacto de la espora.

@@ -231,6 +231,13 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 **El avatar en vivo se oculta** mientras el panel de reproducción está abierto, para que no haya dos cuerpos en el mismo lugar, y vuelve al cerrarlo.
 **Tomas sin datos del cuerpo** (grabadas antes de este cambio o sin pods): solo se guardó el recorrido de la cabeza, así que el avatar sigue ese recorrido parado, con los brazos abajo, y aparece el mensaje "Toma sin datos del cuerpo".
 
+### El gigante de la escena 1 (shots 2 a 5)
+- **Shot 2:** al empezar la toma (Acción) el gigante **tiembla dentro de la cueva**; el actor siente el temblor en ambas espinillas y luego la alerta en el pecho.
+- **Shot 3:** 1.5 s después de Acción sale de la cueva caminando. **Shot 4:** camina en cuanto empieza la toma y se acerca al protagonista. **Shot 5:** 1.5 s después de Acción gira hacia su derecha y da unos pasos más.
+- Cada pisada del gigante se siente en **ambos muslos** (los pasos propios del actor van en las espinillas).
+- Si grabas un shot solo, el gigante empieza donde lo dejó el shot anterior. En escena completa camina de corrido.
+- **Repetir:** en el menú de pausa, **Repetir temblor** (shot 2) o **Repetir gigante** (shots 3 a 5) lo regresa a su lugar y lo hace otra vez, con sus pulsos.
+
 ### El dron de la escena 3 (shot 14)
 El robot levitador flota en su lugar (se mece un poco, mueve las orejas) hasta que empieza la acción del shot 14. **5 segundos después** cruza veloz frente al actor inclinándose hacia adelante, frena en seco con un pequeño rebote y **se voltea hacia el actor**, siguiéndolo con la mirada si se mueve.
 **Cuándo empieza:** al empezar a grabar una toma del shot 14 (**B**); en una **escena completa**, cuando el director pasa al shot 14 (**Y izquierda**); en **Ensayar Solo**, al iniciar el shot 14. En una toma del shot 15 ya está en su lugar final, viendo al actor. Una toma nueva lo regresa a su inicio.
@@ -245,6 +252,9 @@ Si el shot tiene **toma preferida**, al empezar la toma los pods reproducen sus 
 **De qué toma salen:** de la toma preferida del shot y de lo que pide la lista de shots. Si la toma tiene cuerpo (pods), los **Pasos** caen en cada paso real de la referencia, en la espinilla de esa pierna, y el **Giro** sale de la cadera (mirar a los lados no cuenta). El **Aviso** solo aparece donde la lista pide la alerta anticipatoria (shots 2 y 13). En los shots de la mano, en la muñeca de la mano que se movió: **Proximidad** (shot 8, clics cada vez más seguidos mientras la mano se acerca y un doble pulso al llegar), **Contacto** (shot 9, una vibración sostenida mientras sostienes la espora) y **Sostener** (shot 10, un pulso largo al llegar la mano y un doble pulso al terminar).
 **Cuándo empiezan:** en Ensayo Remoto, cuando el director empieza a grabar (**B**); en Ensayar Solo, al iniciar. **Terminan** al detener la grabación o la práctica: lo que faltaba se cancela y llega el Corte. En una escena completa, cada **Siguiente toma** (Y izquierda) carga las pistas del siguiente shot. Si el shot no tiene preferida, aparece un aviso y solo suena Acción.
 Las reproduce la computadora que tiene los pods (el receptor y `bridge.py`).
+
+### Latido (escena 1, shot 4)
+Durante el shot 4 el pecho late rápido (dos pulsos seguidos, unas dos veces por segundo): el miedo al gigante. Viene de la palabra "latido" en las notas del shot; se puede mover o estirar en el editor de pistas (fila Esternón). Mientras late no hay proximidad a la marca en el pecho.
 
 ### Pistas en vivo (lo que siente el actor)
 Además de la línea de tiempo, en Ensayo Remoto y Ensayar Solo el servidor sigue dónde está el actor (con su visor) y le avisa en el momento:

@@ -278,6 +278,7 @@ public class RecordingPlaybackController : MonoBehaviour
         PanelFocusManager.Unregister(monitorObject);
         SetAction.EndReplay();
         setActionTimes = null;
+        replayBoundaries = null;
 
         if (playbackAvatar != null)
             playbackAvatar.Destroy();
@@ -1301,6 +1302,7 @@ public class RecordingPlaybackController : MonoBehaviour
     // The set's scripted action (scene 3's drone) at the replay's moment: from the take's
     // recorded triggers - saved (EventosToma), or still in the recorder for Ver replay.
     List<float> setActionTimes;
+    List<ShotBoundary> replayBoundaries;
 
     void LoadSetActions()
     {
@@ -1325,7 +1327,28 @@ public class RecordingPlaybackController : MonoBehaviour
             if (trigger <= playbackTime)
                 elapsed = playbackTime - trigger;
         }
-        SetAction.SetReplay(elapsed, ActorHeadAt(playbackTime));
+        SetAction.SetReplay(elapsed, ActorHeadAt(playbackTime), ReplayShotAt(playbackTime));
+    }
+
+    // The shot at that moment of the replay: the take's, or in a full scene the one open then.
+    int ReplayShotAt(float time)
+    {
+        if (currentSession == null)
+            return Bootstrap.CurrentShotNumber;
+        if (!currentSession.IsScene)
+            return currentSession.ShotNumber;
+        if (replayBoundaries == null)
+        {
+            ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+            replayBoundaries = database != null ? database.GetBoundariesForSession(currentSession.SessionGuid) : new List<ShotBoundary>();
+        }
+        int shot = Bootstrap.CurrentShotNumber;
+        foreach (ShotBoundary boundary in replayBoundaries)
+        {
+            if (boundary.TIn <= time + 0.01f)
+                shot = boundary.ShotNumber;
+        }
+        return shot;
     }
 
     Vector3? ActorHeadAt(float time)

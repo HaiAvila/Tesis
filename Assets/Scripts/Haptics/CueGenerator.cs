@@ -13,6 +13,8 @@ using UnityEngine;
 //                       only where the shot list asks for the alerta anticipatoria
 //   a turn           -> Giro (Orientation) on the wrist of that side, a little before it
 //                       starts; with a body the hips' turn (looking around doesn't count)
+//   latido           -> Latido (EmotionalPacing) span over the whole shot, sternum: a fast
+//                       heartbeat (only where the shot list asks)
 //   the hand (only where the shot list asks, on the wrist of the hand that moved):
 //     proximidad     -> Proximidad span over each reach: pulses that speed up, then a double
 //     contacto       -> Contacto span over the hold with the hand out: a sustained buzz
@@ -24,12 +26,12 @@ using UnityEngine;
 public static class CueGenerator
 {
     // Bump when the generator changes: the database regenerates every preferida's auto cues.
-    public const int Version = 3;
+    public const int Version = 4;
 
     // Which cues a shot calls for beyond the movement ones, from its notes in the shot list.
     public struct ShotPlan
     {
-        public bool Anticipation, HandProximity, Contact, Hold;
+        public bool Anticipation, HandProximity, Contact, Hold, Heartbeat;
 
         public static ShotPlan FromNotes(string notes)
         {
@@ -40,6 +42,7 @@ public static class CueGenerator
                 HandProximity = n.Contains("proximidad") && n.Contains("mano"),
                 Contact = n.Contains("contacto"),
                 Hold = n.Contains("mantener posicion") || n.Contains("(hold)"),
+                Heartbeat = n.Contains("latido"),
             };
         }
 
@@ -56,7 +59,7 @@ public static class CueGenerator
         }
 
         public override string ToString() =>
-            $"aviso={Anticipation} mano={HandProximity} contacto={Contact} mantener={Hold}";
+            $"aviso={Anticipation} mano={HandProximity} contacto={Contact} mantener={Hold} latido={Heartbeat}";
     }
     // Smoothing windows, seconds.
     const float PositionWindow = 0.6f;
@@ -85,6 +88,11 @@ public static class CueGenerator
     const float MinHandStill = 0.6f;
     const float ReachGain = 0.08f;        // a reach ends this much further from the chest
     const float HandOutDistance = 0.3f;   // the hand counts as "out" beyond this
+
+    // The heartbeat: after Acción's pulses, until just before Corte, beats per minute.
+    const float HeartbeatStart = 0.6f;
+    const float HeartbeatEndMargin = 0.4f;
+    const float HeartbeatBpm = 120f;
 
     // Marks: a stop at least this long after a walk.
     const float MinStopSeconds = 1f;
@@ -163,6 +171,9 @@ public static class CueGenerator
             cue.Param = turn.Degrees;
             cues.Add(cue);
         }
+
+        if (plan.Heartbeat && duration > HeartbeatStart + HeartbeatEndMargin + 1f)
+            cues.Add(new CueEvent { T = HeartbeatStart, Dur = duration - HeartbeatStart - HeartbeatEndMargin, Cue = (int)CueKind.EmotionalPacing, Pod = PodIds.Sternum, Param = HeartbeatBpm });
 
         cues.Add(Cue(CueKind.Cut, duration, PodIds.All));
         cues.Sort((a, b) => a.T.CompareTo(b.T));

@@ -19,6 +19,9 @@ public enum CueKind
     HoldPosition = 11,
     ExclusionZone = 12,
     OtherActor = 13,
+    // Experimental tier, #15 "breathing rhythm / emotional pacing": used as a heartbeat for one
+    // scene (scene 1, shot 4: fear), from the shot list's notes ("latido").
+    EmotionalPacing = 15,
 }
 
 // Pod IDs by body part (Docs/pod-map.md). 0 = every pod.
@@ -56,6 +59,7 @@ public static class HapticCues
             case CueKind.HoldPosition: return "Sostener";
             case CueKind.ExclusionZone: return "Límite";
             case CueKind.OtherActor: return "Otro actor";
+            case CueKind.EmotionalPacing: return "Latido";
             default: return kind.ToString();
         }
     }
@@ -73,6 +77,7 @@ public static class HapticCues
             case CueKind.Proximity: return new Color(1f, 0.45f, 0.72f, 1f);
             case CueKind.Contact: return new Color(0.98f, 0.86f, 0.3f, 1f);
             case CueKind.HoldPosition: return new Color(0.62f, 0.76f, 1f, 1f);
+            case CueKind.EmotionalPacing: return new Color(0.94f, 0.33f, 0.38f, 1f);
             default: return new Color(0.8f, 0.8f, 0.8f, 1f);
         }
     }

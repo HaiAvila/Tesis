@@ -82,12 +82,13 @@ public class RehearsalSessionSync : MonoBehaviour
     // The set's scripted action, shared by every client (see SetAction). Online: in a room.
     public bool Online => sessionState != null && sessionState.RoomTime > 0;
     public double SetActionTime => sessionState != null ? sessionState.SetActionTime : 0;
+    public int SetActionShot => sessionState != null ? sessionState.SetActionShot : 0;
     public double RoomTime => sessionState != null ? sessionState.RoomTime : 0;
 
-    public void SetSetActionTime(double roomTime)
+    public void SetSetActionTime(double roomTime, int shot = 0)
     {
         if (sessionState != null)
-            sessionState.SetSetActionTime(roomTime);
+            sessionState.SetSetActionTime(roomTime, shot);
     }
 
     public void SetRecording(bool recording)

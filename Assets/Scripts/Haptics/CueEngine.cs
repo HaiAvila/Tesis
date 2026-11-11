@@ -17,6 +17,12 @@ using UnityEngine;
 // read at Acción, for the whole take): then only Acción and Corte play - the pilot's "sin
 // pistas" condition. Solo always plays everything.
 //
+// Scene 1's giant (GolemPlan): its rumble and footfalls are felt from the set's action trigger -
+// the director's, synced as a room time with its shot, so a "Repetir" plays them again; in Solo
+// from Acción. Tremor = both shins, footfalls = both thighs, the alert after the rumble = sternum.
+// A shot with a heartbeat (Latido, EmotionalPacing: DOUBLE on the sternum at its beats per
+// minute) leaves the sternum to it: no live proximity, no Marca.
+//
 // Next to the timeline, the live cues (LiveCues: proximity to the next mark on the sternum, and
 // orientation corrections on the wrists), from where the actor's headset actually is; when they
 // run, the timeline's Marca is left out (the live one comes on arrival). Not without the headset
@@ -75,6 +81,7 @@ public class CueEngine : MonoBehaviour
     bool cutPlayed;
     bool guideOff;      // this take: Acción and Corte only
     LiveCues live;
+    double seenSetActionTime;
     bool wasRecording;
     int sceneNumber;
     readonly List<int> sceneShots = new List<int>();
@@ -130,6 +137,15 @@ public class CueEngine : MonoBehaviour
             StopTake("the director stopped recording");
         wasRecording = recording;
 
+        // The giant's moment, as the director triggered it (Acción, or Repetir).
+        double setActionTime = sessionState != null ? sessionState.SetActionTime : 0;
+        if (setActionTime != seenSetActionTime)
+        {
+            seenSetActionTime = setActionTime;
+            if (setActionTime > 0 && recording)
+                ScheduleGolem(sessionState.SetActionShot, (float)(sessionState.RoomTime - setActionTime), "the director's trigger");
+        }
+
         if (!playing)
             return;
 
@@ -182,12 +198,51 @@ public class CueEngine : MonoBehaviour
     void OnSoloCommand(SoloCommand command)
     {
         if (command == SoloCommand.Iniciar && soloSession.InSolo)
+        {
             StartTake(soloSession.SceneNumber, soloSession.ShotNumber, "the actor's solo Iniciar");
+            ScheduleGolem(soloSession.ShotNumber, 0f, "solo Iniciar");
+        }
         else if (command == SoloCommand.Parar)
             StopTake("the actor's solo Parar");
     }
 
-    void OnLocalSoloStarted(int shot) => StartTake(Bootstrap.CurrentSceneNumber, shot, "solo run on this machine");
+    void OnLocalSoloStarted(int shot)
+    {
+        StartTake(Bootstrap.CurrentSceneNumber, shot, "solo run on this machine");
+        ScheduleGolem(shot, 0f, "solo run on this machine");
+    }
+
+    // What the giant makes the actor feel in that shot, from its trigger (since = seconds ago).
+    void ScheduleGolem(int shot, float since, string reason)
+    {
+        if (!playing || guideOff || !GolemPlan.HasAction(shot))
+            return;
+
+        // A repeat replaces what was still pending from the last one.
+        queue.RemoveAll(s => s.Label != null && s.Label.StartsWith("Gigante"));
+        float start = Time.time - Mathf.Max(0f, since);
+        GolemPlan.Action action = GolemPlan.For(shot);
+        int count = 0;
+        if (action.Kind == GolemPlan.Kind.Rumble)
+        {
+            float at = start + action.Delay + GolemPlan.RumbleTremorAt;
+            Add(at, PodIds.LeftShin, PodReceiver.Cue.Pulse, GolemPlan.TremorGapParam, "Gigante: temblor");
+            Add(at, PodIds.RightShin, PodReceiver.Cue.Pulse, GolemPlan.TremorGapParam, "Gigante: temblor");
+            Add(at + GolemPlan.RumbleTremorSeconds, PodIds.LeftShin, PodReceiver.Cue.Stop, 0, "Gigante: fin del temblor");
+            Add(at + GolemPlan.RumbleTremorSeconds, PodIds.RightShin, PodReceiver.Cue.Stop, 0, "Gigante: fin del temblor");
+            Add(start + action.Delay + GolemPlan.RumbleAlertAt, PodIds.Sternum, PodReceiver.Cue.Rise, 0, "Gigante: aviso");
+            count = 5;
+        }
+        foreach (float t in GolemPlan.Footfalls(shot))
+        {
+            Add(start + t, PodIds.LeftQuad, PodReceiver.Cue.Long, GolemPlan.ThudParam, "Gigante: pisada");
+            Add(start + t, PodIds.RightQuad, PodReceiver.Cue.Long, GolemPlan.ThudParam, "Gigante: pisada");
+            count += 2;
+        }
+        queue.RemoveAll(s => s.Label != null && s.Label.StartsWith("Gigante") && s.At < Time.time - 0.25f);
+        queue.Sort((a, b) => a.At.CompareTo(b.At));
+        Debug.Log($"[CueEngine] the giant in shot {shot} ({reason}, {since:F1} s ago): {count} sends");
+    }
     void OnLocalSoloStopped() => StopTake("solo run stopped on this machine");
 
     // The receiver that hears pods (Bootstrap's ActorAvatar has one; test scenes their own).
@@ -309,14 +364,17 @@ public class CueEngine : MonoBehaviour
             live = LiveCues.Load(database, shot, cues, SendLive);
             live?.Begin(start);
         }
-        bool liveMarks = live != null && live.MarkCount > 0;
+        bool heartbeat = cues.Exists(c => c.Kind == CueKind.EmotionalPacing);
+        if (heartbeat && live != null)
+            live.ProximityEnabled = false;
+        bool liveMarks = live != null && live.MarkCount > 0 && !heartbeat;
 
         foreach (CueEvent cue in cues)
         {
             float at = start + cue.T;
             if (guideOff && cue.Kind != CueKind.CameraStart && cue.Kind != CueKind.Cut)
                 continue;
-            if (liveMarks && cue.Kind == CueKind.Checkpoint)
+            if ((liveMarks || heartbeat) && cue.Kind == CueKind.Checkpoint)
                 continue;
             switch (cue.Kind)
             {
@@ -353,6 +411,12 @@ public class CueEngine : MonoBehaviour
                     // A sustained buzz: long pulses that overlap (the motor stops on its own).
                     for (float s = 0f; s < cue.Dur; s += ContactRepeat)
                         Add(at + s, cue.Pod, PodReceiver.Cue.Long, Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(ContactPulse, cue.Dur - s + 0.1f) * 100f), 10, 255), "Contacto");
+                    break;
+                case CueKind.EmotionalPacing:
+                    // A heartbeat: lub-dub (DOUBLE) at its beats per minute, over the span.
+                    float beat = 60f / Mathf.Clamp(cue.Param > 0f ? cue.Param : 120f, 40f, 180f);
+                    for (float s = 0f; s < cue.Dur; s += beat)
+                        Add(at + s, cue.Pod != PodIds.All ? cue.Pod : PodIds.Sternum, PodReceiver.Cue.Double, 0, "Latido");
                     break;
                 case CueKind.HoldPosition:
                     Add(at, cue.Pod, PodReceiver.Cue.Long, HoldPulseParam, "Sostener");

@@ -36,4 +36,7 @@ public partial class RehearsalSessionStateModel
     // with the pods plays only Acción and Corte. false (the default, and what an older build
     // never writes) = on. Read at Acción; saved with each take as Sesiones.pistas.
     [RealtimeProperty(8, true, true)] private bool _guideCuesOff;
+    // Which shot setActionTime's trigger belongs to (a scene's action can differ per shot: scene
+    // 1's giant). Written together with setActionTime, before it.
+    [RealtimeProperty(9, true, true)] private int _setActionShot;
 }

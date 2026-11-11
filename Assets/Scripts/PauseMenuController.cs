@@ -182,7 +182,7 @@ public class PauseMenuController : MonoBehaviour
             {
                 Icon = GlassUI.Icon.Robot,
                 Label = $"Repetir {SetAction.TargetName}",
-                Description = $"Vuelve a su lugar y sale otra vez a los {SetAction.TargetDelay:0} segundos.",
+                Description = SetAction.TargetDescription ?? $"Vuelve a su lugar y sale otra vez a los {SetAction.TargetDelay:0} segundos.",
                 OnSelected = RepeatSetAction,
             });
 
@@ -301,7 +301,7 @@ public class PauseMenuController : MonoBehaviour
     void RepeatSetAction()
     {
         SetAction.Trigger("pause menu Repetir");
-        FloatingMessage.Show($"El {SetAction.TargetName} sale en {SetAction.TargetDelay:0} s");
+        FloatingMessage.Show(SetAction.TargetMessage ?? $"El {SetAction.TargetName} sale en {SetAction.TargetDelay:0} s");
     }
 
     void ShowPodStatus()

@@ -53,7 +53,7 @@ public class CueTimelineEditor : MonoBehaviour
     static readonly CueKind[] Palette =
     {
         CueKind.Orientation, CueKind.Timing, CueKind.Checkpoint, CueKind.Anticipation,
-        CueKind.Proximity, CueKind.Contact, CueKind.HoldPosition,
+        CueKind.Proximity, CueKind.Contact, CueKind.HoldPosition, CueKind.EmotionalPacing,
     };
 
     RecordingPlaybackController replay;
@@ -311,6 +311,7 @@ public class CueTimelineEditor : MonoBehaviour
             case CueKind.Cut: return 0;
             case CueKind.Checkpoint:
             case CueKind.Anticipation:
+            case CueKind.EmotionalPacing:
             case CueKind.MarkConfirmation: return 1;
             case CueKind.Timing: return 3;
             default: return 2;
@@ -330,6 +331,7 @@ public class CueTimelineEditor : MonoBehaviour
             case CueKind.Proximity: return "Px";
             case CueKind.Contact: return "C";
             case CueKind.HoldPosition: return "S";
+            case CueKind.EmotionalPacing: return "L";
             case CueKind.CameraStart: return "Acción";
             case CueKind.Cut: return "Corte";
             default: return "?";
@@ -506,6 +508,11 @@ public class CueTimelineEditor : MonoBehaviour
             case CueKind.Checkpoint:
             case CueKind.Anticipation:
                 cue.Pod = PodIds.Sternum;
+                break;
+            case CueKind.EmotionalPacing:
+                cue.Pod = PodIds.Sternum;
+                cue.Param = 120f;
+                cue.Dur = Mathf.Min(3f, duration - t);
                 break;
             default: // the hand: on the wrist the shot's hand cues already use
                 cue.Pod = HandPod();

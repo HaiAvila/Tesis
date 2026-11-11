@@ -506,6 +506,31 @@ public partial class ShotListDatabase : MonoBehaviour
         RegenerateAutoCues(GetSession(sessionId), keepManual);
     }
 
+    // The take stops being its shot's preferida, and the shot's cue timeline (made from it) goes
+    // too: no reference, no cues, until another take is starred. Stamped like every change, so the
+    // other devices follow (Nov 11: scene 1's blocking changed, its old preferida no longer fits).
+    public void ClearPreferida(int sessionId)
+    {
+        RecordingSession session = GetSession(sessionId);
+        if (session == null || !session.EsPreferida)
+            return;
+
+        using (var connection = new SQLiteConnection(DbPath))
+        {
+            connection.RunInTransaction(() =>
+            {
+                connection.Execute("UPDATE Sesiones SET es_preferida = 0, rev = ? WHERE id = ?;", NewRev(), sessionId);
+                if (!session.IsScene)
+                {
+                    connection.Execute("DELETE FROM CueTrack WHERE shot_number = ?;", session.ShotNumber);
+                    TouchCues(connection, session.ShotNumber);
+                }
+            });
+        }
+        Debug.Log($"ShotListDatabase: take {sessionId} is no longer shot {session.ShotNumber}'s preferida; its cues are gone");
+        RaiseChanged();
+    }
+
     // Non-exclusive bookmark - marking or unmarking one session never touches any other.
     public void SetFavorita(int sessionId, bool esFavorita)
     {

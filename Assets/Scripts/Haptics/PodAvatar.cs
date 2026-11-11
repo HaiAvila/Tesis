@@ -103,6 +103,17 @@ public class PodAvatar : MonoBehaviour
     public float palmsTogetherHalfGap = 0.025f;
     [Tooltip("How fast each bone follows its pod (higher = snappier, lower = smoother).")]
     public float smoothing = 18f;
+    // The stillness filter (Nov 11: shins jiggling while standing, from balance corrections and
+    // pod noise at ~11 Hz): a bone whose reading is within stillAngle of what's shown follows it
+    // slowly (stillSmoothing); from moveAngle on, at full speed (smoothing) - so a real step or turn
+    // has no lag. In between, blended. Applied where the pods are, so the sent, recorded and
+    // replayed avatar are all filtered.
+    [Tooltip("Below this difference (degrees) a bone counts as still and is smoothed heavily.")]
+    public float stillAngle = 2.5f;
+    [Tooltip("From this difference (degrees) a bone follows at full speed.")]
+    public float moveAngle = 9f;
+    [Tooltip("Smoothing rate while still (lower = steadier).")]
+    public float stillSmoothing = 3f;
     [Tooltip("Seconds to get into each calibration pose.")]
     public float countdownSeconds = 4f;
     [Tooltip("Seconds each pose is held and averaged.")]
@@ -812,14 +823,22 @@ public class PodAvatar : MonoBehaviour
             return;
 
         Quaternion root = avatar.transform.rotation;
-        float blend = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
 
         foreach (BoneState b in bones)
         {
             if (!TryGetBoneRotation(b.entry.podId, b.entry.bone, out Quaternion target))
                 continue;
 
-            b.smoothed = b.hasSmoothed ? Quaternion.Slerp(b.smoothed, target, blend) : target;
+            if (b.hasSmoothed)
+            {
+                float difference = Quaternion.Angle(b.smoothed, target);
+                float rate = Mathf.Lerp(stillSmoothing, smoothing, Mathf.InverseLerp(stillAngle, moveAngle, difference));
+                b.smoothed = Quaternion.Slerp(b.smoothed, target, 1f - Mathf.Exp(-rate * Time.deltaTime));
+            }
+            else
+            {
+                b.smoothed = target;
+            }
             b.hasSmoothed = true;
         }
 

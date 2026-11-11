@@ -26,7 +26,7 @@ using UnityEngine;
 public static class CueGenerator
 {
     // Bump when the generator changes: the database regenerates every preferida's auto cues.
-    public const int Version = 4;
+    public const int Version = 5;
 
     // Which cues a shot calls for beyond the movement ones, from its notes in the shot list.
     public struct ShotPlan
@@ -73,10 +73,19 @@ public static class CueGenerator
     const float WalkMergeGap = 0.8f;      // shorter pauses are part of the same walk
     const float MinWalkDistance = 0.8f;   // metres; less is shuffling, not walking
 
-    // Steps from the knees: a bend peak at least this many degrees, this far from the last one
-    // on the same leg, inside or near a walk.
-    const float MinKneeBend = 12f;
-    const float MinStepGap = 0.6f;       // per leg: one knee can peak twice in a single step
+    // Steps from the knees (v5, Nov 11: fixed thresholds missed slow and fast walks): a bend peak
+    // that rises clearly above the bend just before it, at least MinKneeBend, inside or near a walk;
+    // then, per walk, only peaks at least RelativeStepHeight of that walk's typical peak - so a
+    // careful walk's small bends and a run's big ones both count. Per leg at least MinStepGap
+    // apart (the bigger peak wins). Then the legs must alternate: two in a row on the same leg
+    // keep the bigger one, unless the gap between them is long enough for a step to be missing,
+    // which is put back in the middle on the other leg.
+    const float MinKneeBend = 5f;
+    const float MinKneeRise = 4f;         // degrees above the lowest bend of the last PeakLookBack
+    const float PeakLookBack = 0.5f;
+    const float RelativeStepHeight = 0.45f;
+    const float MinStepGap = 0.35f;       // per leg
+    const float MissingStepGap = 1.6f;    // times the walk's usual step interval
     const float StepWalkMargin = 0.6f;
 
     // The hand, relative to the chest (m, m/s).
@@ -98,12 +107,13 @@ public static class CueGenerator
     const float MinStopSeconds = 1f;
     const float AnticipationLead = 1.5f;  // the alert comes this long before arrival
 
-    // Turns: a facing change of at least TurnDegrees within TurnWindow, then held.
-    const float TurnDegrees = 45f;
-    const float TurnWindow = 3f;
-    const float TurnSettleRate = 25f;     // deg/s below which the turn has ended
+    // Turns: a facing change of at least TurnDegrees from the last held facing within TurnWindow,
+    // then held (v5, Nov 11, the user: a 25-30° turn wasn't caught at 45°).
+    const float TurnDegrees = 30f;
+    const float TurnWindow = 4f;
+    const float TurnSettleRate = 20f;     // deg/s below which the turn has ended
     const float TurnHoldSeconds = 1.5f;
-    const float TurnHoldTolerance = 25f;
+    const float TurnHoldTolerance = 15f;
     const float TurnMergeGap = 1f;        // back-to-back turns the same way are one turn
     const float TurnLead = 0.5f;          // the cue comes this long before the turn starts
 
@@ -180,29 +190,94 @@ public static class CueGenerator
         return cues;
     }
 
-    // A step = a bend peak of one knee, near a walk. Alternating legs come out on their own.
+    // A step = a bend peak of one knee, near a walk (see the constants above).
     static List<CueEvent> FindSteps(BodyTrack body, List<Walk> walks)
     {
+        var peaks = new List<CueEvent>();
+        AddKneePeaks(peaks, body, body.LeftKnee, PodIds.LeftShin, walks);
+        AddKneePeaks(peaks, body, body.RightKnee, PodIds.RightShin, walks);
+
+        // Per walk: drop the peaks well below its typical one.
         var steps = new List<CueEvent>();
-        AddKneePeaks(steps, body, body.LeftKnee, PodIds.LeftShin, walks);
-        AddKneePeaks(steps, body, body.RightKnee, PodIds.RightShin, walks);
+        foreach (Walk walk in walks)
+        {
+            List<CueEvent> inWalk = peaks.FindAll(p => p.T >= walk.Start - StepWalkMargin && p.T <= walk.End + StepWalkMargin && !steps.Contains(p));
+            if (inWalk.Count == 0)
+                continue;
+            var heights = inWalk.ConvertAll(p => p.Param);
+            heights.Sort();
+            float typical = heights[heights.Count / 2];
+            steps.AddRange(inWalk.FindAll(p => p.Param >= RelativeStepHeight * typical));
+        }
         steps.Sort((a, b) => a.T.CompareTo(b.T));
-        return steps;
+        return Alternate(steps);
+    }
+
+    // Left, right, left: a double on one leg keeps its bigger peak, or gets the missing step back.
+    static List<CueEvent> Alternate(List<CueEvent> steps)
+    {
+        if (steps.Count < 3)
+            return steps;
+        var intervals = new List<float>();
+        for (int i = 1; i < steps.Count; i++)
+            intervals.Add(steps[i].T - steps[i - 1].T);
+        intervals.Sort();
+        float usual = Mathf.Max(intervals[intervals.Count / 2], 0.25f);
+
+        var result = new List<CueEvent> { steps[0] };
+        for (int i = 1; i < steps.Count; i++)
+        {
+            CueEvent last = result[result.Count - 1];
+            CueEvent step = steps[i];
+            if (step.Pod != last.Pod)
+            {
+                result.Add(step);
+                continue;
+            }
+            if (step.T - last.T >= MissingStepGap * usual)
+            {
+                int other = last.Pod == PodIds.LeftShin ? PodIds.RightShin : PodIds.LeftShin;
+                result.Add(new CueEvent { T = (last.T + step.T) / 2f, Dur = 0f, Cue = (int)CueKind.Timing, Pod = other, Param = 0f });
+                result.Add(step);
+            }
+            else if (step.Param > last.Param)
+            {
+                result[result.Count - 1] = step;
+            }
+        }
+        return result;
     }
 
     static void AddKneePeaks(List<CueEvent> steps, BodyTrack body, float[] knee, int pod, List<Walk> walks)
     {
         float[] bend = Smooth(knee, body.Time, 0.15f);
-        float last = -10f;
+        CueEvent last = null;
         for (int i = 1; i < bend.Length - 1; i++)
         {
             if (bend[i] < MinKneeBend || bend[i] < bend[i - 1] || bend[i] < bend[i + 1])
                 continue;
             float t = body.Time[i];
-            if (t - last < MinStepGap || !NearWalk(t, walks))
+            if (!NearWalk(t, walks))
                 continue;
-            steps.Add(new CueEvent { T = t, Dur = 0f, Cue = (int)CueKind.Timing, Pod = pod, Param = bend[i] });
-            last = t;
+
+            // Clearly above the bend just before it: a real swing, not a wobble on a plateau.
+            float low = bend[i];
+            for (int k = i - 1; k >= 0 && t - body.Time[k] <= PeakLookBack; k--)
+                low = Mathf.Min(low, bend[k]);
+            if (bend[i] - low < MinKneeRise)
+                continue;
+
+            if (last != null && t - last.T < MinStepGap)
+            {
+                if (bend[i] > last.Param)
+                {
+                    last.T = t;
+                    last.Param = bend[i];
+                }
+                continue;
+            }
+            last = new CueEvent { T = t, Dur = 0f, Cue = (int)CueKind.Timing, Pod = pod, Param = bend[i] };
+            steps.Add(last);
         }
     }
 

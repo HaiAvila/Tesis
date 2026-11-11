@@ -46,6 +46,7 @@ public class CueEngine : MonoBehaviour
     public static CueEngine Instance { get; private set; }
 
     const int CutParam = 50;                       // LONG 500 ms
+    const float AfterAccion = 0.5f;                // s: Acción's three pulses are over
     const float ProximityFirstGap = 0.45f;         // s between clicks as the reach starts...
     const float ProximityLastGap = 0.1f;           // ...and as it arrives
     const float ContactRepeat = 1f;                // a new long pulse every second...
@@ -391,6 +392,10 @@ public class CueEngine : MonoBehaviour
             float at = start + cue.T;
             if (guideOff && cue.Kind != CueKind.CameraStart && cue.Kind != CueKind.Cut)
                 continue;
+            // Acción's TRIPLE goes to every pod and would cut anything sent with it: a cue in the
+            // take's first moments (a turn right at the start) waits until it's over.
+            if (first && cue.Kind != CueKind.CameraStart && cue.T < AfterAccion)
+                at = start + AfterAccion;
             if ((liveMarks || heartbeat) && cue.Kind == CueKind.Checkpoint)
                 continue;
             switch (cue.Kind)

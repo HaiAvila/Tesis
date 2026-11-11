@@ -43,7 +43,7 @@ public class LiveCues
     const float AfterArrival = 1.5f;    // s before pulsing toward the next mark
     const float PassedAfter = 4f;       // s of the reference past a mark: the actor walked past it
 
-    const float OffBy = 45f;            // degrees
+    const float OffBy = 35f;            // degrees (was 45; the turns detected from 30°, Nov 11)
     const float Back = 20f;
     const float Sustain = 1.5f;         // s
     const float Repeat = 1.5f;          // s

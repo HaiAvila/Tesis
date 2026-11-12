@@ -233,7 +233,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LatencyTest
   receiver: {fileID: 1365728045}
-  podId: 1
+  podId: 2
   trials: 30
   minInterval: 1.5
   maxInterval: 2.5

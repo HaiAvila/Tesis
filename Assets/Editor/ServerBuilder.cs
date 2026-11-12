@@ -62,13 +62,37 @@ static class ServerBuilder
             EditorUtility.RevealInFinder(Path.Combine(OutputFolder, ExeName));
     }
 
-    // Also callable from the unity CLI. True if the build succeeded.
-    public static bool Build()
+    // The director's desktop build (DesktopDirector: mouse and keyboard, no headset): the "PC
+    // Director" profile, which takes the Editor's role - so the role must be Director.
+    public const string DirectorFolder = "Builds/Director";
+    public const string DirectorExe = "Director.exe";
+
+    [MenuItem("Tesis/Build/Director escritorio (.exe)")]
+    static void BuildDirectorFromMenu()
     {
-        BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(ProfilePath);
+        if (BuildDirector())
+            EditorUtility.RevealInFinder(Path.Combine(DirectorFolder, DirectorExe));
+    }
+
+    public static bool BuildDirector()
+    {
+#if DIRECTOR_BUILD
+        return Build("Assets/Settings/Build Profiles/PC Director.asset", DirectorFolder, DirectorExe);
+#else
+        EditorUtility.DisplayDialog("Director escritorio", "Cambia el rol a Director primero (Tesis → Role → Director).", "OK");
+        return false;
+#endif
+    }
+
+    // Also callable from the unity CLI. True if the build succeeded.
+    public static bool Build() => Build(ProfilePath, OutputFolder, ExeName);
+
+    static bool Build(string profilePath, string outputFolder, string exeName)
+    {
+        BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(profilePath);
         if (profile == null)
         {
-            Debug.LogError($"[ServerBuilder] build profile not found: {ProfilePath}");
+            Debug.LogError($"[ServerBuilder] build profile not found: {profilePath}");
             return false;
         }
 
@@ -76,11 +100,11 @@ static class ServerBuilder
         if (previous != null && previous != profile)
             SessionState.SetString(RestoreKey, AssetDatabase.GetAssetPath(previous));
 
-        Directory.CreateDirectory(OutputFolder);
+        Directory.CreateDirectory(outputFolder);
         BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerWithProfileOptions
         {
             buildProfile = profile,
-            locationPathName = Path.Combine(OutputFolder, ExeName),
+            locationPathName = Path.Combine(outputFolder, exeName),
             options = BuildOptions.None,
         });
         SessionState.SetFloat(RestoreSinceKey, (float)EditorApplication.timeSinceStartup);
@@ -88,11 +112,11 @@ static class ServerBuilder
         BuildSummary summary = report.summary;
         if (summary.result != BuildResult.Succeeded)
         {
-            Debug.LogError($"[ServerBuilder] the server build failed: {summary.result}, {summary.totalErrors} errors");
+            Debug.LogError($"[ServerBuilder] the build of {exeName} failed: {summary.result}, {summary.totalErrors} errors");
             return false;
         }
 
-        Debug.Log($"[ServerBuilder] server built: {summary.outputPath} ({summary.totalSize / (1024 * 1024)} MB, {summary.totalTime.TotalSeconds:F0} s)");
+        Debug.Log($"[ServerBuilder] built: {summary.outputPath} ({summary.totalSize / (1024 * 1024)} MB, {summary.totalTime.TotalSeconds:F0} s)");
         return true;
     }
 }

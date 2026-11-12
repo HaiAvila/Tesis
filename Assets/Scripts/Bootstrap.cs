@@ -171,6 +171,12 @@ public class Bootstrap : MonoBehaviour
         if (GetComponent<TakeSync>() == null)
             gameObject.AddComponent<TakeSync>();
 
+#if DIRECTOR_BUILD && !UNITY_ANDROID
+        // The director on a PC without a headset: mouse and keyboard - see DesktopDirector.
+        if (GetComponent<DesktopDirector>() == null)
+            gameObject.AddComponent<DesktopDirector>();
+#endif
+
 #if SERVER_BUILD
         // The server .exe: no headset or menus, a window with the pods and the avatar - see ServerApp.
         if (GetComponent<ServerApp>() == null)

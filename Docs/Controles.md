@@ -231,6 +231,25 @@ Mientras el director graba en Ensayo Remoto, el actor ve el punto rojo y la pala
 **El avatar en vivo se oculta** mientras el panel de reproducción está abierto, para que no haya dos cuerpos en el mismo lugar, y vuelve al cerrarlo.
 **Tomas sin datos del cuerpo** (grabadas antes de este cambio o sin pods): solo se guardó el recorrido de la cabeza, así que el avatar sigue ese recorrido parado, con los brazos abajo, y aparece el mensaje "Toma sin datos del cuerpo".
 
+### Director en escritorio (sin visor)
+**Qué es:** la app del director en una PC, con mouse y teclado, para revisar tomas y editar las pistas hápticas sin ponerse el visor. Se genera en Unity con **Tesis → Build → Director escritorio (.exe)** (con el rol en Director) y queda en `Builds/Director/Director.exe`. Si la PC no tiene un visor conectado, entra sola en este modo; con un visor conectado, ábrela con `Director.exe -escritorio` para forzarlo.
+| Control | Qué hace |
+|---|---|
+| Clic derecho sostenido + mover el mouse | Mirar alrededor |
+| W A S D | Moverte; **Q / E** bajar y subir; **Shift** más rápido |
+| Clic izquierdo | Botones y paneles (igual que el rayo + gatillo) |
+| Esc o Tab | Menú de pausa |
+| R | Grabar / detener (como B) |
+| N | Siguiente toma en escena completa (como Y) |
+| Espacio | Reproducir / pausar la toma (como X) |
+| V | Visor de cámara (como el Grip); flechas: lente y zoom |
+| T | Nota de voz |
+| H | Ocultar la ayuda de abajo |
+Dentro de una escena la vista empieza un poco hacia abajo para que el panel de reproducción se vea.
+
+### Siguiente shot (menú de pausa)
+En una toma de un shot, el menú de pausa tiene **Siguiente shot**: abre el siguiente shot de la misma escena sin pasar por Selección de Escenas. Director en Ensayo Remoto (el actor lo sigue) y en Inspección (abre su toma preferida, o la más reciente, o el set sin toma); actor en Ensayar Solo. No aparece en el último shot de la escena ni en escena completa, ni para el actor en Ensayo Remoto. No funciona mientras se graba.
+
 ### El gigante de la escena 1 (shots 2 a 5)
 - **Shot 2:** al empezar la toma (Acción) el gigante **tiembla dentro de la cueva**; el actor siente el temblor en ambas espinillas y luego la alerta en el pecho.
 - **Shot 3:** 1.5 s después de Acción sale de la cueva caminando. **Shot 4:** camina en cuanto empieza la toma y se acerca al protagonista. **Shot 5:** 1.5 s después de Acción gira hacia su derecha y da unos pasos más.

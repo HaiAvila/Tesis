@@ -186,6 +186,18 @@ public class PauseMenuController : MonoBehaviour
                 OnSelected = RepeatSetAction,
             });
 
+        // The scene's next shot, straight from here (not after its last shot, not in an escena
+        // completa, and not for the actor in Ensayo Remoto, where the director picks).
+        Shot next = NextShotOfScene();
+        if (next != null)
+            menuOptions.Add(new PauseMenuOption
+            {
+                Icon = GlassUI.Icon.Next,
+                Label = "Siguiente shot",
+                Description = $"Shot {next.ShotNumber}: {next.Description}",
+                OnSelected = () => GoToShot(next),
+            });
+
         menuOptions.Add(new PauseMenuOption { Icon = GlassUI.Icon.Pods, Label = "Estado de pods", Description = "Batería y señal de cada pod.", OnSelected = ShowPodStatus });
 
         // Replays the controls tutorial for the current mode - it's only offered
@@ -347,6 +359,55 @@ public class PauseMenuController : MonoBehaviour
     void GoToSceneSelect()
     {
         Bootstrap.LoadSceneSelect();
+    }
+
+    Shot NextShotOfScene()
+    {
+        if (Bootstrap.IsFullScene || Bootstrap.CurrentShotNumber <= 0 || !Bootstrap.IsContentScene(SceneManager.GetActiveScene().name))
+            return null;
+#if DIRECTOR_BUILD
+        if (Bootstrap.Mode != Bootstrap.AppMode.Remote && Bootstrap.Mode != Bootstrap.AppMode.Inspect)
+            return null;
+#else
+        if (Bootstrap.Mode != Bootstrap.AppMode.Solo)
+            return null;
+#endif
+        ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+        if (database == null)
+            return null;
+        List<int> shots = database.GetShotNumbersOfScene(Bootstrap.CurrentSceneNumber);
+        int index = shots.IndexOf(Bootstrap.CurrentShotNumber);
+        return index >= 0 && index + 1 < shots.Count ? database.GetShot(shots[index + 1]) : null;
+    }
+
+    // The same as choosing it in Scene Select. In Inspección it opens the shot's preferida take
+    // (else its latest; without any, the set alone).
+    void GoToShot(Shot shot)
+    {
+        if (RehearsalRecorder.Instance != null && RehearsalRecorder.Instance.IsRecording)
+        {
+            FloatingMessage.Show("Termina la toma primero");
+            return;
+        }
+        if (!SceneSelectController.SceneNameByNumber.TryGetValue(shot.SceneNumber, out string sceneName))
+            return;
+
+        Bootstrap.CurrentSessionId = null;
+        if (Bootstrap.Mode == Bootstrap.AppMode.Inspect)
+        {
+            ShotListDatabase database = FindFirstObjectByType<ShotListDatabase>();
+            List<RecordingSession> takes = database != null ? database.GetSessionsForShot(shot.ShotNumber) : new List<RecordingSession>();
+            if (takes.Count > 0)
+                Bootstrap.CurrentSessionId = takes[0].Id; // preferida first, then the latest
+            else
+                Bootstrap.InspectWithoutTake = true;
+        }
+        if (Bootstrap.Mode == Bootstrap.AppMode.Remote && RehearsalSessionSync.Instance != null)
+            RehearsalSessionSync.Instance.SelectTake(shot.SceneNumber, shot.ShotNumber);
+
+        Debug.Log($"[Pausa] Siguiente shot: {shot.ShotNumber} ({Bootstrap.Mode})");
+        Bootstrap.SelectTake(shot.SceneNumber, shot.ShotNumber);
+        SceneManager.LoadSceneAsync(sceneName);
     }
 
 #if DIRECTOR_BUILD

@@ -55,6 +55,10 @@ public class SceneSelectController : MonoBehaviour
     SortedDictionary<int, List<Shot>> shotsByScene;
     Dictionary<(int scene, int shot), TakeSummary> summaries = new Dictionary<(int, int), TakeSummary>();
 
+    // What's on screen, to draw it again when a sync brings takes or marks from the server
+    // (TakeSync.DataArrived): the shot list, or one shot's / scene's takes.
+    Action redraw;
+
     void Start()
     {
         uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -70,6 +74,7 @@ public class SceneSelectController : MonoBehaviour
 
         contentRect = BuildScrollingCanvas();
         BuildShotList(contentRect, shotsByScene);
+        TakeSync.DataArrived += OnDataArrived;
 
         StartCoroutine(PlaceAgainOnceTracked());
     }
@@ -167,8 +172,22 @@ public class SceneSelectController : MonoBehaviour
         return contentRect;
     }
 
+    void OnDestroy()
+    {
+        TakeSync.DataArrived -= OnDataArrived;
+    }
+
+    void OnDataArrived(int items)
+    {
+        if (redraw == null || contentRect == null)
+            return;
+        Debug.Log($"[SceneSelect] {items} items arrived from the server: the list is drawn again");
+        redraw();
+    }
+
     void BuildShotList(RectTransform content, SortedDictionary<int, List<Shot>> shotsByScene)
     {
+        redraw = BackToShotList;
         // Ensayar Solo: single shots only, and only those with an approved reference to
         // practice against (see ApprovedReferences - every shot, until the server answers).
         bool solo = Bootstrap.Mode == Bootstrap.AppMode.Solo;
@@ -380,6 +399,7 @@ public class SceneSelectController : MonoBehaviour
         }
 
         ClearContent();
+        redraw = () => ShowSessionList(shot, sceneName);
         CreateBackButton(contentRect, BackToShotList);
         CreateHeader(contentRect, $"Shot {shot.ShotNumber}: {shot.Description}", Plural(sessions.Count, "toma", "tomas", "Sin tomas"));
 
@@ -408,6 +428,7 @@ public class SceneSelectController : MonoBehaviour
         }
 
         ClearContent();
+        redraw = () => ShowSceneSessionList(sceneNumber, sceneName);
         CreateBackButton(contentRect, BackToShotList);
         CreateHeader(contentRect, $"Escena {sceneNumber} completa", Plural(sessions.Count, "grabación", "grabaciones", "Sin grabaciones"));
 

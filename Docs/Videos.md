@@ -30,14 +30,47 @@ director, el avatar y el servidor). Graba cada video de una sola vez, sin cortar
   pantalla.
 - [ ] Al terminar: conecta el Quest y pídeme que baje los videos.
 
-## V0. El hardware (solo celular, clips cortos)
+# Parte A: las piezas (antes del sistema completo)
+
+Videos cortos que explican cada pieza por separado, para que al ver el sistema completo nadie se
+pregunte "¿y eso cómo funciona?" o "¿para qué se necesita?".
+
+## A1. El hardware (solo celular, clips cortos)
 
 - [ ] Los 9 pods de cerca (y uno abierto, si tienes).
 - [ ] El receptor en su cable.
 - [ ] Ponerte los pods con Walker Tape: esternón, bíceps, muñecas, cuádriceps, espinillas.
-- [ ] `Servidor.exe`: "Receptor en COMx" y "Pods 9/9".
-- [ ] Opcional: un pod junto al micrófono del celular mientras suena una pista (la vibración no se
-  ve, pero se oye).
+
+## A2. Los pods se conectan (celular + escritorio)
+
+- [ ] Abre `Servidor.exe` con los pods apagados: "Receptor en COMx", "Pods 0/9".
+- [ ] Prende los pods uno por uno: el contador sube hasta 9/9 y cada uno muestra su batería y su
+  señal. Explica: 9 pods → un receptor por Bluetooth → USB → el servidor.
+
+## A3. El avatar sigue tu cuerpo (celular + ventana del servidor)
+
+La ventana del servidor muestra el avatar **por detrás** (tu izquierda es su izquierda). Si el
+celular te graba **por detrás** también, no se ve en espejo y se comparan directo.
+
+- [ ] **Calibración** con **Y**: el celular te muestra en cada pose (T, brazos abajo con
+  sentadilla, brazos al frente con las palmas juntas) y la ventana la cuenta regresiva.
+- [ ] Muévete: brazos, sentadilla, caminar, girar. El avatar te sigue.
+- [ ] Explica: cada pod da la rotación de su hueso; la calibración aprende cómo está pegado cada
+  uno; las medidas del cuerpo ajustan el tamaño del avatar.
+
+## A4. El vocabulario de pistas (celular + terminal)
+
+Para mandar pistas a mano: **cierra `Servidor.exe`** (ocupa el receptor) y abre dos terminales en
+la carpeta `Bridge`: `python bridge.py` en una y `python cue.py` en la otra. En `cue.py` escribe
+`<pod> <pista> [parámetro]`; el pod `0` es todos.
+
+- [ ] Celular de cerca a un pod junto al micrófono (la vibración no se ve, pero se oye).
+- [ ] Cada pista con su uso: `9 2 30` proximidad (pulsos en el esternón), `1 1` orientación
+  (muñeca izquierda), `7 8` paso (espinilla), `0 3` Acción (los 9), `0 4` Corte (los 9), `9 9` aviso que
+  sube, `9 5` confirmación (marca).
+- [ ] Opcional: los resultados de latencia (53 ms con 1 pod, 62.5 ms con 9).
+
+# Parte B: el sistema completo
 
 ## V1. Conexión y menús (escritorio + Quest)
 
@@ -87,7 +120,6 @@ Usa la **escena 1** (el gigante se ve mejor).
 
 - [ ] **Análisis:** correr `python Analysis/analizar_tomas.py` y recorrer `informe.html` (con
   pistas / sin pistas).
-- [ ] **Latencia:** los resultados (53 ms con 1 pod, 62.5 ms con 9).
 
 ## Notas
 

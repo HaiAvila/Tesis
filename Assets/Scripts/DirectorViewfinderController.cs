@@ -417,6 +417,19 @@ public class DirectorViewfinderController : MonoBehaviour
     // yet at that precise moment, unlike every other GameObject.Find("...Controller") call
     // in this project, which only ever runs later, on a button press. Poll a few frames
     // instead of assuming it's there immediately.
+    // DesktopDirector: without a headset the controllers only come on once it wakes them, maybe
+    // after BuildViewfinderWhenReady gave up looking. Builds it if it's missing and can be.
+    public void EnsureBuilt()
+    {
+        if (viewfinderRoot != null || buildCoroutine != null)
+            return;
+        if (!Bootstrap.IsContentScene(SceneManager.GetActiveScene().name) || Bootstrap.Mode != Bootstrap.AppMode.Remote)
+            return;
+        if (GameObject.Find("Right Controller") == null)
+            return;
+        BuildViewfinder();
+    }
+
     IEnumerator BuildViewfinderWhenReady()
     {
         for (int attempt = 0; attempt < FindControllerMaxAttempts; attempt++)

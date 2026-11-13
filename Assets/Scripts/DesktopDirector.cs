@@ -5,6 +5,8 @@ using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Unity.XR.CoreUtils;
+using UnityEngine.XR.Interaction.Toolkit.Inputs;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 // The director's app on a PC without a headset (the "desktop director" of the pipeline: mainly
 // to review takes and edit the haptic timeline with a mouse). Bootstrap adds it in the director's
@@ -124,8 +126,16 @@ public class DesktopDirector : MonoBehaviour
         if (Time.unscaledTime >= nextScan)
         {
             nextScan = Time.unscaledTime + ScanSeconds;
+            // Every scan, not once: the XR rig switches interactors back on (the viewfinder's
+            // teleport pause, the rig's input manager).
+            WakeControllers();
+            HideControllers();
             PrepareCanvases();
             BindKeys();
+#if DIRECTOR_BUILD
+            if (DirectorViewfinderController.Instance != null)
+                DirectorViewfinderController.Instance.EnsureBuilt();
+#endif
         }
 
         Keyboard keyboard = Keyboard.current;
@@ -204,8 +214,31 @@ public class DesktopDirector : MonoBehaviour
             if (driver.GetType().Name.Contains("TrackedPoseDriver"))
                 driver.enabled = false;
         }
+        WakeControllers();
         HideControllers();
         placePending = true;
+    }
+
+    // With no headset the rig's XRInputModalityManager sees no tracked controller and switches
+    // the controller objects off - and the viewfinder hangs on the right one (the recording
+    // shortcut's buzz too). Stop it and keep them on (hidden, placed by HoldViewfinder).
+    // True if any was off.
+    static bool WakeControllers()
+    {
+        bool woke = false;
+        foreach (XRInputModalityManager manager in FindObjectsByType<XRInputModalityManager>(FindObjectsSortMode.None))
+        {
+            manager.enabled = false;
+            foreach (GameObject controller in new[] { manager.leftController, manager.rightController })
+            {
+                if (controller != null && !controller.activeSelf)
+                {
+                    controller.SetActive(true);
+                    woke = true;
+                }
+            }
+        }
+        return woke;
     }
 
     // Eye height over the rig, facing the way it faces (a take's start, after ShotStartPositioner).
@@ -231,8 +264,11 @@ public class DesktopDirector : MonoBehaviour
                 r.enabled = false;
             foreach (Behaviour b in controller.GetComponentsInChildren<Behaviour>(true))
             {
+                // Their rays too: the interactors (they'd hover and catch the panels in front of
+                // the view, and the mouse clicks with them) and the curve visuals that turn the
+                // line renderers back on.
                 string type = b.GetType().Name;
-                if (type.Contains("TrackedPoseDriver") || type.Contains("LineVisual"))
+                if (type.Contains("TrackedPoseDriver") || type.Contains("LineVisual") || type.Contains("CurveVisual") || b is XRBaseInteractor)
                     b.enabled = false;
             }
         }

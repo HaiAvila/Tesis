@@ -35,11 +35,14 @@ director, el avatar y el servidor). Graba cada video de una sola vez, sin cortar
 Videos cortos que explican cada pieza por separado, para que al ver el sistema completo nadie se
 pregunte "¿y eso cómo funciona?" o "¿para qué se necesita?".
 
-## A1. El hardware (solo celular, clips cortos)
+## A1. El hardware (fotos)
 
-- [ ] Los 9 pods de cerca (y uno abierto, si tienes).
-- [ ] El receptor en su cable.
-- [ ] Ponerte los pods con Walker Tape: esternón, bíceps, muñecas, cuádriceps, espinillas.
+- [x] Los pods terminados.
+- [x] Un pod por dentro.
+- [x] Poniéndote un pod en la mano.
+- [ ] **Hoy:** el **receptor** en su cable.
+- [ ] **Hoy:** los **9 pods puestos en el cuerpo** (cuerpo completo: esternón, bíceps, muñecas,
+  cuádriceps, espinillas).
 
 ## A2. Los pods se conectan (celular + escritorio)
 
@@ -120,6 +123,7 @@ Usa la **escena 1** (el gigante se ve mejor).
 
 - [ ] **Análisis:** correr `python Analysis/analizar_tomas.py` y recorrer `informe.html` (con
   pistas / sin pistas).
+- [ ] **Latencia:** los resultados (53 ms con 1 pod, 62.5 ms con 9), como imagen o tabla.
 
 ## Notas
 

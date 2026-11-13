@@ -61,17 +61,11 @@ celular te graba **por detrás** también, no se ve en espejo y se comparan dire
 - [ ] Explica: cada pod da la rotación de su hueso; la calibración aprende cómo está pegado cada
   uno; las medidas del cuerpo ajustan el tamaño del avatar.
 
-## A4. El vocabulario de pistas (celular + terminal)
+## A4. El vocabulario de pistas (sin video: una tabla en la presentación)
 
-Para mandar pistas a mano: **cierra `Servidor.exe`** (ocupa el receptor) y abre dos terminales en
-la carpeta `Bridge`: `python bridge.py` en una y `python cue.py` en la otra. En `cue.py` escribe
-`<pod> <pista> [parámetro]`; el pod `0` es todos.
-
-- [ ] Celular de cerca a un pod junto al micrófono (la vibración no se ve, pero se oye).
-- [ ] Cada pista con su uso: `9 2 30` proximidad (pulsos en el esternón), `1 1` orientación
-  (muñeca izquierda), `7 8` paso (espinilla), `0 3` Acción (los 9), `0 4` Corte (los 9), `9 9` aviso que
-  sube, `9 5` confirmación (marca).
-- [ ] Opcional: los resultados de latencia (53 ms con 1 pod, 62.5 ms con 9).
+Grabar las pistas no sirve (no se ven ni se sienten en video). En su lugar va una tabla en la
+presentación: qué pista, en qué pod y para qué se usa. Claude te da la información para el chat de
+la presentación.
 
 # Parte B: el sistema completo
 

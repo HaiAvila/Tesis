@@ -26,7 +26,7 @@ using UnityEngine;
 public static class CueGenerator
 {
     // Bump when the generator changes: the database regenerates every preferida's auto cues.
-    public const int Version = 5;
+    public const int Version = 6;
 
     // Which cues a shot calls for beyond the movement ones, from its notes in the shot list.
     public struct ShotPlan
@@ -115,7 +115,11 @@ public static class CueGenerator
     const float TurnHoldSeconds = 1.5f;
     const float TurnHoldTolerance = 15f;
     const float TurnMergeGap = 1f;        // back-to-back turns the same way are one turn
-    const float TurnLead = 0.5f;          // the cue comes this long before the turn starts
+    const float TurnLead = 0.3f;          // the cue comes this long before the turn starts (~reaction time; 0.5 until v6)
+    // Where a turn starts: back from where it crossed TurnDegrees for as long as the facing was
+    // still moving that way this fast (v6, Nov 13, the user: the start used to be the first moment
+    // the 30° fell inside the 4 s window - up to 4 s before the body moved).
+    const float TurnStartRate = 20f;      // deg/s
 
     // Walking cadence from speed, steps per second: about 1.65 at 1 m/s. An approximation
     // until the shin pods' own steps are used.
@@ -496,7 +500,7 @@ public static class CueGenerator
         int start = 0;
         while (start < n)
         {
-            int end = -1;
+            int end = -1, onset = start;
             for (int j = start; j < n && t[j] - t[start] <= TurnWindow; j++)
             {
                 if (Mathf.Abs(yaw[j] - yaw[start]) < TurnDegrees)
@@ -510,7 +514,13 @@ public static class CueGenerator
                 for (int k = e; held && k < n && t[k] - t[e] <= TurnHoldSeconds; k++)
                     held = Mathf.Abs(yaw[k] - yaw[e]) <= TurnHoldTolerance;
                 if (held)
+                {
                     end = e;
+                    float way = Mathf.Sign(yaw[j] - yaw[start]);
+                    onset = j;
+                    while (onset - 1 >= start && way * (yaw[onset] - yaw[onset - 1]) / Mathf.Max(t[onset] - t[onset - 1], 0.001f) > TurnStartRate)
+                        onset--;
+                }
                 break;
             }
 
@@ -522,10 +532,10 @@ public static class CueGenerator
 
             float degrees = yaw[end] - yaw[start];
             Turn last = turns.Count > 0 ? turns[turns.Count - 1] : default;
-            if (turns.Count > 0 && t[start] - last.End <= TurnMergeGap && Mathf.Sign(last.Degrees) == Mathf.Sign(degrees))
+            if (turns.Count > 0 && t[onset] - last.End <= TurnMergeGap && Mathf.Sign(last.Degrees) == Mathf.Sign(degrees))
                 turns[turns.Count - 1] = new Turn { Start = last.Start, End = t[end], Degrees = last.Degrees + degrees };
             else
-                turns.Add(new Turn { Start = t[start], End = t[end], Degrees = degrees });
+                turns.Add(new Turn { Start = t[onset], End = t[end], Degrees = degrees });
             start = end + 1;
         }
         return turns;

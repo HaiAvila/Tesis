@@ -180,4 +180,7 @@ gráfica la resalta.
   personas, tomas con y sin pistas), que todavía no se hace. Las tomas viejas de desarrollo no
   sirven como comparación sin pistas (solo llegaron a la marca el 24 % de las veces porque eran
   pruebas). Hoy lo que se muestra es que el sistema funciona de punta a punta, no una mejora medida.
+  El plan del piloto (miércoles 18 de noviembre, una persona que no conoce el sistema, escena 1
+  shot 1, 3 tomas sin pistas y luego 3 con pistas, con cuestionario) está en
+  `Docs/Piloto_2026-11-18.md`.
 - **El ensayo remoto en dos lugares distintos:** se graba el miércoles.

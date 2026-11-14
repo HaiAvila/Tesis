@@ -424,17 +424,56 @@ def legend(parts, x, y, entries):
         x += 8 * len(label) + 22
 
 
-def path_chart(reference, takes, scene, shot):
+OTHER_TAKE = "#b3b1ab"    # the takes that aren't the closest: recessive, named by a label at their end
+
+
+def closest_take(takes):
+    """The take most like the reference: the one that reached the most marks, then the one that was
+    nearest to where the reference was at the same moment (path and timing together; the path
+    alone would favour a take that walked the same line but stopped late and far from the mark)."""
+    return min(takes, key=lambda t: (-t.result["marcas_alcanzadas"], t.result["error_sincronia_m"]))
+
+
+def cm(meters):
+    return f"{meters * 100:.0f} cm"
+
+
+def plain_summary(take, reference):
+    """One take against the reference in plain words, for people who don't read tables."""
+    r = take.result
+    marks = len(reference.stops)
+    parts = []
+    if marks:
+        if r["marcas_alcanzadas"] == marks:
+            parts.append("llegó a la marca" if marks == 1 else f"llegó a las {marks} marcas")
+        elif r["marcas_alcanzadas"] == 0:
+            parts.append("no llegó a la marca" if marks == 1 else f"no llegó a ninguna de las {marks} marcas")
+        else:
+            parts.append(f"llegó a {r['marcas_alcanzadas']} de las {marks} marcas")
+        if r["error_marca_m"] is not None:
+            delay = r["retraso_marca_s"]
+            when = ("casi al mismo tiempo que la preferida" if abs(delay) < 0.15 else
+                    f"{abs(delay):.1f} s {'más tarde' if delay > 0 else 'antes'} que la preferida")
+            parts.append(f"se detuvo a {cm(r['error_marca_m'])} de ella, {when}")
+    parts.append(f"momento a momento, estuvo en promedio a {cm(r['error_sincronia_m'])} de donde iba el actor en la preferida")
+    d = r["dif_duracion_s"]
+    parts.append("duró lo mismo" if abs(d) < 0.15 else f"duró {abs(d):.1f} s {'más' if d > 0 else 'menos'}")
+    text = "; ".join(parts) + "."
+    return text[0].upper() + text[1:]
+
+
+def path_chart(reference, takes, scene, shot, best=None):
     """The paths seen from above, x to the right and z up (the set's own top view), same scale
-    on both axes so distances read true."""
+    on both axes so distances read true. The closest take is drawn strong; the others thin and
+    gray, each named at the end of its line."""
     width, height = 760, 560
     left, right, top, bottom = 64, 24, 96, 56
     points = [(p.x, p.z) for t in [reference] + takes for p in t.samples]
     xs, zs = [p[0] for p in points], [p[1] for p in points]
-    span = max(max(xs) - min(xs), max(zs) - min(zs), 1.0) * 1.12
     cx, cz = (max(xs) + min(xs)) / 2, (max(zs) + min(zs)) / 2
     plot_w, plot_h = width - left - right, height - top - bottom
-    scale = min(plot_w, plot_h) / span
+    # The same scale on both axes, as large as the paths allow (a walk along x fills the width).
+    scale = min(plot_w / (max(max(xs) - min(xs), 1.0) * 1.15), plot_h / (max(max(zs) - min(zs), 1.0) * 1.15))
     x0, z0 = cx - plot_w / scale / 2, cz - plot_h / scale / 2
 
     def X(x):
@@ -444,10 +483,13 @@ def path_chart(reference, takes, scene, shot):
         return top + plot_h - (z - z0) * scale
 
     parts = svg_open(width, height, f"Recorridos vistos desde arriba · Escena {scene}, shot {shot}",
-                     f"Referencia: toma {reference.id}, la preferida · {len(takes)} tomas comparadas · metros")
-    entries = [("Referencia", REFERENCE, "line")] + [
-        (c, COLORS[c], "line") for c in CONDITION_ORDER if any(t.condition == c for t in takes)]
-    entries.append(("Marca de la referencia", REFERENCE, "dot"))
+                     f"Preferida: toma {reference.id} · {len(takes)} {'toma comparada' if len(takes) == 1 else 'tomas comparadas'} · metros")
+    best = best or closest_take(takes)
+    entries = [("Preferida", REFERENCE, "line"),
+               (f"Toma {best.id}: la más parecida" if len(takes) > 1 else f"Toma {best.id}", COLORS[best.condition], "line")]
+    if len(takes) > 1:
+        entries.append(("Otras tomas", OTHER_TAKE, "line"))
+    entries.append(("Marca", REFERENCE, "dot"))
     legend(parts, 24, 78, entries)
 
     for v in nice_ticks(x0, x0 + plot_w / scale, 6):
@@ -471,23 +513,39 @@ def path_chart(reference, takes, scene, shot):
                      f'stroke-linejoin="round" stroke-linecap="round"><title>{html.escape(tooltip)}</title></polyline>')
 
     for take in takes:
-        r = take.result
-        polyline(take.samples, COLORS[take.condition], 2, 0.75,
-                 f"{take.label} · {take.condition} · error de recorrido {r['error_recorrido_m']:.2f} m")
+        if take is not best:
+            polyline(take.samples, OTHER_TAKE, 2, 1,
+                     f"{take.label} · {take.condition} · a {cm(take.result['error_recorrido_m'])} del camino de la preferida")
     polyline(reference.samples, SURFACE, 7, 1, "")
-    polyline(reference.samples, REFERENCE, 3, 1, f"Referencia: {reference.label}")
+    polyline(reference.samples, REFERENCE, 3, 1, f"Preferida: {reference.label}")
+    polyline(best.samples, SURFACE, 7, 1, "")
+    polyline(best.samples, COLORS[best.condition], 3.5, 1,
+             f"{best.label} · {best.condition} · la más parecida: a {cm(best.result['error_recorrido_m'])} del camino de la preferida")
 
     start = reference.samples[0]
     parts.append(f'<circle cx="{X(start.x):.1f}" cy="{Z(start.z):.1f}" r="6" fill="{SURFACE}" stroke="{REFERENCE}" stroke-width="2">'
                  f'<title>Inicio de la referencia</title></circle>')
     parts.append(f'<text x="{X(start.x) + 10:.1f}" y="{Z(start.z) + 4:.1f}" font-size="12" fill="{INK_2}">Inicio</text>')
     for index, mark in enumerate(reference.stops, start=1):
-        parts.append(f'<circle cx="{X(mark.x):.1f}" cy="{Z(mark.z):.1f}" r="{HIT_RADIUS * scale:.1f}" fill="none" stroke="{GRID}" '
-                     f'stroke-width="1"><title>Radio para contar la marca: {HIT_RADIUS} m</title></circle>')
         parts.append(f'<circle cx="{X(mark.x):.1f}" cy="{Z(mark.z):.1f}" r="6" fill="{REFERENCE}" stroke="{SURFACE}" stroke-width="2">'
-                     f'<title>Marca {index}: la referencia llega a los {mark.start:.1f} s</title></circle>')
-        parts.append(f'<text x="{X(mark.x) + 10:.1f}" y="{Z(mark.z) - 8:.1f}" font-size="13" font-weight="600" fill="{INK}">M{index}</text>')
-    parts.append("</g></svg>")
+                     f'<title>Marca {index}: en la preferida llega a los {mark.start:.1f} s</title></circle>')
+        parts.append(f'<text x="{X(mark.x):.1f}" y="{Z(mark.z) + 24:.1f}" font-size="13" font-weight="600" fill="{INK}" '
+                     f'text-anchor="middle" stroke="{SURFACE}" stroke-width="3" paint-order="stroke">Marca {index}</text>')
+    parts.append("</g>")
+
+    # Each take named where its line ends (the closest one in bold), nudged apart if two ends meet.
+    used = []
+    for take in sorted(takes, key=lambda t: t is best):
+        end = take.samples[-1]
+        x = min(max(X(end.x) + 8, left + 4), left + plot_w - 70)
+        y = min(max(Z(end.z) + 4, top + 12), top + plot_h - 4)
+        while any(abs(y - u) < 15 and abs(x - ux) < 80 for ux, u in used):
+            y += 15
+        used.append((x, y))
+        strong = take is best
+        parts.append(f'<text x="{x:.1f}" y="{y:.1f}" font-size="{13 if strong else 12}" font-weight="{600 if strong else 400}" '
+                     f'fill="{INK if strong else INK_2}" stroke="{SURFACE}" stroke-width="3" paint-order="stroke">Toma {take.id}</text>')
+    parts.append("</svg>")
     return "\n".join(parts)
 
 
@@ -564,6 +622,12 @@ th, td {{ border-bottom: 1px solid {GRID}; padding: 4px 8px; text-align: right; 
 th {{ color: {INK_2}; font-weight: 600; position: sticky; top: 0; background: {SURFACE}; }}
 td:first-child, th:first-child {{ text-align: left; }}
 .warn {{ color: #9a4a00; }}
+.callout {{ border-left: 4px solid {COLORS["Con pistas"]}; background: #eef4fb; border-radius: 8px; padding: 12px 16px; margin: 12px 0 16px; max-width: 760px; }}
+.callout p {{ margin: 4px 0; color: {INK}; }}
+.callout .big {{ font-size: 19px; }}
+ul.takes {{ max-width: 760px; padding-left: 20px; }}
+ul.takes li {{ margin: 6px 0; }}
+details {{ margin: 8px 0 16px; }} summary {{ cursor: pointer; color: {INK_2}; }}
 """
 
 
@@ -620,7 +684,8 @@ def main():
                                   m["error_m"], m["retraso_s"], m["orientacion_deg"], m["distancia_minima_m"]])
         analyzed.extend(others)
 
-        svg = path_chart(reference, others, scene, shot)
+        best = closest_take(others)
+        svg = path_chart(reference, others, scene, shot, best)
         name = f"recorrido_e{scene}_s{shot}.svg"
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
             f.write(svg)
@@ -628,14 +693,30 @@ def main():
                  f"{t.result['marcas_alcanzadas']}/{len(reference.stops)}", t.result["error_marca_m"],
                  t.result["retraso_marca_s"], t.result["error_orientacion_deg"], t.result["error_recorrido_m"],
                  t.result["error_sincronia_m"], t.warning] for t in others]
+        ordered = [best] + sorted((t for t in others if t is not best), key=lambda t: t.id)
+        items = "".join(
+            f"<li><b>Toma {t.id}</b> ({t.condition.lower()}, {html.escape(t.date[:16].replace('T', ' '))})"
+            f"{' · <b>la más parecida</b>' if t is best and len(others) > 1 else ''}: {html.escape(plain_summary(t, reference))}</li>"
+            for t in ordered)
+        headline = (f"La toma más parecida a la preferida es la <b>toma {best.id}</b>." if len(others) > 1 else
+                    f"La <b>toma {best.id}</b> comparada con la preferida.")
+        callout = (
+            f"<div class='callout'><p class='big'>{headline}</p>"
+            f"<p>{html.escape(plain_summary(best, reference))}</p></div>")
         shot_sections.append(
             f"<h2>Escena {scene}, shot {shot}</h2>"
-            f"<p>Referencia: toma {reference.id} ({html.escape(reference.date[:16].replace('T', ' '))}), "
-            f"{reference.duration:.1f} s, {len(reference.stops)} marcas.</p>{svg}"
-            + "<div class='scroll'>" + html_table(
+            f"<p>La <b>preferida</b> (la toma que el director eligió como la buena) es la toma {reference.id} "
+            f"({html.escape(reference.date[:16].replace('T', ' '))}), de {reference.duration:.1f} s. Cada toma se compara con ella.</p>"
+            + callout + svg
+            + "<p>Cómo leerlo: es el set visto desde arriba. La línea negra es por donde caminó el actor en la preferida; "
+              f"la de color, la toma {best.id}" + (", y las grises, las demás tomas" if len(others) > 1 else "")
+            + ". El círculo blanco es el inicio y el punto negro, la marca donde se detuvo en la preferida. "
+              "Mientras más encimadas estén las líneas, más se parece la toma a la preferida.</p>"
+            + f"<ul class='takes'>{items}</ul>"
+            + "<details><summary>Números exactos</summary><div class='scroll'>" + html_table(
                 ["Toma", "Fecha", "Condición", "Duración (s)", "Dif. duración (s)", "Marcas", "Error marca (m)",
                  "Retraso marca (s)", "Orientación (°)", "Error recorrido (m)", "Error sincronía (m)", "Aviso"], rows)
-            + "</div>")
+            + "</div></details>")
 
     write_csv(os.path.join(out_dir, "resumen_tomas.csv"), TAKE_COLUMNS, take_rows)
     write_csv(os.path.join(out_dir, "marcas.csv"), MARK_COLUMNS, mark_rows)
@@ -693,6 +774,11 @@ def main():
         f"generado {dt.datetime.now().strftime('%Y-%m-%d %H:%M')} · {len(analyzed)} tomas en {len(shot_sections)} shots"
         + (f" · desde {html.escape(args.desde)}" if args.desde else "") + ".</p>",
         condition_note,
+    ]
+    # One shot: its plain comparison first; the summary by condition (made for the pilot) after it.
+    if len(shot_sections) == 1:
+        page += shot_sections
+    page += [
         "<p>Una <b>marca</b> es un lugar donde la referencia se detuvo al menos 1 s tras moverse al menos 0.5 m. "
         f"Una toma la <b>alcanza</b> si se detiene a menos de {HIT_RADIUS} m de ella, en orden. "
         "<b>Error de recorrido</b>: distancia media del camino de la toma al de la referencia, sin importar el tiempo. "
@@ -706,7 +792,8 @@ def main():
     ]
     if notes:
         page.append("<h2>No comparados</h2><ul>" + "".join(f"<li>{html.escape(n)}</li>" for n in notes) + "</ul>")
-    page += shot_sections
+    if len(shot_sections) != 1:
+        page += shot_sections
     page.append("</main></body></html>")
     with open(os.path.join(out_dir, "informe.html"), "w", encoding="utf-8") as f:
         f.write("\n".join(page))

@@ -34,11 +34,23 @@ It also:
   each shot's cue timeline are synced between every device and the server through Normcore
   (`TakeSync`), so a take made on the director's Quest is on the server PC seconds later, and
   Ensayar Solo and a shoot day can run from the server alone;
-- plays the cue timeline on the pods;
-- *(not yet)* records takes itself (Solo), plays live cues, makes the take report.
+- plays the cue timeline on the pods from Acción, and the live cues (proximity to the next mark,
+  orientation) from where the actor's headset is.
 
-**The director's app never talks to the pods directly.** Commands — Calibrar, Grabar,
-Acción, Corte, Aprobar, edited cues — go through Normcore to the server.
+**Who records:** the **director's device** (Quest or desktop), not the server. On **R** it saves
+the take to its own database (head path, camera, and the actor's body as received over
+Normcore); the actor's Quest saves nothing. The take is then copied to the server, and from
+there to every other device, so Inspeccionar escenas reads takes from the device's own
+database, kept the same as the server's. Changes made while the server is off (a new
+preferida, edited cues, a deletion) are stamped and sent the next time both are in the room;
+the newer stamp wins. The take report after Corte is made by the director's app. The
+conversation audio and voice notes aren't synced yet: they stay on the device that recorded
+them.
+
+*(Not yet:)* the server recording takes itself (an Ensayar Solo run isn't recorded).
+
+**The director's app never talks to the pods directly.** Commands — Calibrar, Acción, Corte,
+edited cues — go through Normcore, and the server acts on them on the pods.
 
 ## Setups
 
